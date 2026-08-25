@@ -1,0 +1,666 @@
+// Alpines Flight — schéma de base de données
+// Local-first (SQLite). Migration facile vers Postgres/Supabase plus tard
+// (il suffira de changer le provider + l'url de connexion).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Utilisateurs & rôles ----------
+
+// Gérant = tous droits sans exception, y compris finances (compte pilote,
+// IBAN, export comptable). Admin = gestion courante de l'école (élèves,
+// instructeurs, flotte, formation, licences, actualités, documentation)
+// mais aucun accès à ce qui touche l'argent — voir src/lib/permissions.ts,
+// seul point de vérité pour ces règles (à utiliser partout plutôt que de
+// comparer `role` directement, pour ne jamais désynchroniser une route).
+enum Role {
+  GERANT
+  ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  firstName    String
+  lastName     String
+  phone        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Profil élève/membre (heures, licences, solde)
+  studentProfile     StudentProfile?
+  // Profil instructeur (qualifications)
+  instructorProfile  InstructorProfile?
+
+  reservationsAsStudent    Reservation[] @relation("ReservationStudent")
+  reservationsAsInstructor Reservation[] @relation("ReservationInstructor")
+
+  flightsAsStudent    FlightLog[] @relation("FlightStudent")
+  flightsAsInstructor FlightLog[] @relation("FlightInstructor")
+
+  // Compte pilote : versements, débits de vol, ajustements
+  transactions         AccountTransaction[] @relation("TransactionStudent")
+  transactionsConfirmed AccountTransaction[] @relation("TransactionConfirmedBy")
+
+  kardexEntriesCreated KardexEntry[] @relation("KardexCreatedBy")
+
+  // Licences, qualifications, médicales... (élèves ET instructeurs)
+  qualifications          Qualification[]         @relation("QualificationHolder")
+  documentsUploaded       QualificationDocument[]  @relation("DocumentUploadedBy")
+  documentsValidated      QualificationDocument[]  @relation("DocumentValidatedBy")
+
+  // Suivi de formation (livrets de progression)
+  enrollmentsAsStudent    Enrollment[]       @relation("EnrollmentStudent")
+  enrollmentsAsInstructor Enrollment[]       @relation("EnrollmentInstructor")
+  trainingSessions        TrainingSession[]  @relation("SessionInstructor")
+  exerciseProgressGraded  ExerciseProgress[] @relation("ProgressInstructor")
+
+  schoolSettingsUpdated SchoolSettings[]
+  announcementsCreated  Announcement[]
+  schoolDocumentsUploaded SchoolDocument[]
+}
+
+model StudentProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseType   String? // ex: "PPL", "Brevet de base", "LAPL"
+  licenseNumber String?
+  medicalExpiry DateTime?
+  totalHours    Float    @default(0)
+  balanceCents  Int      @default(0) // solde compte élève, en centimes (positif = créditeur)
+  // false = élève en formation, true = pilote déjà breveté (loue/vole en
+  // solo, mais reste un compte "STUDENT" côté rôle système — mêmes
+  // mécanismes de réservation/compte pilote). Purement une étiquette
+  // d'affichage sur la page Élèves.
+  isPilot       Boolean  @default(false)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model InstructorProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  qualifications String? // ex: "FI(A), IRI"
+  hourlyRateCents Int?    // tarif horaire instruction, si facturé séparément
+  color          String  @default("#0C2448") // couleur d'affichage dans le planning
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ---------- Flotte ----------
+
+enum AircraftStatus {
+  AVAILABLE
+  MAINTENANCE
+  GROUNDED
+  RETIRED // sorti de flotte (conservé pour l'historique vols/facturation)
+}
+
+model Aircraft {
+  id                String         @id @default(cuid())
+  registration      String         @unique // ex: F-GXXX
+  type              String // ex: "Robin DR400"
+  hourlyRateCents   Int // tarif location €/h en centimes
+  status            AircraftStatus @default(AVAILABLE)
+  totalHours        Float          @default(0) // heures cellule
+  totalCycles       Int            @default(0) // nombre d'atterrissages/touchés cumulés (potentiel cycles)
+  color             String         @default("#F04818") // couleur d'affichage planning
+  notes             String?
+  // Photo de l'appareil (une seule, remplacée à chaque nouvel upload) —
+  // affichée sur sa carte dans la page Flotte. Jamais renvoyée en JSON
+  // (voir /api/aircraft/[id]/photo, même principe que les documents de
+  // licences : le binaire ne transite que par une route de streaming dédiée).
+  photoData         Bytes?
+  photoMimeType     String?
+  photoFileName     String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  reservations       Reservation[]
+  flights             FlightLog[]
+  maintenanceRecords  MaintenanceRecord[]
+  kardexEntries       KardexEntry[]
+  trainingSessions    TrainingSession[]
+}
+
+enum MaintenanceType {
+  HOURLY   // échéance en heures de vol (ex: visite 50h/100h)
+  CALENDAR // échéance en date (ex: assurance, CDN, révision annuelle)
+  CYCLES   // échéance en nombre d'atterrissages/touchés
+}
+
+enum MaintenanceStatus {
+  UPCOMING
+  DUE
+  OVERDUE
+  DONE
+}
+
+model MaintenanceRecord {
+  id            String             @id @default(cuid())
+  aircraftId    String
+  aircraft      Aircraft           @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  label         String // ex: "Visite 100h", "Assurance", "CDN"
+  type          MaintenanceType
+  dueAtHours    Float? // pour type HOURLY
+  dueAtDate     DateTime? // pour type CALENDAR
+  dueAtCycles   Int? // pour type CYCLES
+  alertBefore   Float    @default(10) // heures, jours ou cycles avant échéance pour alerter
+  status        MaintenanceStatus @default(UPCOMING)
+  completedAt   DateTime?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  kardexEntries KardexEntry[]
+}
+
+// ---------- Kardex (dossier technique de chaque avion) ----------
+//
+// Historique complet des interventions de maintenance réalisées sur un
+// avion : visites, réparations, consignes de navigabilité, pièces
+// remplacées... Complète les MaintenanceRecord (qui suivent les échéances
+// À VENIR) en conservant la trace de ce qui a déjà été fait.
+
+enum KardexCategory {
+  VISITE
+  REPARATION
+  CONSIGNE_NAVIGABILITE
+  PIECE_REMPLACEE
+  AUTRE
+}
+
+model KardexEntry {
+  id                   String              @id @default(cuid())
+  aircraftId           String
+  aircraft             Aircraft            @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  date                 DateTime
+  hoursAt              Float? // heures cellule au moment de l'intervention
+  cyclesAt             Int? // cycles/atterrissages au moment de l'intervention
+  category             KardexCategory
+  title                String // ex: "Visite 100h", "Remplacement magnéto gauche"
+  description          String?
+  performedBy          String? // atelier / mécanicien agréé
+  reference             String? // n° de facture, bon de travail, référence CN...
+  maintenanceRecordId  String? // échéance soldée par cette intervention, le cas échéant
+  maintenanceRecord    MaintenanceRecord?  @relation(fields: [maintenanceRecordId], references: [id])
+  createdAt            DateTime            @default(now())
+  createdById          String?
+  createdBy            User?               @relation("KardexCreatedBy", fields: [createdById], references: [id])
+}
+
+// ---------- Planning ----------
+
+enum ReservationType {
+  INSTRUCTION
+  SOLO
+  LOCATION
+  MAINTENANCE
+  DISCOVERY // vol d'initiation / baptême de l'air
+}
+
+enum ReservationStatus {
+  CONFIRMED
+  IN_FLIGHT // départ validé par le pilote, vol en cours
+  CANCELLED
+  COMPLETED
+}
+
+model Reservation {
+  id                  String             @id @default(cuid())
+  aircraftId          String
+  aircraft            Aircraft           @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  studentId           String?
+  student             User?              @relation("ReservationStudent", fields: [studentId], references: [id])
+  instructorId        String?
+  instructor          User?              @relation("ReservationInstructor", fields: [instructorId], references: [id])
+  // Formation visée par ce vol d'instruction (PPL, Montagne...) — détermine
+  // le tarif d'instruction appliqué à la clôture (voir TrainingProgram.
+  // instructionRateCents). Sans objet si type != INSTRUCTION.
+  trainingProgramId   String?
+  trainingProgram     TrainingProgram?   @relation(fields: [trainingProgramId], references: [id])
+  type                ReservationType
+  status              ReservationStatus  @default(CONFIRMED)
+  startTime           DateTime
+  endTime             DateTime
+  actualDepartureTime DateTime? // renseigné quand le pilote valide le départ
+  notes               String?
+  // Vol découverte/baptême (type DISCOVERY) : le client n'a en général pas
+  // de compte (studentId reste null) — coordonnées saisies directement ici.
+  // priceCents est le forfait payé sur place (carte/espèces), jamais débité
+  // d'un compte pilote — voir /api/reservations/[id]/complete.
+  clientName          String?
+  clientPhone         String?
+  clientEmail         String?
+  priceCents          Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  flight FlightLog?
+}
+
+// ---------- Carnet de vol ----------
+//
+// Rempli par le pilote en 2 temps : validation du départ (sur la
+// Reservation, ci-dessus), puis au retour le compte-rendu complet
+// (ce modèle) qui sert à la fois à la facturation (débit du compte pilote)
+// et au suivi maintenance (heures + cycles de l'avion).
+
+model FlightLog {
+  id                   String       @id @default(cuid())
+  reservationId        String?      @unique
+  reservation          Reservation? @relation(fields: [reservationId], references: [id])
+  aircraftId           String
+  aircraft             Aircraft     @relation(fields: [aircraftId], references: [id])
+  studentId            String?
+  student              User?        @relation("FlightStudent", fields: [studentId], references: [id])
+  instructorId         String?
+  instructor           User?        @relation("FlightInstructor", fields: [instructorId], references: [id])
+  // Formation facturée pour ce vol, si vol d'instruction — copiée depuis la
+  // réservation à la clôture (voir Reservation.trainingProgramId), figée ici
+  // pour l'historique même si le tarif du programme change plus tard.
+  trainingProgramId    String?
+  trainingProgram      TrainingProgram? @relation(fields: [trainingProgramId], references: [id])
+  date                 DateTime
+  departureTime        DateTime // heure de départ réelle
+  arrivalTime          DateTime // heure d'arrivée réelle
+  duration             Float // heures, dérivé de arrivalTime - departureTime
+  totalLandings        Int          @default(0) // somme des touchés tous terrains confondus (cycles)
+  // Détail du coût débité au pilote (voir AccountTransaction.amountCents = -(aircraftCostCents + instructionCostCents))
+  aircraftCostCents    Int          @default(0) // duration × aircraft.hourlyRateCents
+  instructionCostCents Int          @default(0) // duration × tarif applicable (programme de formation si renseigné, sinon instructor.hourlyRateCents), si vol d'instruction
+  remarks              String?
+  accountTransaction   AccountTransaction?
+  stops                FlightStop[] // terrains survolés/posés + nombre de touchés
+  trainingSession      TrainingSession? // séance de formation reliée à ce vol, le cas échéant
+  createdAt            DateTime @default(now())
+
+  // Plein de carburant fait à l'occasion de ce vol (facultatif — simple
+  // enregistrement pour le suivi carburant de l'école, ne débite pas le
+  // pilote : il paie directement à la pompe avec la carte/badge indiqué).
+  fuelRefillDone   Boolean       @default(false)
+  fuelCard         FuelCard?
+  fuelLiters       Float?
+  fuelType         FuelType?
+  fuelAirfield     String?
+}
+
+enum FuelCard {
+  BP
+  TOTAL
+  BADGE_TALLARD
+}
+
+enum FuelType {
+  AVGAS_100LL
+  SP98
+}
+
+// Terrain sur lequel le pilote s'est posé pendant le vol, et nombre de
+// touchés (atterrissages/tours de piste) effectués sur ce terrain.
+model FlightStop {
+  id          String    @id @default(cuid())
+  flightLogId String
+  flightLog   FlightLog @relation(fields: [flightLogId], references: [id], onDelete: Cascade)
+  airfield    String // code OACI ou nom du terrain, ex: "LFLY" ou "Lyon Bron"
+  touchAndGo  Int       @default(1) // nombre de touchés sur ce terrain
+}
+
+// ---------- Compte pilote ----------
+//
+// Fonctionnement "compte prépayé" (comme Aerogest/4fly) :
+// 1. Le pilote fait un virement sur le compte de l'école, puis déclare ce
+//    versement dans l'appli (DEPOSIT, status PENDING).
+// 2. L'admin vérifie sur son relevé bancaire, puis confirme : le solde du
+//    pilote est crédité (status CONFIRMED).
+// 3. Chaque vol clôturé débite automatiquement le compte du pilote
+//    (FLIGHT_DEBIT, confirmé immédiatement).
+// 4. L'admin peut aussi passer une écriture manuelle (ADJUSTMENT), ex. avoir
+//    commercial ou correction, créditée/débitée immédiatement.
+
+enum TransactionType {
+  DEPOSIT       // versement déclaré par le pilote (viré sur le compte école)
+  FLIGHT_DEBIT  // débit automatique suite à un vol clôturé
+  ADJUSTMENT    // écriture manuelle admin (avoir, correction...)
+}
+
+enum TransactionStatus {
+  PENDING   // versement déclaré, en attente de vérification bancaire
+  CONFIRMED // vérifié : impacte le solde
+  REJECTED  // refusé : n'impacte pas le solde
+}
+
+enum PaymentMethod {
+  CARD
+  TRANSFER
+  CASH
+  CHECK
+}
+
+model AccountTransaction {
+  id            String             @id @default(cuid())
+  studentId     String
+  student       User               @relation("TransactionStudent", fields: [studentId], references: [id])
+  type          TransactionType
+  status        TransactionStatus  @default(CONFIRMED)
+  amountCents   Int                // positif = crédit du compte pilote, négatif = débit
+  method        PaymentMethod?     // pour les versements (DEPOSIT)
+  reference     String?            // référence de virement communiquée par le pilote
+  flightLogId   String?            @unique
+  flightLog     FlightLog?         @relation(fields: [flightLogId], references: [id])
+  notes         String?
+  createdAt     DateTime           @default(now())
+  confirmedAt   DateTime?
+  confirmedById String?
+  confirmedBy   User?              @relation("TransactionConfirmedBy", fields: [confirmedById], references: [id])
+}
+
+// ---------- Licences, qualifications, médicales ----------
+//
+// S'applique à n'importe qui (élève ou instructeur) : licence, classe
+// médicale (1, 2 ou LAPL), qualification de classe/type, variante,
+// qualification additionnelle (montagne...), privilège FI/FE...
+//
+// Modèle à deux niveaux : Qualification est le "créneau" stable (ex. "Classe
+// 2" de tel pilote), QualificationDocument est chaque version/scan importé
+// pour ce créneau (renouvellement). Un nouveau document importé reste
+// PENDING tant que l'admin ne l'a pas validé ; à la validation, il devient
+// le document courant (Qualification.currentDocument) et l'ancien courant
+// passe en ARCHIVED — jamais supprimé, toujours consultable.
+
+enum QualificationType {
+  LICENSE        // LAPL(A), PPL(A)...
+  MEDICAL        // classe 1, classe 2, LAPL
+  CLASS_RATING   // qualification de classe (SEP terre...)
+  VARIANT        // variante (train classique / TW...)
+  ADDITIONAL     // qualification additionnelle (montagne, acro...)
+  INSTRUCTOR_PRIV // FI(A), instructeur théorique...
+  EXAMINER_PRIV   // FE(A)...
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING   // importé, en attente de validation admin
+  VALIDATED // validé par l'admin : c'est le document courant
+  REJECTED  // refusé par l'admin, n'a jamais été pris en compte
+  ARCHIVED  // a été le document courant, remplacé depuis par un plus récent
+}
+
+model Qualification {
+  id                 String            @id @default(cuid())
+  userId             String
+  user               User              @relation("QualificationHolder", fields: [userId], references: [id], onDelete: Cascade)
+  type               QualificationType
+  label              String            // ex: "SEP (terre)", "Classe 2", "FI(A)" — stable d'un renouvellement à l'autre
+  reminderDaysBefore Int               @default(45) // butée de rappel, définissable
+  lastReminderSentAt DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  documents         QualificationDocument[] @relation("QualificationDocuments")
+  currentDocumentId String?                 @unique
+  currentDocument   QualificationDocument?  @relation("CurrentDocument", fields: [currentDocumentId], references: [id])
+}
+
+model QualificationDocument {
+  id              String         @id @default(cuid())
+  qualificationId String
+  qualification   Qualification  @relation("QualificationDocuments", fields: [qualificationId], references: [id], onDelete: Cascade)
+  number          String?        // n° de licence/qualification si applicable
+  issuedAt        DateTime?
+  expiresAt       DateTime?      // null = pas d'échéance
+  notes           String?
+  fileName        String?
+  fileMimeType    String?
+  fileSize        Int?
+  fileData        Bytes?         // contenu du fichier (scan/photo/PDF), servi via une route authentifiée
+  status          DocumentStatus @default(PENDING)
+  rejectionReason String?
+  uploadedAt      DateTime       @default(now())
+  uploadedById    String?
+  uploadedBy      User?          @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  validatedAt     DateTime?
+  validatedById   String?
+  validatedBy     User?          @relation("DocumentValidatedBy", fields: [validatedById], references: [id])
+
+  qualificationCurrent Qualification? @relation("CurrentDocument")
+}
+
+// ---------- Suivi de formation ----------
+//
+// Programmes réels du DTO Alpines Flight (théorique LAPL/PPL, pratique
+// LAPL/PPL, qualification SEP, variante TW, qualification montagne...),
+// importés depuis les fichiers JSON structurés au format 4fly. Un élève
+// s'inscrit à un programme (Enrollment) ; chaque séance avec un instructeur
+// (TrainingSession) fait progresser un ou plusieurs exercices
+// (ExerciseProgress), reprenant la notation du livret de progression papier
+// (Leçon vue / Leçon assimilée / Niveau [licence]).
+
+model TrainingProgram {
+  id                     String   @id @default(cuid())
+  code                   String   @unique // ex: AF-0889-PRAT-PPL-A
+  title                  String
+  category               String?  // licence | qualification_de_classe | variante_de_classe | qualification_additionnelle...
+  modality               String?  // theorique | pratique | mixte
+  referenceReglementaire String?
+  sanction               String?
+  volumeLabel            String?  // "45", "6 à 8 (indicatif)"...
+  notationScale          Json?    // ex: ["Leçon vue","Leçon assimilée","Niveau PPL"]
+  active                 Boolean  @default(true)
+  sourceFile             String?  // traçabilité : fichier JSON d'origine
+  importedAt             DateTime?
+  // Tarif d'instruction €/h pour ce programme (ex: PPL 25€/h, Montagne
+  // 40€/h) — éditable par l'admin. Null = pas de tarif spécifique, la
+  // clôture retombe sur instructorProfile.hourlyRateCents.
+  instructionRateCents   Int?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  phases       TrainingPhase[]
+  enrollments  Enrollment[]
+  reservations Reservation[]
+  flightLogs   FlightLog[]
+}
+
+model TrainingPhase {
+  id              String   @id @default(cuid())
+  programId       String
+  program         TrainingProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  code            String   // "P1", "1A"...
+  order           Int
+  title           String
+  objectifGeneral String?
+
+  exercises TrainingExercise[]
+
+  // Permet un ré-import idempotent (upsert) sans casser les progressions déjà saisies.
+  @@unique([programId, code])
+}
+
+enum ExerciseType {
+  SOL
+  DC
+  SOLO
+  TEST
+  DC_SOLO
+}
+
+model TrainingExercise {
+  id                 String       @id @default(cuid())
+  phaseId            String
+  phase              TrainingPhase @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  order              Int
+  numero             String       // "1", "1a", "NAV-SOLO", "REV"...
+  intitule           String
+  type               ExerciseType
+  objectifs          Json?        // string[]
+  contenu            Json?        // string[]
+  criteresValidation String?
+  dureeIndicativeH   Float?
+  bloquantPour       String?
+  note               String?
+
+  progress ExerciseProgress[]
+
+  @@unique([phaseId, numero])
+}
+
+enum EnrollmentStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+  SUSPENDED
+}
+
+model Enrollment {
+  id             String           @id @default(cuid())
+  studentId      String
+  student        User             @relation("EnrollmentStudent", fields: [studentId], references: [id])
+  programId      String
+  program        TrainingProgram  @relation(fields: [programId], references: [id])
+  instructorId   String?          // instructeur référent
+  instructor     User?            @relation("EnrollmentInstructor", fields: [instructorId], references: [id])
+  status         EnrollmentStatus @default(IN_PROGRESS)
+  startedAt      DateTime         @default(now())
+  completedAt    DateTime? // renseigné à la clôture (status COMPLETED/ABANDONED/SUSPENDED)
+  targetExamDate DateTime?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  sessions TrainingSession[]
+  progress ExerciseProgress[]
+
+  @@unique([studentId, programId])
+}
+
+// Une séance de formation : le FI y renseigne la progression d'un ou
+// plusieurs exercices en une fois (cf. ExerciseProgress). Modifiable après
+// coup, mais seulement par le FI qui l'a saisie (ou un admin).
+model TrainingSession {
+  id           String     @id @default(cuid())
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  date         DateTime
+  instructorId String
+  instructor   User       @relation("SessionInstructor", fields: [instructorId], references: [id])
+  aircraftId   String?
+  aircraft     Aircraft?  @relation(fields: [aircraftId], references: [id])
+  flightLogId  String?    @unique // vol relié à cette séance, pour le résumé d'heures par phase
+  flightLog    FlightLog? @relation(fields: [flightLogId], references: [id], onDelete: SetNull)
+  remarks      String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  progress ExerciseProgress[]
+}
+
+enum ProgressLevel {
+  NON_VU
+  VU
+  ASSIMILE
+  NIVEAU_CIBLE
+}
+
+// Historique complet (une ligne par évaluation d'un exercice lors d'une
+// séance) — le niveau "courant" d'un exercice est la ligne la plus récente.
+model ExerciseProgress {
+  id           String            @id @default(cuid())
+  enrollmentId String
+  enrollment   Enrollment        @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  exerciseId   String
+  exercise     TrainingExercise  @relation(fields: [exerciseId], references: [id])
+  sessionId    String?
+  session      TrainingSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  level        ProgressLevel
+  date         DateTime
+  instructorId String?
+  instructor   User?             @relation("ProgressInstructor", fields: [instructorId], references: [id])
+  notes        String?
+  createdAt    DateTime          @default(now())
+}
+
+// ---------- Réglages de l'école (une seule ligne, id fixe "singleton") ----------
+
+model SchoolSettings {
+  id           String   @id @default("singleton")
+  ibanHolder   String? // titulaire du compte, ex: "Alpines Flight"
+  iban         String?
+  bic          String?
+  bankName     String?
+  notes        String? // ex. instructions de virement complémentaires
+  updatedAt    DateTime @updatedAt
+  updatedById  String?
+  updatedBy    User?    @relation(fields: [updatedById], references: [id])
+}
+
+// ---------- Actualités (tableau de bord) ----------
+//
+// Publiées par l'admin, visibles par tous les comptes sur le tableau de
+// bord — remplace le bloc "Comptes élèves à surveiller".
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  attachments AnnouncementAttachment[]
+}
+
+model AnnouncementAttachment {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  fileName       String
+  fileMimeType   String
+  fileSize       Int
+  // Jamais renvoyé en JSON, voir safeAnnouncementSelect — streaming
+  // uniquement via /api/announcements/[id]/attachments/[attachmentId].
+  fileData       Bytes
+  uploadedAt     DateTime     @default(now())
+}
+
+// ---------- Documentation de l'école ----------
+//
+// Bibliothèque de documents (manuels, procédures, réglementation...),
+// organisée par catégorie libre, avec une visibilité à deux niveaux :
+// ALL (élèves/pilotes + FI + staff) ou FI_ONLY (FI + staff uniquement,
+// masqué aux élèves/pilotes).
+
+enum DocumentVisibility {
+  ALL
+  FI_ONLY
+}
+
+model SchoolDocument {
+  id           String             @id @default(cuid())
+  title        String
+  category     String? // ex: "Procédures", "Manuels avion", "Réglementation"
+  visibility   DocumentVisibility @default(ALL)
+  fileName     String
+  fileMimeType String
+  fileSize     Int
+  // Jamais renvoyé en JSON — streaming uniquement via
+  // /api/documents/[id]/file, qui applique aussi la règle de visibilité.
+  fileData     Bytes
+  uploadedAt   DateTime           @default(now())
+  uploadedById String
+  uploadedBy   User               @relation(fields: [uploadedById], references: [id])
+}

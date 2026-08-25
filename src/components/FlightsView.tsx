@@ -1,0 +1,411 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { apiFetch } from "@/lib/api";
+import { FlightLog } from "@/types/models";
+import { formatDate, formatHours, formatMoney } from "@/lib/format";
+import { Pencil, Trash2, X } from "lucide-react";
+
+function toIsoDate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function firstOfMonthIso(): string {
+  const d = new Date();
+  return toIsoDate(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+function toLocalInput(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+}
+
+const FUEL_CARD_OPTIONS = [
+  { value: "BP", label: "BP" },
+  { value: "TOTAL", label: "Total" },
+  { value: "BADGE_TALLARD", label: "Badge Tallard" },
+];
+const FUEL_TYPE_OPTIONS = [
+  { value: "AVGAS_100LL", label: "Avgas 100LL" },
+  { value: "SP98", label: "SP98" },
+];
+
+export function FlightsView() {
+  const { data: session } = useSession();
+  // Modifier/supprimer un vol touche directement le débit du compte pilote —
+  // réservé au Gérant, comme le reste des finances (voir src/lib/permissions.ts).
+  const canFinanceAdmin = session?.user?.role === "GERANT";
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [from, setFrom] = useState(searchParams.get("from") ?? firstOfMonthIso());
+  const [to, setTo] = useState(searchParams.get("to") ?? toIsoDate(new Date()));
+  const [flights, setFlights] = useState<FlightLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editFlight, setEditFlight] = useState<FlightLog | null>(null);
+
+  async function load(f: string, t: string) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (f) params.set("from", f);
+      if (t) params.set("to", t);
+      const data = await apiFetch<FlightLog[]>(`/api/flights?${params.toString()}`);
+      setFlights(data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load(from, to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyRange(e: React.FormEvent) {
+    e.preventDefault();
+    router.replace(`/vols?from=${from}&to=${to}`);
+    load(from, to);
+  }
+
+  async function handleDelete(f: FlightLog) {
+    if (
+      !window.confirm(
+        `Supprimer ce vol (${f.aircraft.registration}, ${formatDate(f.date)}, ${f.duration}h) ? Le solde du pilote, les heures de l'avion et la réservation d'origine seront réajustés en conséquence.`
+      )
+    )
+      return;
+    await apiFetch(`/api/flights/${f.id}`, { method: "DELETE" });
+    load(from, to);
+  }
+
+  const summary = useMemo(() => {
+    const totalHours = flights.reduce((s, f) => s + f.duration, 0);
+    const totalLandings = flights.reduce((s, f) => s + f.totalLandings, 0);
+    const totalRevenue = flights.reduce((s, f) => s + f.aircraftCostCents + f.instructionCostCents, 0);
+    return { count: flights.length, totalHours, totalLandings, totalRevenue };
+  }, [flights]);
+
+  return (
+    <div className="p-8">
+      <form onSubmit={applyRange} className="flex items-end gap-3 mb-5 flex-wrap">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-navy-600">Du</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-navy-600">Au</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input" />
+        </label>
+        <button
+          type="submit"
+          className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-4 py-2 transition-colors"
+        >
+          Filtrer
+        </button>
+      </form>
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+        <SummaryTile label="Vols" value={String(summary.count)} />
+        <SummaryTile label="Heures de vol" value={formatHours(summary.totalHours)} />
+        <SummaryTile label="Atterrissages" value={String(summary.totalLandings)} />
+        <SummaryTile label="Chiffre d'affaires" value={formatMoney(summary.totalRevenue)} />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-navy-600 border-b border-navy-100">
+              <th className="px-5 py-3 font-medium">Date</th>
+              <th className="px-5 py-3 font-medium">Avion</th>
+              <th className="px-5 py-3 font-medium">Élève</th>
+              <th className="px-5 py-3 font-medium">Instructeur</th>
+              <th className="px-5 py-3 font-medium">Formation</th>
+              <th className="px-5 py-3 font-medium text-right">Durée</th>
+              <th className="px-5 py-3 font-medium text-right">Att.</th>
+              <th className="px-5 py-3 font-medium text-right">Coût</th>
+              {canFinanceAdmin && <th className="px-5 py-3 font-medium" />}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-navy-100">
+            {flights.map((f) => (
+              <tr key={f.id} className="group hover:bg-navy-50/50 transition-colors">
+                <td className="px-5 py-3 text-navy-600 whitespace-nowrap">{formatDate(f.date)}</td>
+                <td className="px-5 py-3 font-medium text-navy-900">{f.aircraft.registration}</td>
+                <td className="px-5 py-3 text-navy-700">
+                  {f.student ? `${f.student.firstName} ${f.student.lastName}` : "—"}
+                </td>
+                <td className="px-5 py-3 text-navy-700">
+                  {f.instructor ? `${f.instructor.firstName} ${f.instructor.lastName}` : "—"}
+                </td>
+                <td className="px-5 py-3 text-navy-500 text-xs">{f.trainingProgram?.title ?? "—"}</td>
+                <td className="px-5 py-3 text-right text-navy-700 whitespace-nowrap">{formatHours(f.duration)}</td>
+                <td className="px-5 py-3 text-right text-navy-700">{f.totalLandings}</td>
+                <td className="px-5 py-3 text-right font-semibold text-navy-900 whitespace-nowrap">
+                  {formatMoney(f.aircraftCostCents + f.instructionCostCents)}
+                </td>
+                {canFinanceAdmin && (
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => setEditFlight(f)}
+                        title="Modifier"
+                        className="text-navy-500 hover:text-navy-900 hover:bg-navy-100 rounded-lg p-1.5"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(f)}
+                        title="Supprimer"
+                        className="text-navy-500 hover:text-red-600 hover:bg-red-100 rounded-lg p-1.5"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {!loading && flights.length === 0 && (
+              <tr>
+                <td colSpan={canFinanceAdmin ? 9 : 8} className="px-5 py-8 text-center text-navy-600">
+                  Aucun vol sur cette période.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {editFlight && (
+        <EditFlightModal
+          flight={editFlight}
+          onClose={() => setEditFlight(null)}
+          onSaved={() => {
+            setEditFlight(null);
+            load(from, to);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SummaryTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white rounded-2xl border border-navy-100 p-4">
+      <p className="text-xl font-bold text-navy-900 leading-tight">{value}</p>
+      <p className="text-xs text-navy-600">{label}</p>
+    </div>
+  );
+}
+
+function EditFlightModal({
+  flight,
+  onClose,
+  onSaved,
+}: {
+  flight: FlightLog;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [departureTime, setDepartureTime] = useState(toLocalInput(new Date(flight.departureTime)));
+  const [arrivalTime, setArrivalTime] = useState(toLocalInput(new Date(flight.arrivalTime)));
+  const [totalLandings, setTotalLandings] = useState(String(flight.totalLandings));
+  const [remarks, setRemarks] = useState(flight.remarks ?? "");
+  const [aircraftCost, setAircraftCost] = useState(String(flight.aircraftCostCents / 100));
+  const [instructionCost, setInstructionCost] = useState(String(flight.instructionCostCents / 100));
+  const [fuelRefillDone, setFuelRefillDone] = useState(flight.fuelRefillDone);
+  const [fuelCard, setFuelCard] = useState(flight.fuelCard ?? "BP");
+  const [fuelLiters, setFuelLiters] = useState(flight.fuelLiters ? String(flight.fuelLiters) : "");
+  const [fuelType, setFuelType] = useState(flight.fuelType ?? "AVGAS_100LL");
+  const [fuelAirfield, setFuelAirfield] = useState(flight.fuelAirfield ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
+  const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/flights/${flight.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          departureTime: new Date(departureTime).toISOString(),
+          arrivalTime: new Date(arrivalTime).toISOString(),
+          totalLandings: parseInt(totalLandings, 10) || 0,
+          remarks: remarks || null,
+          aircraftCostCents: Math.round(parseFloat(aircraftCost) * 100) || 0,
+          instructionCostCents: Math.round(parseFloat(instructionCost) * 100) || 0,
+          fuelRefillDone,
+          ...(fuelRefillDone
+            ? { fuelCard, fuelLiters: parseFloat(fuelLiters) || null, fuelType, fuelAirfield: fuelAirfield || null }
+            : {}),
+        }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
+          <h2 className="font-semibold text-navy-900">
+            Modifier le vol — {flight.aircraft.registration}
+          </h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+          <p className="text-xs text-navy-600 -mt-1">
+            {flight.student ? `${flight.student.firstName} ${flight.student.lastName}` : "Vol sans élève"}
+            {flight.instructor ? ` avec ${flight.instructor.firstName} ${flight.instructor.lastName}` : ""}
+            {" — "}pour changer l&apos;avion, l&apos;élève ou l&apos;instructeur, supprime ce vol et
+            ressaisis-le depuis le planning.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Départ</span>
+              <input
+                type="datetime-local"
+                required
+                value={departureTime}
+                onChange={(e) => setDepartureTime(e.target.value)}
+                className="input"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Arrivée</span>
+              <input
+                type="datetime-local"
+                required
+                value={arrivalTime}
+                onChange={(e) => setArrivalTime(e.target.value)}
+                className="input"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHours(duration)}</p>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Atterrissages (cycles)</span>
+            <input
+              type="number"
+              min={0}
+              value={totalLandings}
+              onChange={(e) => setTotalLandings(e.target.value)}
+              className="input"
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Coût avion (€)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={aircraftCost}
+                onChange={(e) => setAircraftCost(e.target.value)}
+                className="input"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Coût instruction (€)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={instructionCost}
+                onChange={(e) => setInstructionCost(e.target.value)}
+                className="input"
+              />
+            </label>
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Remarques</span>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              className="input min-h-16"
+            />
+          </label>
+
+          <div className="rounded-lg border border-navy-100">
+            <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={fuelRefillDone}
+                onChange={(e) => setFuelRefillDone(e.target.checked)}
+              />
+              <span className="text-sm font-medium text-navy-800">Plein de carburant effectué</span>
+            </label>
+            {fuelRefillDone && (
+              <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value as typeof fuelCard)} className="input">
+                    {FUEL_CARD_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={fuelType} onChange={(e) => setFuelType(e.target.value as typeof fuelType)} className="input">
+                    {FUEL_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    placeholder="Litres"
+                    value={fuelLiters}
+                    onChange={(e) => setFuelLiters(e.target.value)}
+                    className="input"
+                  />
+                  <input
+                    placeholder="Terrain (OACI)"
+                    value={fuelAirfield}
+                    onChange={(e) => setFuelAirfield(e.target.value.toUpperCase())}
+                    className="input uppercase"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={saving || duration <= 0}
+            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

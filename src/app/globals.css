@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+:root {
+  /* Charte graphique Alpines Flight — couleurs exactes échantillonnées sur le logo officiel */
+  --color-navy-950: #071527;
+  --color-navy-900: #0a1e39;
+  --color-navy-800: #0c2448;   /* navy principal (fond du logo) */
+  --color-navy-700: #17335a;
+  --color-navy-600: #2c4d74;
+  --color-navy-100: #dbe3ee;
+  --color-navy-50:  #f2f5f9;
+
+  --color-cream-500: #fce4c0;  /* crème du lettrage / carlingue */
+  --color-cream-100: #fdf0dc;
+  --color-cream-50:  #fef8ef;
+
+  --color-sunset-600: #d33d10; /* soleil couchant, plus foncé (hover) */
+  --color-sunset-500: #f04818; /* soleil couchant du logo */
+  --color-sunset-100: #fbdccb;
+
+  --color-red-600: #8f0e16;    /* liseré avion, plus foncé (hover) */
+  --color-red-500: #b4141e;    /* rouge liseré/carénage du logo */
+  --color-red-100: #f5d9da;
+
+  --background: var(--color-cream-50);
+  --foreground: var(--color-navy-900);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-navy-950: var(--color-navy-950);
+  --color-navy-900: var(--color-navy-900);
+  --color-navy-800: var(--color-navy-800);
+  --color-navy-700: var(--color-navy-700);
+  --color-navy-600: var(--color-navy-600);
+  --color-navy-100: var(--color-navy-100);
+  --color-navy-50:  var(--color-navy-50);
+
+  --color-cream-500: var(--color-cream-500);
+  --color-cream-100: var(--color-cream-100);
+  --color-cream-50:  var(--color-cream-50);
+
+  --color-sunset-600: var(--color-sunset-600);
+  --color-sunset-500: var(--color-sunset-500);
+  --color-sunset-100: var(--color-sunset-100);
+
+  --color-red-600: var(--color-red-600);
+  --color-red-500: var(--color-red-500);
+  --color-red-100: var(--color-red-100);
+
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-poppins);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Dans @layer components (pas en CSS "nu") pour que les utilitaires
+   Tailwind (ex: pl-9 pour dégager la place d'une icône) restent
+   prioritaires sur ce padding par défaut — en CSS non calqué, .input
+   gagnerait toujours face à une classe utilitaire de même spécificité,
+   quel que soit l'ordre des classes dans le JSX. */
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-navy-100 px-3 py-2 text-sm text-navy-900 focus:outline-none focus:ring-2 focus:ring-sunset-500;
+  }
+}
+
+/* Overrides pour react-big-calendar, pour matcher la charte */
+.rbc-calendar {
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+.rbc-toolbar button {
+  color: var(--color-navy-800);
+  border-color: var(--color-navy-100);
+}
+.rbc-toolbar button:hover {
+  background: var(--color-navy-50);
+}
+.rbc-toolbar button.rbc-active {
+  background: var(--color-navy-800);
+  color: white;
+  border-color: var(--color-navy-800);
+}
+.rbc-today {
+  background-color: var(--color-sunset-100);
+}
+.rbc-off-range-bg {
+  background: var(--color-navy-50);
+}
+.rbc-event {
+  border: none !important;
+}
+.rbc-time-view, .rbc-month-view {
+  border-color: var(--color-navy-100) !important;
+}
+.rbc-time-header-content, .rbc-time-content > * + * > * {
+  border-color: var(--color-navy-100) !important;
+}
+.rbc-header {
+  border-color: var(--color-navy-100) !important;
+  color: var(--color-navy-800);
+  font-weight: 600;
+  padding: 8px 0;
+}
+/* L'étiquette d'horaire générée automatiquement (au-dessus du contenu de
+   l'événement) est masquée en vues Jour/Semaine : l'horaire se lit déjà à
+   la position verticale sur le planning, et dans une case étroite (deux
+   réservations côte à côte au même horaire) elle mangeait la place qui
+   doit montrer l'immatriculation — voir CalendarEventContent dans
+   PlanningView.tsx. Sans effet sur l'Agenda, qui a sa propre colonne Heure. */
+.rbc-time-view .rbc-event-label {
+  display: none;
+}
+.rbc-time-view .rbc-event-content {
+  padding-top: 1px;
+}
