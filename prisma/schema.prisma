@@ -1,14 +1,17 @@
 // Alpines Flight — schéma de base de données
-// Local-first (SQLite). Migration facile vers Postgres/Supabase plus tard
-// (il suffira de changer le provider + l'url de connexion).
+// Postgres (Neon), en production comme en local depuis la migration du
+// 26/08/2026 — voir prisma/migration-export.ts et migration-import.ts.
+// directUrl : connexion directe (hors pgbouncer) utilisée uniquement par le
+// moteur de migration — url reste la connexion "pooled" utilisée à l'exécution.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ---------- Utilisateurs & rôles ----------
