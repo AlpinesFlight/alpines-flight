@@ -97,7 +97,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("POST /api/students a échoué :", err);
     return NextResponse.json(
-      { error: "diagnostic", detail: err instanceof Error ? err.message : String(err) },
+      { error: `diagnostic: ${err instanceof Error ? err.message : String(err)}` },
       { status: 500 }
     );
   }
