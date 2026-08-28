@@ -105,6 +105,14 @@ export function Sidebar({
             <Link
               key={item.href}
               href={item.href}
+              // Le menu affiche ~13 liens en permanence sur chaque page — le
+              // préchargement automatique de Next.js (actif seulement en
+              // production, donc invisible en test local) les précharge
+              // TOUS dès qu'ils entrent dans le viewport, soit une douzaine
+              // de requêtes en arrière-plan à chaque chargement de page.
+              // Coûteux pour peu de gain sur un outil interne (pas besoin
+              // d'une navigation instantanée) — désactivé.
+              prefetch={false}
               className={clsx(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                 active
