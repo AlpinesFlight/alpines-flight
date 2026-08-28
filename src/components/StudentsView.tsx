@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { UserLite } from "@/types/models";
 import { formatHours, formatMoney } from "@/lib/format";
-import { Plus, Search, X, ShieldCheck, Pencil, UserX } from "lucide-react";
+import { Plus, Search, X, ShieldCheck, Pencil, UserX, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
 
@@ -355,6 +355,7 @@ function StudentDetailModal({
   const [togglingPilot, setTogglingPilot] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     try {
@@ -413,6 +414,34 @@ function StudentDetailModal({
     }
   }
 
+  // Suppression totale (pas une anonymisation) — n'aboutit que si le compte
+  // n'a strictement aucun historique (voir DELETE /api/students/[id], qui
+  // refuse sinon avec un message clair). Utile pour un compte créé par
+  // erreur, jamais utilisé.
+  async function handleDelete() {
+    if (!data) return;
+    if (
+      !window.confirm(
+        `Supprimer DÉFINITIVEMENT le compte de ${data.firstName} ${data.lastName} ?\n\n` +
+          "Contrairement à l'anonymisation, ceci efface totalement le compte — aucune trace ne sera conservée. " +
+          "Ça ne fonctionne que si ce compte n'a jamais eu de vol, réservation ou mouvement financier (sinon la " +
+          "suppression sera refusée, utilise l'anonymisation à la place dans ce cas).\n\n" +
+          "Cette action est irréversible et ne peut pas être annulée."
+      )
+    )
+      return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/api/students/${studentId}`, { method: "DELETE" });
+      onUpdated();
+      onClose();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
     <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
@@ -439,6 +468,16 @@ function StudentDetailModal({
                 className="text-navy-500 hover:text-red-600 disabled:opacity-50"
               >
                 <UserX size={17} />
+              </button>
+            )}
+            {data && isGerant && (
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Supprimer définitivement (seulement si aucun historique)"
+                className="text-navy-500 hover:text-red-600 disabled:opacity-50"
+              >
+                <Trash2 size={17} />
               </button>
             )}
             <button onClick={onClose} className="text-navy-600 hover:text-navy-900">

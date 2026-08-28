@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect } from "@/lib/selects";
-import { canManageFinance, canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
+import { canManageFinance, canManageSchool, isInstructorOrAbove, isGerant } from "@/lib/permissions";
+import { Prisma } from "@prisma/client";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -103,4 +104,56 @@ export async function PATCH(req: Request, { params }: Params) {
     select: { ...safeUserSelect, studentProfile: true },
   });
   return NextResponse.json(user);
+}
+
+// Suppression totale (pas une anonymisation) — réservée au Gérant, et
+// refusée si le compte a le moindre historique (vols, réservations,
+// mouvements financiers, séances de formation...) que l'école doit
+// légalement conserver (comptabilité 10 ans, dossiers DTO 3 ans — voir la
+// politique de confidentialité). Dans ce cas, POST /api/users/[id]/anonymize
+// reste la seule voie. Utile pour un compte créé par erreur, jamais utilisé.
+export async function DELETE(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session || !isGerant(session.user.role))
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  if (id === session.user.id) {
+    return NextResponse.json({ error: "Tu ne peux pas supprimer ton propre compte." }, { status: 400 });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true } });
+  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (existing.role !== "STUDENT") {
+    return NextResponse.json({ error: "Ce compte n'est pas un compte élève." }, { status: 400 });
+  }
+
+  try {
+    await prisma.user.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    // Violation de clé étrangère : au moins une table référence encore ce
+    // compte (vol, réservation, mouvement financier, séance de formation...)
+    // — la base refuse à raison, cet historique doit être conservé. Testé
+    // en conditions réelles : Postgres/Prisma ne renvoie pas toujours le
+    // code "connu" P2003 pour ce cas précis (RESTRICT), d'où la détection
+    // par message en complément — ne jamais se fier au seul code P2003 ici.
+    const message = err instanceof Error ? err.message : String(err);
+    const isForeignKeyViolation =
+      (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") ||
+      /foreign key constraint/i.test(message);
+
+    if (isForeignKeyViolation) {
+      return NextResponse.json(
+        {
+          error:
+            "Impossible : ce compte a un historique (vols, réservations, mouvements financiers ou formation) que l'école doit légalement conserver. Utilise plutôt l'anonymisation.",
+        },
+        { status: 409 }
+      );
+    }
+
+    console.error("DELETE /api/students/[id] a échoué :", err);
+    return NextResponse.json({ error: "La suppression a échoué." }, { status: 500 });
+  }
 }
