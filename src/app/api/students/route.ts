@@ -71,13 +71,14 @@ export async function POST(req: Request) {
   const dup = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (dup) return NextResponse.json({ error: "Cet email est déjà utilisé." }, { status: 409 });
 
-  const { password, ...fields } = parsed.data;
+  // licenseType/isPilot sont retirés de `fields` : ce sont des champs du
+  // StudentProfile, pas du User — les laisser dans `fields` les faisait
+  // atterrir (via le spread ci-dessous) directement sur le User, que Prisma
+  // rejette à raison (bug réel, à l'origine du 500 en production).
+  const { password, licenseType, isPilot, ...fields } = parsed.data;
   const tempPassword = password ? null : Math.random().toString(36).slice(-10);
   const passwordHash = await bcrypt.hash(password ?? tempPassword!, 10);
 
-  // TEMPORAIRE — diagnostic d'un 500 en production : capture l'erreur exacte
-  // au lieu de laisser Next.js renvoyer un 500 générique sans détail. À
-  // retirer une fois le bug identifié.
   try {
     const user = await prisma.user.create({
       data: {
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
         role: "STUDENT",
         passwordHash,
         studentProfile: {
-          create: { licenseType: fields.licenseType, isPilot: fields.isPilot ?? false },
+          create: { licenseType, isPilot: isPilot ?? false },
         },
       },
       select: { ...safeUserSelect, studentProfile: true },
@@ -95,9 +96,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ user, tempPassword }, { status: 201 });
   } catch (err) {
+    // Le détail (console.error) reste consultable dans les logs Vercel pour
+    // debug — jamais renvoyé tel quel au client (fuite de structure interne).
     console.error("POST /api/students a échoué :", err);
     return NextResponse.json(
-      { error: `diagnostic: ${err instanceof Error ? err.message : String(err)}` },
+      { error: "La création du compte a échoué. Réessaie, ou contacte le support si ça persiste." },
       { status: 500 }
     );
   }
