@@ -75,21 +75,32 @@ export async function POST(req: Request) {
   const tempPassword = password ? null : Math.random().toString(36).slice(-10);
   const passwordHash = await bcrypt.hash(password ?? tempPassword!, 10);
 
-  const user = await prisma.user.create({
-    data: {
-      ...fields,
-      role: "STUDENT",
-      passwordHash,
-      studentProfile: {
-        create: { licenseType: fields.licenseType, isPilot: fields.isPilot ?? false },
+  // TEMPORAIRE — diagnostic d'un 500 en production : capture l'erreur exacte
+  // au lieu de laisser Next.js renvoyer un 500 générique sans détail. À
+  // retirer une fois le bug identifié.
+  try {
+    const user = await prisma.user.create({
+      data: {
+        ...fields,
+        role: "STUDENT",
+        passwordHash,
+        studentProfile: {
+          create: { licenseType: fields.licenseType, isPilot: fields.isPilot ?? false },
+        },
       },
-    },
-    select: { ...safeUserSelect, studentProfile: true },
-  });
+      select: { ...safeUserSelect, studentProfile: true },
+    });
 
-  await sendWelcomeEmail(user.firstName, user.email, password ?? tempPassword!);
+    await sendWelcomeEmail(user.firstName, user.email, password ?? tempPassword!);
 
-  return NextResponse.json({ user, tempPassword }, { status: 201 });
+    return NextResponse.json({ user, tempPassword }, { status: 201 });
+  } catch (err) {
+    console.error("POST /api/students a échoué :", err);
+    return NextResponse.json(
+      { error: "diagnostic", detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }
 
 // Email de bienvenue — identifiants + prise en main rapide. Best-effort :
