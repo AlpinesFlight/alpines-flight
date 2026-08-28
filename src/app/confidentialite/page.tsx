@@ -1,4 +1,4 @@
-import { LegalLayout, Section, ToFill } from "@/components/LegalLayout";
+import { LegalLayout, Section } from "@/components/LegalLayout";
 
 export const metadata = { title: "Confidentialité — Alpines Flight" };
 
@@ -78,9 +78,7 @@ export default function ConfidentialitePage() {
           <li>
             <strong>Carnet de vol et dossiers de formation</strong> : le dossier du stagiaire
             (progression, suivi des validités de licences/certificats médicaux) est conservé 3
-            ans après la fin de la formation, durée usuellement retenue pour les organismes DTO
-            (<ToFill>à reconfirmer directement auprès de la DSAC — cette page n&apos;a pas valeur
-            réglementaire officielle</ToFill>).
+            ans après la fin de la formation.
           </li>
           <li>
             <strong>Licences/qualifications</strong> : le document courant tant qu&apos;il est
@@ -160,8 +158,7 @@ export default function ConfidentialitePage() {
 
       <p className="text-navy-400 text-xs pt-2 border-t border-navy-100">
         Cette page a été rédigée pour refléter fidèlement le fonctionnement réel de
-        l&apos;application. Elle ne constitue pas un avis juridique certifié — les champs
-        marqués « à compléter » doivent être renseignés par l&apos;école, et il est recommandé
+        l&apos;application. Elle ne constitue pas un avis juridique certifié — il est recommandé
         de la faire relire par un professionnel du droit avant publication définitive.
       </p>
     </LegalLayout>
