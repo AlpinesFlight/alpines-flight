@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { UserLite } from "@/types/models";
 import { formatHours, formatMoney } from "@/lib/format";
-import { Plus, Search, X, ShieldCheck } from "lucide-react";
+import { Plus, Search, X, ShieldCheck, Pencil, UserX } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
 
@@ -347,9 +348,13 @@ function StudentDetailModal({
   onClose: () => void;
   onUpdated: () => void;
 }) {
+  const { data: session } = useSession();
+  const isGerant = session?.user?.role === "GERANT";
   const [data, setData] = useState<StudentDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [togglingPilot, setTogglingPilot] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [anonymizing, setAnonymizing] = useState(false);
 
   async function load() {
     try {
@@ -380,16 +385,66 @@ function StudentDetailModal({
     }
   }
 
+  // Droit à l'effacement RGPD — anonymise plutôt que supprimer purement
+  // (le solde et l'historique de vols doivent être conservés, obligations
+  // comptables et DTO) — même mécanisme que la page Comptes & droits, voir
+  // /api/users/[id]/anonymize.
+  async function handleAnonymize() {
+    if (!data) return;
+    if (
+      !window.confirm(
+        `Anonymiser le compte de ${data.firstName} ${data.lastName} ?\n\n` +
+          "Nom, email et téléphone seront remplacés par des valeurs anonymes, la connexion sera définitivement " +
+          "impossible, et ses documents de licence/médicale seront supprimés. Le solde et l'historique de vols " +
+          "restent conservés (obligations comptables et DTO), rattachés au compte désormais anonyme.\n\n" +
+          "Cette action est irréversible."
+      )
+    )
+      return;
+    setAnonymizing(true);
+    try {
+      await apiFetch(`/api/users/${studentId}/anonymize`, { method: "POST" });
+      onUpdated();
+      onClose();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setAnonymizing(false);
+    }
+  }
+
   return (
+    <>
     <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
             {data ? `${data.firstName} ${data.lastName}` : loadError ? "Accès refusé" : "Chargement..."}
           </h2>
-          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-3">
+            {data && (
+              <button
+                onClick={() => setShowEdit(true)}
+                title="Modifier les informations"
+                className="text-navy-500 hover:text-navy-900"
+              >
+                <Pencil size={17} />
+              </button>
+            )}
+            {data && isGerant && (
+              <button
+                onClick={handleAnonymize}
+                disabled={anonymizing}
+                title="Anonymiser (droit à l'effacement RGPD)"
+                className="text-navy-500 hover:text-red-600 disabled:opacity-50"
+              >
+                <UserX size={17} />
+              </button>
+            )}
+            <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {loadError && !data && (
@@ -484,6 +539,149 @@ function StudentDetailModal({
             </div>
           </div>
         )}
+      </div>
+    </div>
+
+    {showEdit && data && (
+      <EditStudentModal
+        student={data}
+        onClose={() => setShowEdit(false)}
+        onSaved={async () => {
+          setShowEdit(false);
+          await load();
+          onUpdated();
+        }}
+      />
+    )}
+    </>
+  );
+}
+
+function EditStudentModal({
+  student,
+  onClose,
+  onSaved,
+}: {
+  student: StudentDetail;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [firstName, setFirstName] = useState(student.firstName);
+  const [lastName, setLastName] = useState(student.lastName);
+  const [phone, setPhone] = useState(student.phone ?? "");
+  const [licenseType, setLicenseType] = useState(student.studentProfile?.licenseType ?? "");
+  const [licenseNumber, setLicenseNumber] = useState(student.studentProfile?.licenseNumber ?? "");
+  const [medicalExpiry, setMedicalExpiry] = useState(
+    student.studentProfile?.medicalExpiry ? student.studentProfile.medicalExpiry.slice(0, 10) : ""
+  );
+  const [notes, setNotes] = useState(student.studentProfile?.notes ?? "");
+  const [isPilot, setIsPilot] = useState(student.studentProfile?.isPilot ?? false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/students/${student.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          phone: phone || null,
+          licenseType: licenseType || null,
+          licenseNumber: licenseNumber || null,
+          medicalExpiry: medicalExpiry || null,
+          notes: notes || null,
+          isPilot,
+        }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
+          <h2 className="font-semibold text-navy-900">Modifier les informations</h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              required
+              placeholder="Prénom"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="input"
+            />
+            <input
+              required
+              placeholder="Nom"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              className="input"
+            />
+          </div>
+          <p className="text-xs text-navy-500 -mt-1">
+            Email : {student.email} (non modifiable ici — c&apos;est l&apos;identifiant de connexion)
+          </p>
+          <input
+            placeholder="Téléphone"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="input"
+          />
+          <input
+            placeholder="Licence (ex: PPL, LAPL)"
+            value={licenseType}
+            onChange={(e) => setLicenseType(e.target.value)}
+            className="input"
+          />
+          <input
+            placeholder="Numéro de licence"
+            value={licenseNumber}
+            onChange={(e) => setLicenseNumber(e.target.value)}
+            className="input"
+          />
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Échéance certificat médical</span>
+            <input
+              type="date"
+              value={medicalExpiry}
+              onChange={(e) => setMedicalExpiry(e.target.value)}
+              className="input"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Notes internes</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="input min-h-16"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-navy-700 rounded-lg border border-navy-100 px-3 py-2.5 cursor-pointer">
+            <input type="checkbox" checked={isPilot} onChange={(e) => setIsPilot(e.target.checked)} />
+            Pilote déjà breveté (plutôt qu&apos;élève en formation)
+          </label>
+          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
+        </form>
       </div>
     </div>
   );
