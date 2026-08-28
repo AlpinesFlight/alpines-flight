@@ -1,13 +1,17 @@
-import nodemailer from "nodemailer";
-
-// Envoi d'e-mail optionnel : n'est actif que si des identifiants SMTP sont
-// fournis dans .env (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM).
-// Sans configuration, isMailerConfigured() renvoie false et l'appelant doit
-// se rabattre sur l'affichage du message pour envoi manuel — on ne prétend
-// jamais avoir envoyé un e-mail qui ne l'a pas été.
+// Envoi d'e-mail via l'API HTTP de Resend (pas de SMTP) — les connexions
+// SMTP sortantes se sont montrées peu fiables en environnement serverless
+// (Vercel), symptôme classique documenté par Vercel lui-même
+// (vercel.com/kb/guide/serverless-functions-and-smtp) : l'appli créait bien
+// les comptes mais aucun email ne partait, sans erreur visible. L'API HTTP
+// (HTTPS standard, port 443) ne pose pas ce problème.
+//
+// Optionnel : n'est actif que si RESEND_API_KEY et MAIL_FROM sont fournis
+// dans .env. Sans configuration, isMailerConfigured() renvoie false et
+// l'appelant doit se rabattre sur l'affichage du message pour envoi manuel —
+// on ne prétend jamais avoir envoyé un e-mail qui ne l'a pas été.
 
 export function isMailerConfigured(): boolean {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return !!(process.env.RESEND_API_KEY && process.env.MAIL_FROM);
 }
 
 export interface MailMessage {
@@ -22,27 +26,29 @@ export interface MailMessage {
 
 export async function sendMail(message: MailMessage): Promise<{ sent: boolean; error?: string }> {
   if (!isMailerConfigured()) {
-    return { sent: false, error: "SMTP non configuré (SMTP_HOST / SMTP_USER / SMTP_PASS manquants dans .env)." };
+    return { sent: false, error: "Resend non configuré (RESEND_API_KEY / MAIL_FROM manquants dans .env)." };
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
-      secure: process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        from: process.env.MAIL_FROM,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        ...(message.html ? { html: message.html } : {}),
+      }),
     });
 
-    await transporter.sendMail({
-      from: process.env.MAIL_FROM || process.env.SMTP_USER,
-      to: message.to.join(", "),
-      subject: message.subject,
-      text: message.text,
-      ...(message.html ? { html: message.html } : {}),
-    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { sent: false, error: `Resend a répondu ${res.status} : ${body.slice(0, 300)}` };
+    }
 
     return { sent: true };
   } catch (err) {

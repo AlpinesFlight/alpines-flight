@@ -50,10 +50,9 @@ export async function notifyNewDocument(document: {
         document.category ? ` (${document.category})` : ""
       }.\n\nMerci d'en prendre connaissance et de confirmer sa lecture sur : ${docUrl}`;
 
-      try {
-        await sendMail({ to: [r.email], subject: `Nouveau document — ${document.title}`, text, html });
-      } catch {
-        // Silencieux : voir commentaire ci-dessus.
+      const result = await sendMail({ to: [r.email], subject: `Nouveau document — ${document.title}`, text, html });
+      if (!result.sent) {
+        console.error(`Email nouveau document non envoyé à ${r.email} :`, result.error);
       }
     })
   );

@@ -83,10 +83,14 @@ export async function notifyReservation(reservation: ReservationWithRelations, k
         TYPE_LABELS[reservation.type] ?? reservation.type
       }\nDépart : ${formatDateTime(reservation.startTime)}\nFin prévue : ${formatDateTime(reservation.endTime)}`;
 
-      try {
-        await sendMail({ to: [email], subject: `${SUBJECT[kind]} — ${formatDateTime(reservation.startTime)}`, text, html });
-      } catch {
-        // Silencieux : un email qui échoue ne doit jamais faire échouer l'action déclenchante.
+      const result = await sendMail({
+        to: [email],
+        subject: `${SUBJECT[kind]} — ${formatDateTime(reservation.startTime)}`,
+        text,
+        html,
+      });
+      if (!result.sent) {
+        console.error(`Email réservation (${kind}) non envoyé à ${email} :`, result.error);
       }
     })
   );

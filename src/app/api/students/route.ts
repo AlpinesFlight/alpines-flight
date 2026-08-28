@@ -152,14 +152,16 @@ Pour bien démarrer :
 - Formation : ta progression y est mise à jour par tes instructeurs.
 - Licences : dépose tes documents pour être relancé avant leur expiration.`;
 
-  try {
-    await sendMail({
-      to: [email],
-      subject: "Bienvenue chez Alpines Flight — tes identifiants",
-      text,
-      html,
-    });
-  } catch {
-    // Silencieux : voir commentaire ci-dessus.
+  const result = await sendMail({
+    to: [email],
+    subject: "Bienvenue chez Alpines Flight — tes identifiants",
+    text,
+    html,
+  });
+  if (!result.sent) {
+    // sendMail ne lève jamais d'exception (voir son implémentation) — sans
+    // ce log, un échec d'envoi restait totalement invisible, y compris dans
+    // les logs serveur.
+    console.error("Email de bienvenue non envoyé :", result.error);
   }
 }
