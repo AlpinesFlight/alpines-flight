@@ -10,17 +10,35 @@ export default function MentionsLegalesPage() {
           <li>Raison sociale : <ToFill>nom de la structure</ToFill></li>
           <li>Forme juridique : <ToFill>ex. association loi 1901, SAS, auto-entreprise...</ToFill></li>
           <li>SIRET : <ToFill>numéro SIRET</ToFill></li>
-          <li>Siège social : <ToFill>adresse complète</ToFill></li>
+          <li>Siège social : 2 impasse de l&apos;Aéropostale, 05130 Tallard</li>
           <li>Numéro DTO (agrément DSAC) : <ToFill>référence de la déclaration</ToFill></li>
-          <li>Directeur de la publication : <ToFill>nom du responsable</ToFill></li>
-          <li>Contact : <ToFill>email ou téléphone</ToFill></li>
+          <li>Directeur de la publication : <ToFill>nom du responsable (par défaut : le compte Gérant)</ToFill></li>
+          <li>Contact : contact@alpinesflight.com · +33 (0)6 51 40 71 08</li>
         </ul>
       </Section>
 
       <Section title="Hébergement">
+        <p className="text-navy-600 text-xs mb-1">
+          Coordonnées complètes des hébergeurs disponibles sur leurs propres pages légales,
+          plus fiables et à jour qu&apos;une adresse recopiée ici.
+        </p>
         <ul className="flex flex-col gap-1">
-          <li>Hébergeur : <ToFill>nom de l&apos;hébergeur (ex. OVH)</ToFill></li>
-          <li>Adresse : <ToFill>adresse de l&apos;hébergeur</ToFill></li>
+          <li>
+            Application (dtoalpinesflight.com) : Vercel Inc. —{" "}
+            <a href="https://vercel.com/legal" target="_blank" rel="noopener noreferrer" className="text-sunset-600 hover:underline">
+              vercel.com/legal
+            </a>
+          </li>
+          <li>
+            Base de données : Neon (via Vercel), infrastructure AWS région Europe — Francfort,
+            Allemagne
+          </li>
+          <li>
+            Nom de domaine : OVH SAS, 2 rue Kellermann, 59100 Roubaix, France —{" "}
+            <a href="https://www.ovhcloud.com/fr/personal-data-protection/" target="_blank" rel="noopener noreferrer" className="text-sunset-600 hover:underline">
+              ovhcloud.com
+            </a>
+          </li>
         </ul>
       </Section>
 

@@ -8,7 +8,7 @@ export default function ConfidentialitePage() {
       title="Politique de confidentialité"
       subtitle="Comment Alpines Flight traite les données personnelles de cette application"
     >
-      <p className="text-navy-500 text-xs">Dernière mise à jour : 25 août 2026.</p>
+      <p className="text-navy-500 text-xs">Dernière mise à jour : 28 août 2026.</p>
 
       <Section title="1. Qui est responsable de vos données">
         <p>
@@ -74,19 +74,21 @@ export default function ConfidentialitePage() {
             à l&apos;obligation légale de conservation des pièces comptables (Code de commerce).
           </li>
           <li>
-            <strong>Carnet de vol et dossiers de formation</strong> : conservés pendant la durée
-            exigée par la réglementation applicable aux DTO — <ToFill>durée exacte à confirmer
-            auprès de la DSAC/de l&apos;autorité de tutelle</ToFill>.
+            <strong>Carnet de vol et dossiers de formation</strong> : le dossier du stagiaire
+            (progression, suivi des validités de licences/certificats médicaux) est conservé 3
+            ans après la fin de la formation, durée usuellement retenue pour les organismes DTO
+            (<ToFill>à reconfirmer directement auprès de la DSAC — cette page n&apos;a pas valeur
+            réglementaire officielle</ToFill>).
           </li>
           <li>
             <strong>Licences/qualifications</strong> : le document courant tant qu&apos;il est
             valide ; les versions remplacées sont archivées pour l&apos;historique.
           </li>
           <li>
-            <strong>Compte inactif</strong> (élève/pilote n&apos;ayant plus d&apos;activité) :{" "}
-            <ToFill>durée avant anonymisation automatique à décider par l&apos;école</ToFill> — en
-            attendant, l&apos;anonymisation peut être faite manuellement par le Gérant à tout moment
-            (voir section 5).
+            <strong>Compte inactif</strong> (élève/pilote n&apos;ayant plus d&apos;activité) : la
+            politique de l&apos;école est de procéder à l&apos;anonymisation après 3 ans
+            d&apos;inactivité. Cette anonymisation reste à ce jour effectuée manuellement par le
+            Gérant (aucune automatisation programmée dans l&apos;application) — voir section 5.
           </li>
         </ul>
       </Section>
@@ -116,7 +118,7 @@ export default function ConfidentialitePage() {
           </li>
         </ul>
         <p>
-          Contact pour exercer ces droits : <ToFill>adresse email ou postale dédiée</ToFill>. Vous
+          Contact pour exercer ces droits : contact@alpinesflight.com. Vous
           pouvez aussi introduire une réclamation auprès de la CNIL (
           <a href="https://www.cnil.fr" target="_blank" rel="noopener noreferrer" className="text-sunset-600 hover:underline">
             cnil.fr
@@ -135,10 +137,14 @@ export default function ConfidentialitePage() {
       </Section>
 
       <Section title="7. Hébergement et sous-traitants">
-        <p>
-          Les données sont hébergées par <ToFill>nom et localisation de l&apos;hébergeur</ToFill>.{" "}
-          <ToFill>Ajouter ici tout autre sous-traitant traitant des données (envoi d&apos;emails, etc.), le cas échéant</ToFill>.
-        </p>
+        <p>Les données sont traitées par les sous-traitants suivants, tous situés dans l&apos;Union européenne ou soumis à des garanties équivalentes :</p>
+        <ul className="list-disc pl-5 flex flex-col gap-1">
+          <li><strong>Vercel Inc.</strong> — hébergement de l&apos;application (États-Unis, garanties contractuelles standard UE).</li>
+          <li><strong>Neon</strong> (via Vercel) — base de données, infrastructure AWS région Europe (Francfort, Allemagne).</li>
+          <li><strong>Resend</strong> — envoi des emails automatiques (bienvenue, réservations, rappels, documents), infrastructure Europe (Irlande).</li>
+          <li><strong>OVH SAS</strong> (France) — uniquement l&apos;enregistrement du nom de domaine, aucune donnée personnelle n&apos;y transite.</li>
+        </ul>
+        <p>Aucune donnée n&apos;est vendue ni utilisée à des fins publicitaires par l&apos;école ou ses sous-traitants.</p>
       </Section>
 
       <Section title="8. Sécurité">
@@ -146,7 +152,7 @@ export default function ConfidentialitePage() {
           Les mots de passe ne sont jamais stockés en clair (hachage). Les fichiers sensibles
           (scans de documents, pièces jointes) ne transitent jamais par une simple liste : ils
           sont servis un par un, après vérification des droits d&apos;accès. Les échanges avec
-          l&apos;application doivent être chiffrés (HTTPS) une fois en production.
+          l&apos;application sont chiffrés (HTTPS).
         </p>
       </Section>
 
