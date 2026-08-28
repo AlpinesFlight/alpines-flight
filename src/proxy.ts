@@ -23,7 +23,11 @@ export default auth((req) => {
 });
 
 export const config = {
-  // Exclut les routes d'auth, les assets Next et tout fichier statique
-  // (n'importe quel chemin contenant une extension, ex: /brand/logo.png)
-  matcher: ["/((?!api/auth|_next/static|_next/image|.*\\..*).*)"],
+  // Exclut toutes les routes API (chacune vérifie déjà elle-même la session
+  // ou, pour /api/cron/*, un jeton Authorization dédié — un redirect HTML
+  // vers /login ici casserait ces appels, qui attendent du JSON ou n'ont
+  // justement pas de session de navigateur), les assets Next et tout
+  // fichier statique (n'importe quel chemin contenant une extension, ex:
+  // /brand/logo.png).
+  matcher: ["/((?!api|_next/static|_next/image|.*\\..*).*)"],
 };
