@@ -1,4 +1,4 @@
-import { LegalLayout, Section, ToFill } from "@/components/LegalLayout";
+import { LegalLayout, Section } from "@/components/LegalLayout";
 
 export const metadata = { title: "Mentions légales — Alpines Flight" };
 
@@ -7,12 +7,12 @@ export default function MentionsLegalesPage() {
     <LegalLayout title="Mentions légales" subtitle="Éditeur, hébergement et propriété intellectuelle">
       <Section title="Éditeur du site">
         <ul className="flex flex-col gap-1">
-          <li>Raison sociale : <ToFill>nom de la structure</ToFill></li>
-          <li>Forme juridique : <ToFill>ex. association loi 1901, SAS, auto-entreprise...</ToFill></li>
-          <li>SIRET : <ToFill>numéro SIRET</ToFill></li>
+          <li>Raison sociale : Alpines Flight</li>
+          <li>Forme juridique : SARL</li>
+          <li>SIRET : 939 864 146 00021</li>
           <li>Siège social : 2 impasse de l&apos;Aéropostale, 05130 Tallard</li>
-          <li>Numéro DTO (agrément DSAC) : <ToFill>référence de la déclaration</ToFill></li>
-          <li>Directeur de la publication : <ToFill>nom du responsable (par défaut : le compte Gérant)</ToFill></li>
+          <li>Numéro DTO (agrément DSAC) : DTO0889</li>
+          <li>Directeur de la publication : Tom GREL (Gérant)</li>
           <li>Contact : contact@alpinesflight.com · +33 (0)6 51 40 71 08</li>
         </ul>
       </Section>
@@ -61,7 +61,8 @@ export default function MentionsLegalesPage() {
       </Section>
 
       <p className="text-navy-400 text-xs pt-2 border-t border-navy-100">
-        Modèle à valider et compléter par l&apos;école — ne constitue pas un avis juridique certifié.
+        Informations renseignées par l&apos;école — ne constitue pas un avis juridique certifié, à
+        faire valider par un professionnel du droit si besoin.
       </p>
     </LegalLayout>
   );

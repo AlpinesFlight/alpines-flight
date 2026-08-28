@@ -13,8 +13,10 @@ export default function ConfidentialitePage() {
       <Section title="1. Qui est responsable de vos données">
         <p>
           Le responsable du traitement est l&apos;organisme de formation déclaré (DTO)
-          exploitant Alpines Flight — <ToFill>raison sociale, forme juridique et SIRET</ToFill>,
-          voir la page <a href="/mentions-legales" className="text-sunset-600 hover:underline">Mentions légales</a>.
+          exploitant Alpines Flight — Alpines Flight SARL, SIRET 939 864 146 00021, DTO n°
+          DTO0889 — voir la page{" "}
+          <a href="/mentions-legales" className="text-sunset-600 hover:underline">Mentions légales</a>{" "}
+          pour le détail complet.
         </p>
       </Section>
 
