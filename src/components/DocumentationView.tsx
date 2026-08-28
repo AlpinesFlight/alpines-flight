@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
-import { DocumentVisibility, SchoolDocument } from "@/types/models";
-import { formatDate } from "@/lib/format";
+import { DocumentAcknowledgment, DocumentVisibility, SchoolDocument } from "@/types/models";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
-import { FileText, Plus, X, Trash2, FolderOpen, Lock } from "lucide-react";
+import { FileText, Plus, X, Trash2, FolderOpen, Lock, CheckCircle2, Circle, ClipboardCheck } from "lucide-react";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
@@ -20,6 +20,7 @@ export function DocumentationView() {
   const [documents, setDocuments] = useState<SchoolDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [proofDoc, setProofDoc] = useState<SchoolDocument | null>(null);
 
   async function load() {
     setLoading(true);
@@ -39,6 +40,11 @@ export function DocumentationView() {
   async function handleDelete(doc: SchoolDocument) {
     if (!window.confirm(`Supprimer « ${doc.title} » ?`)) return;
     await apiFetch(`/api/documents/${doc.id}`, { method: "DELETE" });
+    load();
+  }
+
+  async function handleAcknowledge(doc: SchoolDocument) {
+    await apiFetch(`/api/documents/${doc.id}/acknowledge`, { method: "POST" });
     load();
   }
 
@@ -107,6 +113,30 @@ export function DocumentationView() {
                       <Lock size={11} /> FI
                     </span>
                   )}
+                  {d.myAcknowledgedAt ? (
+                    <span
+                      title={`Lecture confirmée le ${formatDateTime(d.myAcknowledgedAt)}`}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-green-700 bg-green-100 px-2 py-1 rounded-full"
+                    >
+                      <CheckCircle2 size={12} /> Lu
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleAcknowledge(d)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-navy-600 hover:text-sunset-600 bg-navy-50 hover:bg-sunset-100 px-2 py-1 rounded-full transition-colors"
+                    >
+                      <Circle size={12} /> Confirmer la lecture
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      onClick={() => setProofDoc(d)}
+                      title="Voir les accusés de lecture"
+                      className="text-navy-400 hover:text-navy-800"
+                    >
+                      <ClipboardCheck size={15} />
+                    </button>
+                  )}
                   {canManage && (
                     <button
                       onClick={() => handleDelete(d)}
@@ -132,6 +162,70 @@ export function DocumentationView() {
           }}
         />
       )}
+
+      {proofDoc && <ProofModal document={proofDoc} onClose={() => setProofDoc(null)} />}
+    </div>
+  );
+}
+
+// Preuve de diffusion/lecture — qui a été notifié, qui a confirmé et quand.
+// Justificatif en cas de contrôle DGAC (voir /api/documents/[id]/acknowledgments).
+function ProofModal({ document, onClose }: { document: SchoolDocument; onClose: () => void }) {
+  const [rows, setRows] = useState<DocumentAcknowledgment[] | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ notifications: DocumentAcknowledgment[] }>(`/api/documents/${document.id}/acknowledgments`).then(
+      (res) => setRows(res.notifications)
+    );
+  }, [document.id]);
+
+  const acknowledgedCount = rows?.filter((r) => r.acknowledgedAt).length ?? 0;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
+          <div>
+            <h2 className="font-semibold text-navy-900">Accusés de lecture</h2>
+            <p className="text-xs text-navy-500">{document.title}</p>
+          </div>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-5">
+          {rows === null ? (
+            <p className="text-sm text-navy-600">Chargement...</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-navy-600">Personne n&apos;a été notifié pour ce document.</p>
+          ) : (
+            <>
+              <p className="text-xs text-navy-500 mb-3">
+                {acknowledgedCount} / {rows.length} confirmation(s) de lecture — sert de justificatif en cas de
+                contrôle DGAC.
+              </p>
+              <div className="flex flex-col divide-y divide-navy-100">
+                {rows.map((r) => (
+                  <div key={r.user.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                    <span className="text-navy-900">
+                      {r.user.firstName} {r.user.lastName}
+                    </span>
+                    {r.acknowledgedAt ? (
+                      <span className="flex items-center gap-1 text-xs font-medium text-green-700">
+                        <CheckCircle2 size={13} /> Lu le {formatDateTime(r.acknowledgedAt)}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs font-medium text-navy-500">
+                        <Circle size={13} /> Pas encore confirmé
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

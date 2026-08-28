@@ -160,6 +160,9 @@ export interface SchoolSettings {
   bic: string | null;
   bankName: string | null;
   notes: string | null;
+  notifyOnReservationCreated: boolean;
+  notifyOnReservationCancelled: boolean;
+  notifyReminderEnabled: boolean;
   updatedAt: string | null;
   updatedBy?: UserLite | null;
 }
@@ -198,6 +201,15 @@ export interface SchoolDocument {
   uploadedAt: string;
   uploadedById: string;
   uploadedBy: UserLite;
+  // Date à laquelle L'UTILISATEUR COURANT a confirmé avoir lu ce document,
+  // null s'il ne l'a pas encore fait — voir /api/documents/[id]/acknowledge.
+  myAcknowledgedAt: string | null;
+}
+
+export interface DocumentAcknowledgment {
+  user: UserLite;
+  notifiedAt: string;
+  acknowledgedAt: string | null;
 }
 
 export type TransactionType = "DEPOSIT" | "FLIGHT_DEBIT" | "ADJUSTMENT";

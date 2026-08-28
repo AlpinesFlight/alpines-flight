@@ -14,6 +14,10 @@ export interface MailMessage {
   to: string[];
   subject: string;
   text: string;
+  // HTML optionnel — voir src/lib/email-templates.ts pour le gabarit aux
+  // couleurs de l'école. `text` reste toujours fourni en parallèle (clients
+  // mail qui n'affichent pas le HTML, lecteurs d'écran).
+  html?: string;
 }
 
 export async function sendMail(message: MailMessage): Promise<{ sent: boolean; error?: string }> {
@@ -37,6 +41,7 @@ export async function sendMail(message: MailMessage): Promise<{ sent: boolean; e
       to: message.to.join(", "),
       subject: message.subject,
       text: message.text,
+      ...(message.html ? { html: message.html } : {}),
     });
 
     return { sent: true };

@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect } from "@/lib/selects";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
+import { OCCUPYING_RESERVATION_TYPES } from "@/lib/reservations";
+import { notifyReservation } from "@/lib/reservation-emails";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -57,6 +59,65 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const { startTime, endTime, ...rest } = parsed.data;
 
+  // Recalcule l'état effectif après patch (champs non fournis = valeur
+  // actuelle) pour revérifier les conflits d'agenda, comme à la création —
+  // sans ça, modifier l'horaire ou l'avion d'une réservation existante
+  // pouvait créer un chevauchement non détecté.
+  const effectiveAircraftId = parsed.data.aircraftId ?? existing.aircraftId;
+  const effectiveInstructorId =
+    parsed.data.instructorId !== undefined ? parsed.data.instructorId : existing.instructorId;
+  const effectiveType = parsed.data.type ?? existing.type;
+  const effectiveStatus = parsed.data.status ?? existing.status;
+  const effectiveStart = startTime ? new Date(startTime) : existing.startTime;
+  const effectiveEnd = endTime ? new Date(endTime) : existing.endTime;
+
+  if (effectiveStatus !== "CANCELLED") {
+    if (effectiveEnd <= effectiveStart) {
+      return NextResponse.json(
+        { error: "L'heure de fin doit être après l'heure de début." },
+        { status: 400 }
+      );
+    }
+
+    const overlapWhere = {
+      id: { not: id },
+      status: { not: "CANCELLED" as const },
+      startTime: { lt: effectiveEnd },
+      endTime: { gt: effectiveStart },
+    };
+
+    const aircraftConflict = await prisma.reservation.findFirst({
+      where: { ...overlapWhere, aircraftId: effectiveAircraftId },
+    });
+    if (aircraftConflict) {
+      return NextResponse.json(
+        { error: "Cet avion est déjà réservé sur ce créneau." },
+        { status: 409 }
+      );
+    }
+
+    // Même règle qu'à la création : seuls les vols "occupants" (instruction,
+    // découverte) se bloquent entre eux — voir OCCUPYING_RESERVATION_TYPES.
+    if (
+      effectiveInstructorId &&
+      OCCUPYING_RESERVATION_TYPES.includes(effectiveType as (typeof OCCUPYING_RESERVATION_TYPES)[number])
+    ) {
+      const instructorConflict = await prisma.reservation.findFirst({
+        where: {
+          ...overlapWhere,
+          instructorId: effectiveInstructorId,
+          type: { in: [...OCCUPYING_RESERVATION_TYPES] },
+        },
+      });
+      if (instructorConflict) {
+        return NextResponse.json(
+          { error: "Cet instructeur est déjà sur un autre vol accompagné sur ce créneau." },
+          { status: 409 }
+        );
+      }
+    }
+  }
+
   const reservation = await prisma.reservation.update({
     where: { id },
     data: {
@@ -88,9 +149,16 @@ export async function DELETE(_req: Request, { params }: Params) {
     );
   }
 
-  await prisma.reservation.update({
+  const cancelled = await prisma.reservation.update({
     where: { id },
     data: { status: "CANCELLED" },
+    include: {
+      aircraft: true,
+      student: { select: safeUserSelect },
+      instructor: { select: safeUserSelect },
+    },
   });
+  await notifyReservation(cancelled, "cancelled");
+
   return NextResponse.json({ ok: true });
 }

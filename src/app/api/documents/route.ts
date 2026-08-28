@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeSchoolDocumentSelect } from "@/lib/selects";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
+import { notifyNewDocument } from "@/lib/document-emails";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 Mo — manuels/procédures, potentiellement volumineux
 const ALLOWED_MIME = new Set([
@@ -28,10 +29,24 @@ export async function GET() {
 
   const documents = await prisma.schoolDocument.findMany({
     where: staff ? undefined : { visibility: "ALL" },
-    select: safeSchoolDocumentSelect,
+    select: {
+      ...safeSchoolDocumentSelect,
+      notifications: {
+        where: { userId: session.user.id },
+        select: { acknowledgedAt: true },
+      },
+    },
     orderBy: [{ category: "asc" }, { title: "asc" }],
   });
-  return NextResponse.json(documents);
+
+  // Aplati notifications (au plus 1 ligne, pour l'utilisateur courant) en un
+  // simple champ — plus pratique côté client qu'un tableau à 0 ou 1 élément.
+  const withAck = documents.map(({ notifications, ...d }) => ({
+    ...d,
+    myAcknowledgedAt: notifications[0]?.acknowledgedAt ?? null,
+  }));
+
+  return NextResponse.json(withAck);
 }
 
 // Publie un document — admin uniquement (gestion de l'école, pas une
@@ -81,6 +96,8 @@ export async function POST(req: Request) {
     },
     select: safeSchoolDocumentSelect,
   });
+
+  await notifyNewDocument(document);
 
   return NextResponse.json(document, { status: 201 });
 }

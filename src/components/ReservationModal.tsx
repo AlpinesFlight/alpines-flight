@@ -83,9 +83,10 @@ export function ReservationModal({
     setSaving(true);
     setError(null);
     try {
+      const showsInstructor = type === "INSTRUCTION" || type === "SOLO" || isDiscovery;
       const payload = {
         aircraftId,
-        instructorId: instructorId || null,
+        instructorId: showsInstructor ? instructorId || null : null,
         studentId: studentId || null,
         trainingProgramId: type === "INSTRUCTION" ? trainingProgramId || null : null,
         type,
@@ -289,20 +290,22 @@ export function ReservationModal({
             </Field>
           )}
 
-          <Field label="Instructeur">
-            <select
-              value={instructorId}
-              onChange={(e) => setInstructorId(e.target.value)}
-              className="input"
-            >
-              <option value="">—</option>
-              {instructors.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.firstName} {i.lastName}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {(type === "INSTRUCTION" || type === "SOLO" || isDiscovery) && (
+            <Field label="Instructeur">
+              <select
+                value={instructorId}
+                onChange={(e) => setInstructorId(e.target.value)}
+                className="input"
+              >
+                <option value="">—</option>
+                {instructors.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.firstName} {i.lastName}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
 
           <Field label="Notes">
             <textarea

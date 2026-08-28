@@ -71,6 +71,7 @@ model User {
   schoolSettingsUpdated SchoolSettings[]
   announcementsCreated  Announcement[]
   schoolDocumentsUploaded SchoolDocument[]
+  documentNotifications DocumentNotification[]
 }
 
 model StudentProfile {
@@ -605,6 +606,12 @@ model SchoolSettings {
   bic          String?
   bankName     String?
   notes        String? // ex. instructions de virement complémentaires
+  // Notifications automatiques par email — indépendantes des réglages
+  // financiers ci-dessus, modifiables par l'Admin (voir /api/settings pour
+  // le cloisonnement des droits par champ).
+  notifyOnReservationCreated   Boolean @default(true)
+  notifyOnReservationCancelled Boolean @default(true)
+  notifyReminderEnabled        Boolean @default(true)
   updatedAt    DateTime @updatedAt
   updatedById  String?
   updatedBy    User?    @relation(fields: [updatedById], references: [id])
@@ -666,4 +673,24 @@ model SchoolDocument {
   uploadedAt   DateTime           @default(now())
   uploadedById String
   uploadedBy   User               @relation(fields: [uploadedById], references: [id])
+
+  notifications DocumentNotification[]
+}
+
+// Trace, pour un document donné, la liste figée des personnes notifiées au
+// moment de la publication (selon la visibilité choisie à ce moment-là) et
+// si/quand chacune a confirmé en avoir pris connaissance. C'est cette trace
+// qui sert de preuve en cas de contrôle DGAC — volontairement figée plutôt
+// que recalculée dynamiquement, pour rester exacte même si la liste des
+// comptes change ensuite.
+model DocumentNotification {
+  id             String         @id @default(cuid())
+  documentId     String
+  document       SchoolDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User           @relation(fields: [userId], references: [id])
+  notifiedAt     DateTime       @default(now())
+  acknowledgedAt DateTime?
+
+  @@unique([documentId, userId])
 }

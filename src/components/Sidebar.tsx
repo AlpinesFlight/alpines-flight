@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -18,9 +19,13 @@ import {
   BookOpen,
   Download,
   LogOut,
+  Lock,
+  X,
+  Settings,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { clsx } from "clsx";
+import { apiFetch } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
@@ -39,6 +44,9 @@ const NAV_ITEMS = [
   // Visible de tous — chacun n'y voit que les documents que sa visibilité
   // autorise (voir /api/documents).
   { href: "/documentation", label: "Documentation", icon: BookOpen },
+  // Réglages de notification — gestion courante, pas une question
+  // financière : Admin et Gérant, voir schoolManagerOnly dans le filtre.
+  { href: "/reglages", label: "Réglages", icon: Settings, schoolManagerOnly: true },
   // Gestion des rôles/droits d'accès — donnée sensible, visible uniquement
   // du Gérant (voir le filtre plus bas), contrairement aux autres liens qui
   // restent affichés à tous et se gèrent au niveau du contenu de la page.
@@ -53,6 +61,7 @@ export function Sidebar({
   userRole: string;
 }) {
   const pathname = usePathname();
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <aside className="w-64 shrink-0 bg-navy-800 text-cream-50 flex flex-col min-h-screen">
@@ -86,7 +95,8 @@ export function Sidebar({
         {NAV_ITEMS.filter(
           (item) =>
             (!item.gerantOnly || userRole === "GERANT") &&
-            (!item.staffOnly || userRole === "GERANT" || userRole === "ADMIN" || userRole === "INSTRUCTOR")
+            (!item.staffOnly || userRole === "GERANT" || userRole === "ADMIN" || userRole === "INSTRUCTOR") &&
+            (!item.schoolManagerOnly || userRole === "GERANT" || userRole === "ADMIN")
         ).map((item) => {
           const active =
             item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -123,6 +133,13 @@ export function Sidebar({
           Exporter mes données
         </a>
         <button
+          onClick={() => setShowPassword(true)}
+          className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors mb-2"
+        >
+          <Lock size={14} />
+          Changer mon mot de passe
+        </button>
+        <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors"
         >
@@ -130,7 +147,108 @@ export function Sidebar({
           Déconnexion
         </button>
       </div>
+
+      {showPassword && <ChangePasswordModal onClose={() => setShowPassword(false)} />}
     </aside>
+  );
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (newPassword !== confirm) {
+      setError("Les deux mots de passe ne correspondent pas.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch("/api/me/password", {
+        method: "PATCH",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      setSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl text-navy-900">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+          <h2 className="font-semibold text-navy-900">Changer mon mot de passe</h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        {success ? (
+          <div className="p-5 flex flex-col gap-4">
+            <p className="text-sm text-green-700 bg-green-100 rounded-lg px-3 py-2">
+              Mot de passe changé avec succès.
+            </p>
+            <button
+              onClick={onClose}
+              className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm"
+            >
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Mot de passe actuel</span>
+              <input
+                required
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="input"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Nouveau mot de passe</span>
+              <input
+                required
+                minLength={8}
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="input"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Confirmer le nouveau mot de passe</span>
+              <input
+                required
+                minLength={8}
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                className="input"
+              />
+            </label>
+            {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+            >
+              {saving ? "Enregistrement..." : "Changer le mot de passe"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 

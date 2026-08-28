@@ -99,7 +99,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-navy-100 text-xs mt-6">
-          Comptes de démonstration : voir README du projet.
+          Version 1.0
         </p>
         <p className="text-center text-navy-100 text-xs mt-3 flex items-center justify-center gap-3">
           <a href="/confidentialite" className="hover:text-cream-50 hover:underline">

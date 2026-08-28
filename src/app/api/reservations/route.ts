@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { safeUserSelect } from "@/lib/selects";
 import { isInstructorOrAbove } from "@/lib/permissions";
+import { OCCUPYING_RESERVATION_TYPES } from "@/lib/reservations";
+import { notifyReservation } from "@/lib/reservation-emails";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -105,13 +107,21 @@ export async function POST(req: Request) {
     );
   }
 
-  if (instructorId) {
+  // Un instructeur ne peut être QUE sur un vol à la fois s'il doit y être
+  // physiquement (instruction, vol découverte) — mais un vol solo n'exige
+  // pas sa présence à bord : il peut superviser un solo en même temps qu'il
+  // vole en instruction (ou plusieurs solos en parallèle). Le conflit ne
+  // porte donc que sur les vols "occupants" entre eux.
+  if (
+    instructorId &&
+    OCCUPYING_RESERVATION_TYPES.includes(parsed.data.type as (typeof OCCUPYING_RESERVATION_TYPES)[number])
+  ) {
     const instructorConflict = await prisma.reservation.findFirst({
-      where: { ...overlapWhere, instructorId },
+      where: { ...overlapWhere, instructorId, type: { in: [...OCCUPYING_RESERVATION_TYPES] } },
     });
     if (instructorConflict) {
       return NextResponse.json(
-        { error: "Cet instructeur est déjà réservé sur ce créneau." },
+        { error: "Cet instructeur est déjà sur un autre vol accompagné sur ce créneau." },
         { status: 409 }
       );
     }
@@ -130,6 +140,8 @@ export async function POST(req: Request) {
       trainingProgram: { select: { id: true, code: true, title: true, instructionRateCents: true } },
     },
   });
+
+  await notifyReservation(reservation, "created");
 
   return NextResponse.json(reservation, { status: 201 });
 }
