@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { z } from "zod";
@@ -81,7 +81,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const reservation = await prisma.reservation.findUnique({
     where: { id },
-    include: { aircraft: true },
+    include: { aircraft: { select: safeAircraftSelect } },
   });
   if (!reservation) return NextResponse.json({ error: "not found" }, { status: 404 });
 

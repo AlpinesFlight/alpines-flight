@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { formatDate, formatMoney } from "@/lib/format";
 import { PrintButton } from "@/components/PrintButton";
 import { canManageFinance } from "@/lib/permissions";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 
@@ -49,7 +50,10 @@ export default async function BillingPrintPage({
         ? { confirmedAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
         : {}),
     },
-    include: { student: true, flightLog: { include: { aircraft: true } } },
+    include: {
+      student: { select: safeUserSelect },
+      flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
+    },
     orderBy: [{ student: { lastName: "asc" } }, { confirmedAt: "asc" }],
   });
 

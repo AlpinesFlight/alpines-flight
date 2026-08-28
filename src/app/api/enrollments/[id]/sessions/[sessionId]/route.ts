@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -80,7 +80,7 @@ export async function PATCH(req: Request, { params }: Params) {
       where: { id: sessionId },
       include: {
         instructor: { select: safeUserSelect },
-        aircraft: true,
+        aircraft: { select: safeAircraftSelect },
         flightLog: true,
         progress: { include: { exercise: true } },
       },

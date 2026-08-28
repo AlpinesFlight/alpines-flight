@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { canManageSchool } from "@/lib/permissions";
+import { safeAircraftSelect } from "@/lib/selects";
 import { z } from "zod";
 
 export async function GET() {
@@ -10,7 +11,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const records = await prisma.maintenanceRecord.findMany({
-    include: { aircraft: true },
+    include: { aircraft: { select: safeAircraftSelect } },
     orderBy: [{ status: "asc" }, { dueAtDate: "asc" }],
   });
   return NextResponse.json(records);

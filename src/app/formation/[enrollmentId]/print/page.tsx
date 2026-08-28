@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { safeUserSelect } from "@/lib/selects";
 import { formatDate, formatHours } from "@/lib/format";
 import { PrintButton } from "@/components/PrintButton";
 import Image from "next/image";
@@ -34,8 +35,10 @@ export default async function EnrollmentPrintPage({
   const enrollment = await prisma.enrollment.findUnique({
     where: { id: enrollmentId },
     include: {
-      student: true,
-      instructor: true,
+      // select plutôt que true : évite d'envoyer passwordHash (même haché,
+      // il n'a rien à faire dans le payload envoyé au navigateur).
+      student: { select: safeUserSelect },
+      instructor: { select: safeUserSelect },
       program: {
         include: { phases: { orderBy: { order: "asc" }, include: { exercises: { orderBy: { order: "asc" } } } } },
       },

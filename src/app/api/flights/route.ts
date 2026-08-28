@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
 // formulaire de séance (Formation → Nouvelle séance → Relier un vol, via
@@ -33,7 +33,12 @@ export async function GET(req: Request) {
       ...(dateFilter ? { date: dateFilter } : {}),
     },
     include: {
-      aircraft: true,
+      // aircraft: true (avant) incluait aussi photoData — la photo complète
+      // de l'avion (jusqu'à 8 Mo, voir /api/aircraft/[id]/photo), répétée à
+      // chaque vol. Sur une période large, ça faisait grimper la réponse à
+      // plusieurs dizaines de Mo pour une poignée de vols. Le binaire ne
+      // doit transiter que par la route de streaming dédiée.
+      aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },
       stops: true,

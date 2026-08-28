@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canManageSchool } from "@/lib/permissions";
+import { safeAircraftSelect } from "@/lib/selects";
 import { z } from "zod";
 
 export async function GET(req: Request) {
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
 
   const entries = await prisma.kardexEntry.findMany({
     where: aircraftId ? { aircraftId } : undefined,
-    include: { aircraft: true, maintenanceRecord: true },
+    include: { aircraft: { select: safeAircraftSelect }, maintenanceRecord: true },
     orderBy: { date: "desc" },
   });
   return NextResponse.json(entries);

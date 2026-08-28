@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -76,7 +76,7 @@ export async function POST(req: Request, { params }: Params) {
       where: { id: trainingSession.id },
       include: {
         instructor: { select: safeUserSelect },
-        aircraft: true,
+        aircraft: { select: safeAircraftSelect },
         flightLog: true,
         progress: { include: { exercise: true } },
       },

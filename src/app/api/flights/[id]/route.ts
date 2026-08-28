@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -16,7 +16,7 @@ export async function GET(_req: Request, { params }: Params) {
   const flight = await prisma.flightLog.findUnique({
     where: { id },
     include: {
-      aircraft: true,
+      aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },
       stops: true,
@@ -102,7 +102,7 @@ export async function PATCH(req: Request, { params }: Params) {
         fuelType: fuelRefillDone ? parsed.data.fuelType : null,
         fuelAirfield: fuelRefillDone ? parsed.data.fuelAirfield : null,
       },
-      include: { stops: true, aircraft: true },
+      include: { stops: true, aircraft: { select: safeAircraftSelect } },
     });
 
     if (existing.studentId && (durationDelta !== 0 || costDelta !== 0)) {

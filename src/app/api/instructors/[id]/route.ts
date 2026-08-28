@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -18,12 +18,12 @@ export async function GET(_req: Request, { params }: Params) {
       ...safeUserSelect,
       instructorProfile: true,
       reservationsAsInstructor: {
-        include: { aircraft: true, student: { select: safeUserSelect } },
+        include: { aircraft: { select: safeAircraftSelect }, student: { select: safeUserSelect } },
         orderBy: { startTime: "desc" },
         take: 20,
       },
       flightsAsInstructor: {
-        include: { aircraft: true, student: { select: safeUserSelect } },
+        include: { aircraft: { select: safeAircraftSelect }, student: { select: safeUserSelect } },
         orderBy: { date: "desc" },
         take: 20,
       },

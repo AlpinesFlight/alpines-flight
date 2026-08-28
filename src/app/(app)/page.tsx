@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { PageHeader } from "@/components/PageHeader";
 import { AnnouncementsCard } from "@/components/AnnouncementsCard";
 import { formatDateTime, formatHours } from "@/lib/format";
@@ -37,17 +38,23 @@ export default async function DashboardPage() {
           status: { not: "CANCELLED" },
           startTime: { gte: todayStart, lte: todayEnd },
         },
-        include: { aircraft: true, student: true, instructor: true },
+        include: {
+          aircraft: { select: safeAircraftSelect },
+          student: { select: safeUserSelect },
+          instructor: { select: safeUserSelect },
+        },
         orderBy: { startTime: "asc" },
       }),
       prisma.maintenanceRecord.findMany({
         where: { status: { in: ["DUE", "OVERDUE"] } },
-        include: { aircraft: true },
+        include: { aircraft: { select: safeAircraftSelect } },
       }),
-      prisma.studentProfile.findMany({
+      // Seul le compte (.length) est utilisé plus bas — count() plutôt que
+      // findMany({ include: { user: true } }), qui aurait à la fois envoyé
+      // les User complets (passwordHash compris) pour rien et fait plus de
+      // travail que nécessaire.
+      prisma.studentProfile.count({
         where: { balanceCents: { lt: 0 } },
-        include: { user: true },
-        orderBy: { balanceCents: "asc" },
       }),
       prisma.flightLog.findMany({
         where: { date: { gte: monthStart, lte: monthEnd } },
@@ -87,7 +94,7 @@ export default async function DashboardPage() {
         <StatCard
           icon={Wallet}
           label="Élèves à solde négatif"
-          value={String(negativeStudents.length)}
+          value={String(negativeStudents)}
           color="navy"
         />
         <StatCard

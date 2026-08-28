@@ -2,13 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
 import { renderEmailShell, p, h2, box, fieldRow } from "@/lib/email-templates";
 import { formatDateTime } from "@/lib/format";
-import type { Aircraft, Reservation } from "@prisma/client";
+import type { Reservation } from "@prisma/client";
 
-// Forme "safe" (voir safeUserSelect) — jamais le User complet (passwordHash).
+// Formes "safe" (voir safeUserSelect / safeAircraftSelect) — jamais le
+// modèle complet (passwordHash pour User, photoData pour Aircraft).
 type SafeUser = { firstName: string; email: string };
+type SafeAircraft = { registration: string };
 
 type ReservationWithRelations = Reservation & {
-  aircraft: Aircraft;
+  aircraft: SafeAircraft;
   student: SafeUser | null;
   instructor: SafeUser | null;
 };

@@ -9,7 +9,11 @@ export async function findDueQualifications() {
     where: { currentDocument: { expiresAt: { not: null } } },
     include: {
       user: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
-      currentDocument: true,
+      // select plutôt que true : cette liste part telle quelle en JSON vers
+      // le tableau de bord (GET /api/qualifications/due) — currentDocument
+      // complet aurait envoyé le scan/PDF de licence de chaque élève à
+      // chaque chargement du tableau de bord.
+      currentDocument: { select: { expiresAt: true } },
     },
     orderBy: { currentDocument: { expiresAt: "asc" } },
   });

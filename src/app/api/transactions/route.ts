@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
 
 export async function GET(req: Request) {
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     include: {
       student: { select: safeUserSelect },
       confirmedBy: { select: safeUserSelect },
-      flightLog: { include: { aircraft: true } },
+      flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
     },
     orderBy: { createdAt: "desc" },
   });

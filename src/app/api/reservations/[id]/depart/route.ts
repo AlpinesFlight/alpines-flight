@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -49,7 +49,7 @@ export async function POST(req: Request, { params }: Params) {
         : new Date(),
     },
     include: {
-      aircraft: true,
+      aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },
     },

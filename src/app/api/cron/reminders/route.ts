@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { notifyReservation } from "@/lib/reservation-emails";
 
 // Déclenché une fois par jour par Vercel Cron (voir vercel.json) — envoie le
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       startTime: { gte: startOfTomorrow, lt: startOfDayAfter },
     },
     include: {
-      aircraft: true,
+      aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },
     },

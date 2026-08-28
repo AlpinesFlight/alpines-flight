@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
 import { OCCUPYING_RESERVATION_TYPES } from "@/lib/reservations";
 import { notifyReservation } from "@/lib/reservation-emails";
@@ -126,7 +126,7 @@ export async function PATCH(req: Request, { params }: Params) {
       ...(endTime ? { endTime: new Date(endTime) } : {}),
     },
     include: {
-      aircraft: true,
+      aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },
       trainingProgram: { select: { id: true, code: true, title: true, instructionRateCents: true } },
@@ -153,7 +153,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     where: { id },
     data: { status: "CANCELLED" },
     include: {
-      aircraft: true,
+      aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },
     },
