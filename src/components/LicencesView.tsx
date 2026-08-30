@@ -70,8 +70,13 @@ function urgencyLabel(urgency: Urgency, days: number | null): string {
 
 export function LicencesView() {
   const searchParams = useSearchParams();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const canManage = canManageSchool(session?.user?.role);
+  // Un élève/pilote gère uniquement ses propres licences — pas de liste de
+  // tout le monde (voir /api/qualifications, déjà scopé côté serveur pour ce
+  // rôle ; ici on évite en plus d'aller chercher tout le trombinoscope
+  // élèves+instructeurs pour rien).
+  const isSelfOnly = session?.user?.role === "STUDENT";
 
   const [qualifications, setQualifications] = useState<Qualification[]>([]);
   const [people, setPeople] = useState<UserLite[]>([]);
@@ -87,6 +92,17 @@ export function LicencesView() {
   async function load() {
     setLoading(true);
     try {
+      if (isSelfOnly) {
+        const [quals, me] = await Promise.all([
+          apiFetch<Qualification[]>("/api/qualifications"),
+          session?.user?.id ? apiFetch<UserLite>(`/api/students/${session.user.id}`) : Promise.resolve(null),
+        ]);
+        setQualifications(quals);
+        setPeople(me ? [me] : []);
+        setSelectedPersonId(session?.user?.id ?? null);
+        return;
+      }
+
       const [quals, students, instructors] = await Promise.all([
         apiFetch<Qualification[]>("/api/qualifications"),
         apiFetch<UserLite[]>("/api/students"),
@@ -105,9 +121,14 @@ export function LicencesView() {
   }
 
   useEffect(() => {
+    // Attend la session résolue : sinon isSelfOnly démarre à false et un
+    // premier chargement part sur le trombinoscope complet avant de savoir
+    // que le compte est un élève — voir le même correctif sur
+    // BillingView/TrainingView.
+    if (sessionStatus === "loading") return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionStatus, isSelfOnly]);
 
   const filteredPeople = useMemo(() => {
     const q = query.toLowerCase();
@@ -149,6 +170,60 @@ export function LicencesView() {
   const selectedPerson = people.find((p) => p.id === selectedPersonId) ?? null;
   const selectedQuals = selectedPersonId ? qualsByPerson.get(selectedPersonId) ?? [] : [];
   const canUpload = canManage || (!!selectedPersonId && selectedPersonId === session?.user?.id);
+
+  // Élève/pilote : uniquement ses propres licences, pas le trombinoscope —
+  // même bloc "détail" que la vue staff (QualificationCard/
+  // UploadDocumentModal réutilisés tels quels), sans la colonne de
+  // recherche/liste.
+  if (isSelfOnly) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+            <h2 className="font-semibold text-navy-900">Mes licences & qualifications</h2>
+            {selectedPerson && (
+              <button
+                onClick={() => setShowUpload({ qualification: null })}
+                className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
+              >
+                <Plus size={16} /> Importer un document
+              </button>
+            )}
+          </div>
+          <div className="divide-y divide-navy-100">
+            {!loading && selectedQuals.length === 0 && (
+              <p className="px-5 py-8 text-sm text-navy-600 text-center">
+                Aucune qualification enregistrée pour l&apos;instant.
+              </p>
+            )}
+            {selectedQuals.map((q) => (
+              <QualificationCard
+                key={q.id}
+                qualification={q}
+                canManage={canManage}
+                canUpload={canUpload}
+                onImport={() => setShowUpload({ qualification: q })}
+                onChanged={load}
+              />
+            ))}
+          </div>
+        </div>
+
+        {showUpload && selectedPerson && (
+          <UploadDocumentModal
+            person={selectedPerson}
+            existingQualifications={selectedQuals}
+            preselected={showUpload.qualification}
+            onClose={() => setShowUpload(null)}
+            onUploaded={() => {
+              setShowUpload(null);
+              load();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
@@ -209,7 +284,9 @@ export function LicencesView() {
                   </span>
                   <span className="text-[10px] font-semibold text-navy-400 uppercase shrink-0">
                     {p.role === "STUDENT"
-                      ? "Élève"
+                      ? p.studentProfile?.isPilot
+                        ? "Pilote"
+                        : "Élève"
                       : p.role === "INSTRUCTOR"
                       ? "FI"
                       : p.role === "GERANT"

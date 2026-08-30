@@ -20,7 +20,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const password = credentials?.password as string | undefined;
         if (!email || !password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({
+          where: { email },
+          include: { studentProfile: { select: { isPilot: true } } },
+        });
         if (!user) return null;
 
         const valid = await bcrypt.compare(password, user.passwordHash);
@@ -31,6 +34,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           email: user.email,
           name: `${user.firstName} ${user.lastName}`,
           role: user.role,
+          isPilot: user.studentProfile?.isPilot ?? false,
         };
       },
     }),
@@ -40,6 +44,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.role = (user as { role: string }).role;
         token.id = user.id as string;
+        token.isPilot = (user as { isPilot?: boolean }).isPilot ?? false;
       }
       return token;
     },
@@ -47,6 +52,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user) {
         (session.user as { role?: string }).role = token.role as string;
         (session.user as { id?: string }).id = token.id as string;
+        (session.user as { isPilot?: boolean }).isPilot = token.isPilot as boolean;
       }
       return session;
     },

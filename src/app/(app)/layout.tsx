@@ -16,6 +16,7 @@ export default async function AppLayout({
       <Sidebar
         userName={session?.user?.name ?? ""}
         userRole={session?.user?.role ?? ""}
+        isPilot={session?.user?.isPilot}
       />
       <main className="flex-1 min-w-0">{children}</main>
     </div>

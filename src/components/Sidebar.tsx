@@ -39,7 +39,9 @@ const NAV_ITEMS = [
   { href: "/instructeurs", label: "Instructeurs", icon: UserCog },
   { href: "/formation", label: "Formation", icon: GraduationCap },
   { href: "/licences", label: "Licences", icon: ShieldCheck },
-  { href: "/flotte", label: "Flotte", icon: Plane },
+  // Gestion de la flotte (avions, maintenance, kardex) — pas un compte
+  // élève/pilote, réservé au staff pédagogique.
+  { href: "/flotte", label: "Flotte", icon: Plane, staffOnly: true },
   { href: "/vols", label: "Vols", icon: PlaneTakeoff },
   { href: "/comptes-pilotes", label: "Comptes pilotes", icon: Wallet },
   // Visible de tous — chacun n'y voit que les documents que sa visibilité
@@ -57,9 +59,11 @@ const NAV_ITEMS = [
 export function Sidebar({
   userName,
   userRole,
+  isPilot,
 }: {
   userName: string;
   userRole: string;
+  isPilot?: boolean;
 }) {
   const pathname = usePathname();
   const [showPassword, setShowPassword] = useState(false);
@@ -183,7 +187,7 @@ export function Sidebar({
 
       <div className="px-5 py-4 border-t border-navy-700">
         <p className="text-sm font-medium truncate">{userName}</p>
-        <p className="text-[11px] text-navy-100 mb-3">{roleLabel(userRole)}</p>
+        <p className="text-[11px] text-navy-100 mb-3">{roleLabel(userRole, isPilot)}</p>
         {/* Droit d'accès/portabilité RGPD : chaque compte peut exporter ses
             propres données en un clic — voir /api/me/export et
             /confidentialite. */}
@@ -315,7 +319,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function roleLabel(role: string) {
+function roleLabel(role: string, isPilot?: boolean) {
   switch (role) {
     case "GERANT":
       return "Gérant";
@@ -324,7 +328,10 @@ function roleLabel(role: string) {
     case "INSTRUCTOR":
       return "Instructeur";
     case "STUDENT":
-      return "Élève";
+      // isPilot est un simple libellé d'affichage à l'intérieur du rôle
+      // STUDENT (voir StudentProfile.isPilot / src/lib/permissions.ts) —
+      // pas un rôle système à part, donc pas une entrée séparée du switch.
+      return isPilot ? "Pilote" : "Élève";
     default:
       return role;
   }

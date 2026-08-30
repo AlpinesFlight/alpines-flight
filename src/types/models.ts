@@ -61,6 +61,23 @@ export interface MaintenanceRecord {
   notes: string | null;
 }
 
+export type MaintenanceIssueStatus = "OPEN" | "RESOLVED";
+
+export interface MaintenanceIssue {
+  id: string;
+  aircraftId: string;
+  aircraft: Aircraft;
+  description: string;
+  status: MaintenanceIssueStatus;
+  createdAt: string;
+  reportedById: string;
+  reportedBy: UserLite;
+  resolvedAt: string | null;
+  resolvedById: string | null;
+  resolvedBy: UserLite | null;
+  resolutionNotes: string | null;
+}
+
 export type KardexCategory =
   | "VISITE"
   | "REPARATION"

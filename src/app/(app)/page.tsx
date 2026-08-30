@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
+import { auth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { AnnouncementsCard } from "@/components/AnnouncementsCard";
+import { MaintenanceIssuesCard } from "@/components/MaintenanceIssuesCard";
 import { formatDateTime, formatHours } from "@/lib/format";
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
 import Link from "next/link";
@@ -11,6 +13,7 @@ import {
   Wallet,
   PlaneTakeoff,
   Plane,
+  Wrench,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -25,13 +28,20 @@ function toIsoDate(date: Date): string {
 }
 
 export default async function DashboardPage() {
+  const session = await auth();
+  // Les échéances de maintenance programmée (visites, CDN...) sont une
+  // affaire de gestion de flotte — le Gérant seul les voit sur le tableau
+  // de bord ; tout autre compte voit à la place le bloc "Retour
+  // maintenance" (signaler/suivre un défaut, voir MaintenanceIssuesCard).
+  const isGerant = session?.user?.role === "GERANT";
+
   const now = new Date();
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
 
-  const [todayReservations, maintenanceAlerts, negativeStudents, monthFlights] =
+  const [todayReservations, maintenanceAlerts, myOpenIssues, negativeStudents, monthFlights] =
     await Promise.all([
       prisma.reservation.findMany({
         where: {
@@ -45,10 +55,17 @@ export default async function DashboardPage() {
         },
         orderBy: { startTime: "asc" },
       }),
-      prisma.maintenanceRecord.findMany({
-        where: { status: { in: ["DUE", "OVERDUE"] } },
-        include: { aircraft: { select: safeAircraftSelect } },
-      }),
+      isGerant
+        ? prisma.maintenanceRecord.findMany({
+            where: { status: { in: ["DUE", "OVERDUE"] } },
+            include: { aircraft: { select: safeAircraftSelect } },
+          })
+        : Promise.resolve([]),
+      isGerant || !session
+        ? Promise.resolve(0)
+        : prisma.maintenanceIssue.count({
+            where: { reportedById: session.user.id, status: "OPEN" },
+          }),
       // Seul le compte (.length) est utilisé plus bas — count() plutôt que
       // findMany({ include: { user: true } }), qui aurait à la fois envoyé
       // les User complets (passwordHash compris) pour rien et fait plus de
@@ -85,12 +102,21 @@ export default async function DashboardPage() {
           value={String(todayReservations.length)}
           color="sunset"
         />
-        <StatCard
-          icon={TriangleAlert}
-          label="Alertes maintenance"
-          value={String(maintenanceAlerts.length)}
-          color="red"
-        />
+        {isGerant ? (
+          <StatCard
+            icon={TriangleAlert}
+            label="Alertes maintenance"
+            value={String(maintenanceAlerts.length)}
+            color="red"
+          />
+        ) : (
+          <StatCard
+            icon={Wrench}
+            label="Mes signalements ouverts"
+            value={String(myOpenIssues)}
+            color="navy"
+          />
+        )}
         <StatCard
           icon={Wallet}
           label="Élèves à solde négatif"
@@ -162,47 +188,57 @@ export default async function DashboardPage() {
           <div className="pb-1" />
         </div>
 
-        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
-            <h2 className="font-semibold text-navy-900">Alertes maintenance</h2>
-            <Link href="/flotte" className="text-sm text-sunset-600 hover:underline">
-              Voir la flotte
-            </Link>
-          </div>
-          <div className="divide-y divide-navy-100">
-            {maintenanceAlerts.length === 0 && (
-              <p className="px-5 py-6 text-sm text-navy-600">
-                Aucune échéance urgente.
-              </p>
-            )}
-            {maintenanceAlerts.map((m) => (
-              <div key={m.id} className="px-5 py-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-navy-900">
-                    {m.aircraft.registration} · {m.label}
-                  </p>
-                  <p className="text-xs text-navy-600">
-                    {m.type === "HOURLY"
-                      ? `Échéance à ${m.dueAtHours}h`
-                      : m.dueAtDate
-                      ? `Échéance le ${new Date(m.dueAtDate).toLocaleDateString("fr-FR")}`
-                      : ""}
-                  </p>
+        {isGerant ? (
+          <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+              <h2 className="font-semibold text-navy-900">Alertes maintenance</h2>
+              <Link href="/flotte" className="text-sm text-sunset-600 hover:underline">
+                Voir la flotte
+              </Link>
+            </div>
+            <div className="divide-y divide-navy-100">
+              {maintenanceAlerts.length === 0 && (
+                <p className="px-5 py-6 text-sm text-navy-600">
+                  Aucune échéance urgente.
+                </p>
+              )}
+              {maintenanceAlerts.map((m) => (
+                <div key={m.id} className="px-5 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-navy-900">
+                      {m.aircraft.registration} · {m.label}
+                    </p>
+                    <p className="text-xs text-navy-600">
+                      {m.type === "HOURLY"
+                        ? `Échéance à ${m.dueAtHours}h`
+                        : m.dueAtDate
+                        ? `Échéance le ${new Date(m.dueAtDate).toLocaleDateString("fr-FR")}`
+                        : ""}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                      m.status === "OVERDUE"
+                        ? "bg-red-100 text-red-600"
+                        : "bg-sunset-100 text-sunset-600"
+                    }`}
+                  >
+                    {m.status === "OVERDUE" ? "Dépassé" : "À prévoir"}
+                  </span>
                 </div>
-                <span
-                  className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                    m.status === "OVERDUE"
-                      ? "bg-red-100 text-red-600"
-                      : "bg-sunset-100 text-sunset-600"
-                  }`}
-                >
-                  {m.status === "OVERDUE" ? "Dépassé" : "À prévoir"}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <MaintenanceIssuesCard />
+        )}
       </div>
+
+      {isGerant && (
+        <div className="px-4 md:px-8 pb-6">
+          <MaintenanceIssuesCard />
+        </div>
+      )}
 
       <div className="px-4 md:px-8 pb-8">
         <AnnouncementsCard />

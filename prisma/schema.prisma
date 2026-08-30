@@ -56,6 +56,8 @@ model User {
   transactionsConfirmed AccountTransaction[] @relation("TransactionConfirmedBy")
 
   kardexEntriesCreated KardexEntry[] @relation("KardexCreatedBy")
+  maintenanceIssuesReported MaintenanceIssue[] @relation("MaintenanceIssueReportedBy")
+  maintenanceIssuesResolved MaintenanceIssue[] @relation("MaintenanceIssueResolvedBy")
 
   // Licences, qualifications, médicales... (élèves ET instructeurs)
   qualifications          Qualification[]         @relation("QualificationHolder")
@@ -137,6 +139,7 @@ model Aircraft {
   flights             FlightLog[]
   maintenanceRecords  MaintenanceRecord[]
   kardexEntries       KardexEntry[]
+  maintenanceIssues   MaintenanceIssue[]
   trainingSessions    TrainingSession[]
 }
 
@@ -204,6 +207,36 @@ model KardexEntry {
   createdAt            DateTime            @default(now())
   createdById          String?
   createdBy            User?               @relation("KardexCreatedBy", fields: [createdById], references: [id])
+}
+
+// ---------- Signalements de défauts ----------
+//
+// Un pilote qui remarque un petit défaut sur un avion (ex: rayure, voyant,
+// pneu à surveiller) le signale ici — distinct des MaintenanceRecord
+// (échéances programmées) et du Kardex (interventions déjà réalisées) : un
+// signalement est une simple remontée d'observation, pas encore une
+// intervention planifiée. Visible et clôturable uniquement par le Gérant
+// (voir /api/maintenance-issues) ; l'auteur voit le statut de ses propres
+// signalements.
+
+enum MaintenanceIssueStatus {
+  OPEN
+  RESOLVED
+}
+
+model MaintenanceIssue {
+  id              String                  @id @default(cuid())
+  aircraftId      String
+  aircraft        Aircraft                @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  description     String
+  status          MaintenanceIssueStatus  @default(OPEN)
+  createdAt       DateTime                @default(now())
+  reportedById    String
+  reportedBy      User                    @relation("MaintenanceIssueReportedBy", fields: [reportedById], references: [id])
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolvedBy      User?                   @relation("MaintenanceIssueResolvedBy", fields: [resolvedById], references: [id])
+  resolutionNotes String?
 }
 
 // ---------- Planning ----------

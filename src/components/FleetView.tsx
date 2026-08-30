@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, KardexCategory, KardexEntry, MaintenanceRecord, MaintenanceStatus, MaintenanceType } from "@/types/models";
 import { formatDate, formatHours, formatMoney } from "@/lib/format";
-import { Plus, X, Plane, Pencil, Trash2, Wrench, BookOpen, Check } from "lucide-react";
+import { isInstructorOrAbove } from "@/lib/permissions";
+import { Plus, X, Plane, Pencil, Trash2, Wrench, BookOpen, Check, ShieldAlert } from "lucide-react";
 import { clsx } from "clsx";
 
 const STATUS_STYLE: Record<MaintenanceStatus, string> = {
@@ -37,6 +39,8 @@ const KARDEX_CATEGORY_LABEL: Record<KardexCategory, string> = {
 };
 
 export function FleetView() {
+  const { data: session } = useSession();
+  const canManage = isInstructorOrAbove(session?.user?.role);
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateAircraft, setShowCreateAircraft] = useState(false);
@@ -55,6 +59,23 @@ export function FleetView() {
   useEffect(() => {
     load();
   }, []);
+
+  // La gestion de la flotte (avions, maintenance, kardex) ne concerne pas
+  // un compte élève/pilote — lien déjà masqué dans le menu (voir
+  // Sidebar.tsx), ce garde couvre l'accès direct par URL.
+  if (!canManage) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
+          <ShieldAlert size={28} className="text-navy-400" />
+          <p className="font-semibold text-navy-900">Accès réservé au staff</p>
+          <p className="text-sm text-navy-600">
+            La gestion de la flotte est réservée aux comptes FI, Admin et Gérant.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
