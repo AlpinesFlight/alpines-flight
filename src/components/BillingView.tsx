@@ -110,8 +110,8 @@ export function BillingView() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-end gap-2 mb-5">
+    <div className="p-4 md:p-8">
+      <div className="flex flex-wrap justify-end gap-2 mb-5">
         {canFinanceAdmin && (
           <button
             onClick={() => setShowExport(true)}
@@ -219,6 +219,7 @@ export function BillingView() {
         <div className="px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Historique des mouvements</h2>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-navy-600 border-b border-navy-100">
@@ -298,6 +299,7 @@ export function BillingView() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showDeposit && (
@@ -444,7 +446,7 @@ function EditIbanModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Coordonnées bancaires</h2>
@@ -469,7 +471,7 @@ function EditIbanModal({
             onChange={(e) => setIban(e.target.value.toUpperCase())}
             className="input font-mono"
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               placeholder="BIC"
               value={bic}
@@ -546,7 +548,7 @@ function EditTransactionModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">
@@ -638,7 +640,7 @@ function ExportPdfModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Exporter en PDF</h2>
@@ -651,7 +653,7 @@ function ExportPdfModal({ onClose }: { onClose: () => void }) {
             Relevé des mouvements confirmés (versements, vols, ajustements)
             sur la période choisie, par élève.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">Du</span>
               <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input" />
@@ -721,7 +723,7 @@ function DeclareDepositModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Déclarer un versement</h2>

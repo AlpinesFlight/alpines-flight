@@ -78,7 +78,7 @@ export default async function DashboardPage() {
         })}
       />
 
-      <div className="p-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="p-4 md:p-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           icon={CalendarDays}
           label="Réservations aujourd'hui"
@@ -106,7 +106,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="px-8 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="px-4 md:px-8 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
             <h2 className="font-semibold text-navy-900">Planning du jour</h2>
@@ -204,7 +204,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="px-8 pb-8">
+      <div className="px-4 md:px-8 pb-8">
         <AnnouncementsCard />
       </div>
     </div>

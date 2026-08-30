@@ -169,13 +169,13 @@ export function TrainingView() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-5 gap-3">
+    <div className="p-4 md:p-8">
+      <div className="flex items-center flex-wrap justify-between mb-5 gap-3">
         <p className="text-sm text-navy-600">
           {programs.length} programme(s) disponible(s)
           {importMsg && <span className="ml-2 text-navy-500">· {importMsg}</span>}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2">
           {canManage && (
             <button
               onClick={handleImport}
@@ -479,7 +479,7 @@ function CreateProgramModal({ onClose, onCreated }: { onClose: () => void; onCre
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Nouveau programme</h2>
@@ -571,7 +571,7 @@ function EnrollModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Nouvelle inscription</h2>
@@ -709,7 +709,7 @@ function EnrollmentDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white z-10">
           <div>
@@ -809,12 +809,12 @@ function EnrollmentDetailModal({
               </div>
             )}
 
-            <div className="flex items-center justify-between px-5 pt-3">
-              <div className="flex gap-1">
+            <div className="flex items-center flex-wrap gap-2 justify-between px-5 pt-3">
+              <div className="flex gap-1 overflow-x-auto">
                 <button
                   onClick={() => setTab("exercices")}
                   className={clsx(
-                    "px-3 py-1.5 text-sm font-medium rounded-lg",
+                    "px-3 py-1.5 text-sm font-medium rounded-lg shrink-0 whitespace-nowrap",
                     tab === "exercices" ? "bg-navy-800 text-white" : "text-navy-600 hover:bg-navy-50"
                   )}
                 >
@@ -823,7 +823,7 @@ function EnrollmentDetailModal({
                 <button
                   onClick={() => setTab("seances")}
                   className={clsx(
-                    "px-3 py-1.5 text-sm font-medium rounded-lg",
+                    "px-3 py-1.5 text-sm font-medium rounded-lg shrink-0 whitespace-nowrap",
                     tab === "seances" ? "bg-navy-800 text-white" : "text-navy-600 hover:bg-navy-50"
                   )}
                 >
@@ -832,7 +832,7 @@ function EnrollmentDetailModal({
                 <button
                   onClick={() => setTab("vol")}
                   className={clsx(
-                    "px-3 py-1.5 text-sm font-medium rounded-lg",
+                    "px-3 py-1.5 text-sm font-medium rounded-lg shrink-0 whitespace-nowrap",
                     tab === "vol" ? "bg-navy-800 text-white" : "text-navy-600 hover:bg-navy-50"
                   )}
                 >
@@ -1138,7 +1138,7 @@ function SessionFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
@@ -1149,7 +1149,7 @@ function SessionFormModal({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">Date</span>
               <input

@@ -78,6 +78,15 @@ export function PlanningView() {
   const [instructorFilter, setInstructorFilter] = useState<string>("ALL");
   const [view, setView] = useState<View>(Views.WEEK);
   const [date, setDate] = useState(new Date());
+
+  // Semaine (7 colonnes) tient sur un écran de bureau/tablette mais devient
+  // illisible sur téléphone (colonnes trop étroites pour lire l'immatriculation)
+  // — bascule sur Jour par défaut en dessous de md, une fois monté pour ne
+  // pas désynchroniser le rendu serveur/client (voir aussi Sidebar.tsx pour
+  // le même seuil).
+  useEffect(() => {
+    if (window.innerWidth < 768) setView(Views.DAY);
+  }, []);
   const [modalState, setModalState] = useState<
     | { mode: "create"; start: Date; end: Date }
     | { mode: "edit"; reservation: Reservation }
@@ -164,7 +173,11 @@ export function PlanningView() {
   }, []);
 
   return (
-    <div className="p-6 flex flex-col gap-4 h-[calc(100vh-97px)]">
+    // Hauteur dispo = 100vh moins tout ce qui est au-dessus du planning :
+    // en dessous de md, la barre du haut mobile + l'en-tête de page (voir
+    // Sidebar.tsx et PageHeader.tsx) ; à partir de md, seulement l'en-tête
+    // de page fixe (le menu latéral est une colonne, pas un empilement).
+    <div className="p-3 md:p-6 flex flex-col gap-3 md:gap-4 h-[calc(100vh-160px)] md:h-[calc(100vh-97px)]">
       <div className="flex flex-wrap items-center gap-3">
         <select
           value={aircraftFilter}
@@ -206,7 +219,7 @@ export function PlanningView() {
         </button>
       </div>
 
-      <div className="flex-1 bg-white rounded-2xl border border-navy-100 p-4 min-h-0">
+      <div className="flex-1 bg-white rounded-2xl border border-navy-100 p-1.5 md:p-4 min-h-0 overflow-x-auto">
         <Calendar
           localizer={localizer}
           events={events}

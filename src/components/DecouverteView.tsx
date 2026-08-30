@@ -83,7 +83,7 @@ export function DecouverteView() {
 
   if (!canManage) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
           <ShieldAlert size={28} className="text-navy-400" />
           <p className="font-semibold text-navy-900">Accès réservé au staff</p>
@@ -96,7 +96,7 @@ export function DecouverteView() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex justify-end mb-5">
         <button
           onClick={() => setShowCreate(true)}
@@ -293,7 +293,7 @@ function CreateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">Nouveau vol découverte</h2>
@@ -305,7 +305,7 @@ function CreateModal({
           <Field label="Nom du client">
             <input required value={clientName} onChange={(e) => setClientName(e.target.value)} className="input" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Téléphone (optionnel)">
               <input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="input" />
             </Field>
@@ -313,7 +313,7 @@ function CreateModal({
               <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className="input" />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Début">
               <input type="datetime-local" required value={start} onChange={(e) => setStart(e.target.value)} className="input" />
             </Field>
@@ -391,7 +391,7 @@ function DetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
@@ -431,7 +431,7 @@ function DetailModal({
             <span className={clsx("w-fit text-[11px] font-semibold px-2 py-1 rounded-full", STATUS_STYLE[reservation.status])}>
               {STATUS_LABEL[reservation.status] ?? reservation.status}
             </span>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <Field label="Avion">
                 <p className="text-navy-800">{reservation.aircraft.registration}</p>
               </Field>
@@ -573,7 +573,7 @@ function EditForm({
       <Field label="Nom du client">
         <input required value={clientName} onChange={(e) => setClientName(e.target.value)} className="input" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Téléphone (optionnel)">
           <input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="input" />
         </Field>
@@ -581,7 +581,7 @@ function EditForm({
           <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className="input" />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Début">
           <input type="datetime-local" required value={start} onChange={(e) => setStart(e.target.value)} className="input" />
         </Field>

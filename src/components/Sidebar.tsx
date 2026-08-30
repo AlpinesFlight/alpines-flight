@@ -246,7 +246,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl text-navy-900">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Changer mon mot de passe</h2>

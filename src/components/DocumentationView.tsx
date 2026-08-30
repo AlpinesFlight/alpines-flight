@@ -60,7 +60,7 @@ export function DocumentationView() {
   }, [documents]);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex justify-end mb-5">
         {canManage && (
           <button
@@ -182,7 +182,7 @@ function ProofModal({ document, onClose }: { document: SchoolDocument; onClose: 
   const acknowledgedCount = rows?.filter((r) => r.acknowledgedAt).length ?? 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <div>
@@ -267,7 +267,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">Ajouter un document</h2>

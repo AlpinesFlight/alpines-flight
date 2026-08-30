@@ -57,7 +57,7 @@ export function FleetView() {
   }, []);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex justify-end mb-5">
         <button
           onClick={() => setShowCreateAircraft(true)}
@@ -223,7 +223,7 @@ function CreateAircraftModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Nouvel avion</h2>
@@ -246,7 +246,7 @@ function CreateAircraftModal({
             onChange={(e) => setType(e.target.value)}
             className="input"
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               required
               type="number"
@@ -382,7 +382,7 @@ function AircraftDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white z-10">
           <h2 className="font-semibold text-navy-900">
@@ -395,7 +395,7 @@ function AircraftDetailModal({
 
         {data && (
           <>
-            <div className="flex gap-1 px-5 pt-3 border-b border-navy-100">
+            <div className="flex gap-1 px-5 pt-3 border-b border-navy-100 overflow-x-auto">
               {(
                 [
                   { key: "info", label: "Caractéristiques", icon: Pencil },
@@ -407,7 +407,7 @@ function AircraftDetailModal({
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={clsx(
-                    "flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+                    "flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors shrink-0 whitespace-nowrap",
                     tab === t.key
                       ? "border-sunset-500 text-navy-900"
                       : "border-transparent text-navy-600 hover:text-navy-900"
@@ -710,7 +710,7 @@ function AircraftInfoForm({
     <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
       <AircraftPhotoUpload aircraft={aircraft} onChanged={onSaved} />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <input
           required
           placeholder="Immatriculation"
@@ -726,7 +726,7 @@ function AircraftInfoForm({
           className="input"
         />
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <input
           required
           type="number"
@@ -754,7 +754,7 @@ function AircraftInfoForm({
           className="input"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3 items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value as typeof status)}
@@ -872,7 +872,7 @@ function MaintenanceFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">
@@ -1003,7 +1003,7 @@ function KardexFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Kardex · {aircraft.registration}</h2>
@@ -1012,7 +1012,7 @@ function KardexFormModal({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               required
               type="date"
@@ -1045,7 +1045,7 @@ function KardexFormModal({
             onChange={(e) => setDescription(e.target.value)}
             className="input min-h-14"
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               type="number"
               step="0.1"

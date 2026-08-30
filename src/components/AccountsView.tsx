@@ -122,7 +122,7 @@ export function AccountsView() {
 
   if (!isGerant) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
           <ShieldAlert size={28} className="text-navy-400" />
           <p className="font-semibold text-navy-900">Accès réservé au Gérant</p>
@@ -135,7 +135,7 @@ export function AccountsView() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="bg-white rounded-2xl border border-navy-100 p-5 mb-6">
         <p className="flex items-center gap-2 text-sm font-semibold text-navy-900 mb-3">
           <KeyRound size={16} className="text-sunset-600" /> Les 4 niveaux d&apos;accès
@@ -155,6 +155,7 @@ export function AccountsView() {
       {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2 mb-4">{error}</p>}
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-navy-600 border-b border-navy-100">
@@ -245,6 +246,7 @@ export function AccountsView() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -145,7 +145,7 @@ export function ReservationModal({
     (existing.status === "IN_FLIGHT" || (isStaff && existing.status === "CONFIRMED"));
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
@@ -190,7 +190,7 @@ export function ReservationModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Début">
               <input
                 type="datetime-local"
@@ -376,7 +376,7 @@ function LockedSummary({ reservation }: { reservation: Reservation }) {
       <div className="rounded-lg bg-green-100 text-green-700 text-sm font-medium px-3 py-2 flex items-center gap-2">
         <Lock size={16} /> Vol clôturé — verrouillé. Seul le Gérant peut le modifier.
       </div>
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <Field label="Avion">
           <p className="text-navy-800">{reservation.aircraft.registration}</p>
         </Field>
@@ -601,7 +601,7 @@ export function CompleteFlightPanel({
           : " — vol sans compte pilote associé (aucun débit)."}
       </p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Heure de départ">
           <input
             type="datetime-local"
@@ -622,7 +622,7 @@ export function CompleteFlightPanel({
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Terrain de départ (OACI)">
           <input
             required
@@ -745,7 +745,7 @@ export function CompleteFlightPanel({
         </label>
         {fuelRefillDone && (
           <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Carte utilisée">
                 <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value)} className="input">
                   {FUEL_CARD_OPTIONS.map((o) => (
@@ -765,7 +765,7 @@ export function CompleteFlightPanel({
                 </select>
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Litres">
                 <input
                   required={fuelRefillDone}

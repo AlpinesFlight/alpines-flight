@@ -92,7 +92,7 @@ export function FlightsView() {
   }, [flights]);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <form onSubmit={applyRange} className="flex items-end gap-3 mb-5 flex-wrap">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-navy-600">Du</span>
@@ -118,6 +118,7 @@ export function FlightsView() {
       </div>
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-navy-600 border-b border-navy-100">
@@ -186,6 +187,7 @@ export function FlightsView() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {editFlight && (
@@ -270,7 +272,7 @@ function EditFlightModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
@@ -288,7 +290,7 @@ function EditFlightModal({
             ressaisis-le depuis le planning.
           </p>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">Départ</span>
               <input
@@ -312,7 +314,7 @@ function EditFlightModal({
           </div>
           <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHours(duration)}</p>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">Terrain de départ (OACI)</span>
               <input
@@ -346,7 +348,7 @@ function EditFlightModal({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">Coût avion (€)</span>
               <input
@@ -391,7 +393,7 @@ function EditFlightModal({
             </label>
             {fuelRefillDone && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value as typeof fuelCard)} className="input">
                     {FUEL_CARD_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -407,7 +409,7 @@ function EditFlightModal({
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     type="number"
                     step="0.1"

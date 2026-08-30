@@ -33,9 +33,9 @@ export function InstructorsView() {
   );
 
   return (
-    <div className="p-8">
-      <div className="flex items-center gap-3 mb-5">
-        <div className="relative flex-1 max-w-sm">
+    <div className="p-4 md:p-8">
+      <div className="flex items-center flex-wrap gap-3 mb-5">
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-navy-600" />
           <input
             value={query}
@@ -53,6 +53,7 @@ export function InstructorsView() {
       </div>
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-navy-600 border-b border-navy-100">
@@ -99,6 +100,7 @@ export function InstructorsView() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showCreate && (
@@ -173,7 +175,7 @@ function CreateInstructorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
           <h2 className="font-semibold text-navy-900">Nouvel instructeur</h2>
@@ -205,7 +207,7 @@ function CreateInstructorModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 required
                 placeholder="Prénom"
@@ -253,7 +255,7 @@ function CreateInstructorModal({
                 className="input"
               />
             </label>
-            <div className="grid grid-cols-2 gap-3 items-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
               <input
                 type="number"
                 step="0.01"
@@ -340,7 +342,7 @@ function InstructorDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
@@ -351,7 +353,7 @@ function InstructorDetailModal({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               required
               placeholder="Prénom"
@@ -387,7 +389,7 @@ function InstructorDetailModal({
             onChange={(e) => setQualifications(e.target.value)}
             className="input"
           />
-          <div className="grid grid-cols-2 gap-3 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
             <input
               type="number"
               step="0.01"

@@ -151,7 +151,7 @@ export function LicencesView() {
   const canUpload = canManage || (!!selectedPersonId && selectedPersonId === session?.user?.id);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {canManage && pendingDocs.length > 0 && (
         <div className="mb-6 bg-white rounded-2xl border border-sunset-500/40 overflow-hidden">
           <div className="flex items-center gap-2 px-5 py-3 border-b border-navy-100 bg-sunset-100/50">
@@ -573,7 +573,7 @@ function UploadDocumentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
           <h2 className="font-semibold text-navy-900">
@@ -628,7 +628,7 @@ function UploadDocumentModal({
             onChange={(e) => setNumber(e.target.value)}
             className="input"
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">Délivré le</span>
               <input type="date" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} className="input" />

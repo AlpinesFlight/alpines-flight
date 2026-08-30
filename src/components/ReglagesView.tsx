@@ -46,7 +46,7 @@ export function ReglagesView() {
 
   if (!canManage) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
           <ShieldAlert size={28} className="text-navy-400" />
           <p className="font-semibold text-navy-900">Accès réservé à l&apos;Admin et au Gérant</p>
