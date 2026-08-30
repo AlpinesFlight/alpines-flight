@@ -126,6 +126,7 @@ export function FlightsView() {
               <th className="px-5 py-3 font-medium">Élève</th>
               <th className="px-5 py-3 font-medium">Instructeur</th>
               <th className="px-5 py-3 font-medium">Formation</th>
+              <th className="px-5 py-3 font-medium">Trajet</th>
               <th className="px-5 py-3 font-medium text-right">Durée</th>
               <th className="px-5 py-3 font-medium text-right">Att.</th>
               <th className="px-5 py-3 font-medium text-right">Coût</th>
@@ -144,6 +145,11 @@ export function FlightsView() {
                   {f.instructor ? `${f.instructor.firstName} ${f.instructor.lastName}` : "—"}
                 </td>
                 <td className="px-5 py-3 text-navy-500 text-xs">{f.trainingProgram?.title ?? "—"}</td>
+                <td className="px-5 py-3 text-navy-700 text-xs whitespace-nowrap">
+                  {f.departureAirfield && f.arrivalAirfield
+                    ? `${f.departureAirfield} → ${f.arrivalAirfield}`
+                    : "—"}
+                </td>
                 <td className="px-5 py-3 text-right text-navy-700 whitespace-nowrap">{formatHours(f.duration)}</td>
                 <td className="px-5 py-3 text-right text-navy-700">{f.totalLandings}</td>
                 <td className="px-5 py-3 text-right font-semibold text-navy-900 whitespace-nowrap">
@@ -173,7 +179,7 @@ export function FlightsView() {
             ))}
             {!loading && flights.length === 0 && (
               <tr>
-                <td colSpan={canFinanceAdmin ? 9 : 8} className="px-5 py-8 text-center text-navy-600">
+                <td colSpan={canFinanceAdmin ? 10 : 9} className="px-5 py-8 text-center text-navy-600">
                   Aucun vol sur cette période.
                 </td>
               </tr>
@@ -216,6 +222,8 @@ function EditFlightModal({
 }) {
   const [departureTime, setDepartureTime] = useState(toLocalInput(new Date(flight.departureTime)));
   const [arrivalTime, setArrivalTime] = useState(toLocalInput(new Date(flight.arrivalTime)));
+  const [departureAirfield, setDepartureAirfield] = useState(flight.departureAirfield ?? "");
+  const [arrivalAirfield, setArrivalAirfield] = useState(flight.arrivalAirfield ?? "");
   const [totalLandings, setTotalLandings] = useState(String(flight.totalLandings));
   const [remarks, setRemarks] = useState(flight.remarks ?? "");
   const [aircraftCost, setAircraftCost] = useState(String(flight.aircraftCostCents / 100));
@@ -241,6 +249,8 @@ function EditFlightModal({
         body: JSON.stringify({
           departureTime: new Date(departureTime).toISOString(),
           arrivalTime: new Date(arrivalTime).toISOString(),
+          departureAirfield: departureAirfield.trim().toUpperCase() || null,
+          arrivalAirfield: arrivalAirfield.trim().toUpperCase() || null,
           totalLandings: parseInt(totalLandings, 10) || 0,
           remarks: remarks || null,
           aircraftCostCents: Math.round(parseFloat(aircraftCost) * 100) || 0,
@@ -301,6 +311,29 @@ function EditFlightModal({
             </label>
           </div>
           <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHours(duration)}</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Terrain de départ (OACI)</span>
+              <input
+                placeholder="ex : LFNA"
+                value={departureAirfield}
+                onChange={(e) => setDepartureAirfield(e.target.value.toUpperCase())}
+                maxLength={12}
+                className="input uppercase tracking-wide"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Terrain de destination (OACI)</span>
+              <input
+                placeholder="ex : LFNA"
+                value={arrivalAirfield}
+                onChange={(e) => setArrivalAirfield(e.target.value.toUpperCase())}
+                maxLength={12}
+                className="input uppercase tracking-wide"
+              />
+            </label>
+          </div>
 
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-navy-600">Atterrissages (cycles)</span>

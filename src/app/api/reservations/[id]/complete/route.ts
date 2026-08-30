@@ -12,6 +12,8 @@ const schema = z
   .object({
     departureTime: z.string(),
     arrivalTime: z.string(),
+    departureAirfield: z.string().min(1, "Terrain de départ requis."),
+    arrivalAirfield: z.string().min(1, "Terrain de destination requis."),
     instructorId: z.string().nullable().optional(),
     trainingProgramId: z.string().nullable().optional(),
     remarks: z.string().nullable().optional(),
@@ -58,6 +60,8 @@ export async function POST(req: Request, { params }: Params) {
   const {
     departureTime,
     arrivalTime,
+    departureAirfield,
+    arrivalAirfield,
     instructorId,
     trainingProgramId,
     remarks,
@@ -141,6 +145,8 @@ export async function POST(req: Request, { params }: Params) {
         date: reservation.startTime,
         departureTime: start,
         arrivalTime: end,
+        departureAirfield: departureAirfield.trim().toUpperCase(),
+        arrivalAirfield: arrivalAirfield.trim().toUpperCase(),
         duration,
         totalLandings,
         aircraftCostCents,

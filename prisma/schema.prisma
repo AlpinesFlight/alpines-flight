@@ -281,6 +281,12 @@ model FlightLog {
   date                 DateTime
   departureTime        DateTime // heure de départ réelle
   arrivalTime          DateTime // heure d'arrivée réelle
+  // Terrain de départ et de destination (code OACI), distincts de `stops`
+  // ci-dessous qui recense les terrains posés/touchés EN COURS de vol (ex.
+  // tours de piste) — un vol Tallard -> Gap n'a qu'un départ et une
+  // destination, mais peut avoir plusieurs stops intermédiaires.
+  departureAirfield    String?
+  arrivalAirfield      String?
   duration             Float // heures, dérivé de arrivalTime - departureTime
   totalLandings        Int          @default(0) // somme des touchés tous terrains confondus (cycles)
   // Détail du coût débité au pilote (voir AccountTransaction.amountCents = -(aircraftCostCents + instructionCostCents))

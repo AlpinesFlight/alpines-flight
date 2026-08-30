@@ -139,6 +139,8 @@ export interface FlightLog {
   date: string;
   departureTime: string;
   arrivalTime: string;
+  departureAirfield: string | null;
+  arrivalAirfield: string | null;
   duration: number;
   totalLandings: number;
   aircraftCostCents: number;

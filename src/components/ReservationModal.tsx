@@ -509,6 +509,10 @@ export function CompleteFlightPanel({
     toLocalInput(reservation.actualDepartureTime ? new Date(reservation.actualDepartureTime) : new Date(reservation.startTime))
   );
   const [arrivalTime, setArrivalTime] = useState(toLocalInput(new Date()));
+  // LFNA (Gap-Tallard) pré-rempli par défaut au départ — la grande majorité
+  // des vols partent de la base de l'école, simple gain de temps, modifiable.
+  const [departureAirfield, setDepartureAirfield] = useState("LFNA");
+  const [arrivalAirfield, setArrivalAirfield] = useState("");
   const [instructorId, setInstructorId] = useState(reservation.instructorId ?? "");
   const [trainingProgramId, setTrainingProgramId] = useState(reservation.trainingProgramId ?? "");
   const [stops, setStops] = useState<StopRow[]>([{ airfield: "", touchAndGo: "1" }]);
@@ -559,6 +563,8 @@ export function CompleteFlightPanel({
         body: JSON.stringify({
           departureTime: new Date(departureTime).toISOString(),
           arrivalTime: new Date(arrivalTime).toISOString(),
+          departureAirfield: departureAirfield.trim().toUpperCase(),
+          arrivalAirfield: arrivalAirfield.trim().toUpperCase(),
           instructorId: instructorId || null,
           trainingProgramId: reservation.type === "INSTRUCTION" ? trainingProgramId || null : null,
           remarks: remarks || null,
@@ -612,6 +618,29 @@ export function CompleteFlightPanel({
             value={arrivalTime}
             onChange={(e) => setArrivalTime(e.target.value)}
             className="input"
+          />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Terrain de départ (OACI)">
+          <input
+            required
+            placeholder="ex : LFNA"
+            value={departureAirfield}
+            onChange={(e) => setDepartureAirfield(e.target.value.toUpperCase())}
+            maxLength={12}
+            className="input uppercase tracking-wide"
+          />
+        </Field>
+        <Field label="Terrain de destination (OACI)">
+          <input
+            required
+            placeholder="ex : LFNA"
+            value={arrivalAirfield}
+            onChange={(e) => setArrivalAirfield(e.target.value.toUpperCase())}
+            maxLength={12}
+            className="input uppercase tracking-wide"
           />
         </Field>
       </div>

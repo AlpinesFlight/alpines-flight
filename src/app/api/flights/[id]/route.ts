@@ -34,6 +34,8 @@ export async function GET(_req: Request, { params }: Params) {
 const editSchema = z.object({
   departureTime: z.string().optional(),
   arrivalTime: z.string().optional(),
+  departureAirfield: z.string().nullable().optional(),
+  arrivalAirfield: z.string().nullable().optional(),
   totalLandings: z.number().int().nonnegative().optional(),
   remarks: z.string().nullable().optional(),
   aircraftCostCents: z.number().int().nonnegative().optional(),
@@ -91,6 +93,8 @@ export async function PATCH(req: Request, { params }: Params) {
       data: {
         departureTime,
         arrivalTime,
+        departureAirfield: parsed.data.departureAirfield,
+        arrivalAirfield: parsed.data.arrivalAirfield,
         duration,
         totalLandings: newLandings,
         remarks: parsed.data.remarks,

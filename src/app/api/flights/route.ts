@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
+import { isGerant } from "@/lib/permissions";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
 // formulaire de séance (Formation → Nouvelle séance → Relier un vol, via
@@ -12,9 +13,11 @@ export async function GET(req: Request) {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const requestedStudentId = searchParams.get("studentId");
   const unlinkedOnly = searchParams.get("unlinked") === "true";
-  const studentId = session.user.role === "STUDENT" ? session.user.id : requestedStudentId;
+  // Seul le Gérant voit le carnet de vol complet de l'école — tout autre
+  // compte (y compris Admin et FI) ne voit que les vols où il apparaît,
+  // comme élève ou comme instructeur.
+  const ownFlightsOnly = !isGerant(session.user.role);
 
   const from = searchParams.get("from");
   const to = searchParams.get("to");
@@ -28,7 +31,9 @@ export async function GET(req: Request) {
 
   const flights = await prisma.flightLog.findMany({
     where: {
-      ...(studentId ? { studentId } : {}),
+      ...(ownFlightsOnly
+        ? { OR: [{ studentId: session.user.id }, { instructorId: session.user.id }] }
+        : {}),
       ...(unlinkedOnly ? { trainingSession: { is: null } } : {}),
       ...(dateFilter ? { date: dateFilter } : {}),
     },
