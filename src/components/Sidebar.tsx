@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -22,6 +22,7 @@ import {
   Lock,
   X,
   Settings,
+  Menu,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { clsx } from "clsx";
@@ -62,9 +63,62 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [showPassword, setShowPassword] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Referme le tiroir mobile à chaque changement de page — sans ça il reste
+  // ouvert par-dessus la nouvelle page après avoir cliqué un lien.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   return (
-    <aside className="w-64 shrink-0 bg-navy-800 text-cream-50 flex flex-col min-h-screen">
+    <>
+      {/* Barre du haut, seulement en dessous de md — le menu latéral devient
+          un tiroir superposé plutôt qu'une colonne fixe (voir plus bas),
+          donc il faut un point d'accès toujours visible pour l'ouvrir. */}
+      <div className="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 bg-navy-800 text-cream-50">
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Ouvrir le menu"
+          className="p-1 -ml-1 text-cream-50"
+        >
+          <Menu size={24} />
+        </button>
+        <Image
+          src="/brand/logo-mark.png"
+          alt="Alpines Flight"
+          width={28}
+          height={28}
+          className="rounded-full shrink-0"
+        />
+        <span className="font-[family-name:var(--font-display)] font-bold text-base">
+          Alpines Flight
+        </span>
+      </div>
+
+      {/* Fond assombri derrière le tiroir ouvert — seulement en dessous de
+          md, le clic dessus referme le tiroir. */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-navy-950/50 z-40"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={clsx(
+          "fixed md:relative inset-y-0 left-0 z-50 md:z-auto",
+          "w-64 shrink-0 bg-navy-800 text-cream-50 flex flex-col min-h-screen",
+          // Propriété transform "classique" (pas le raccourci translate/scale/
+          // rotate individuel plus récent) — support universel éprouvé sur
+          // tous les navigateurs mobiles, sans les soucis d'invalidation
+          // constatés avec les utilitaires translate-x-* de Tailwind v4
+          // combinés à position:fixed.
+          "transition-transform duration-200 ease-in-out md:[transform:translateX(0)]",
+          mobileOpen ? "[transform:translateX(0)]" : "[transform:translateX(-100%)]"
+        )}
+      >
       {/* Fond crème dédié : le badge du logo est lui-même navy (couleur
           quasi identique à bg-navy-800 du reste de la barre), il devenait
           invisible posé directement dessus. Le crème tranche nettement et
@@ -157,7 +211,8 @@ export function Sidebar({
       </div>
 
       {showPassword && <ChangePasswordModal onClose={() => setShowPassword(false)} />}
-    </aside>
+      </aside>
+    </>
   );
 }
 
