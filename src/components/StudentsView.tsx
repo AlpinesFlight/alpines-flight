@@ -356,6 +356,10 @@ function StudentDetailModal({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [togglingPilot, setTogglingPilot] = useState(false);
   const [togglingBaptism, setTogglingBaptism] = useState(false);
+  // Ni handleTogglePilot ni handleToggleBaptism n'affichaient l'erreur en
+  // cas d'échec (401 inattendu, coupure réseau...) — le bouton semblait
+  // juste ne rien faire, sans aucun indice pour comprendre pourquoi.
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -377,6 +381,7 @@ function StudentDetailModal({
   async function handleTogglePilot() {
     if (!data) return;
     setTogglingPilot(true);
+    setToggleError(null);
     try {
       await apiFetch(`/api/students/${studentId}`, {
         method: "PATCH",
@@ -384,6 +389,8 @@ function StudentDetailModal({
       });
       await load();
       onUpdated();
+    } catch (err) {
+      setToggleError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setTogglingPilot(false);
     }
@@ -396,6 +403,7 @@ function StudentDetailModal({
   async function handleToggleBaptism() {
     if (!data) return;
     setTogglingBaptism(true);
+    setToggleError(null);
     try {
       await apiFetch(`/api/students/${studentId}`, {
         method: "PATCH",
@@ -403,6 +411,8 @@ function StudentDetailModal({
       });
       await load();
       onUpdated();
+    } catch (err) {
+      setToggleError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setTogglingBaptism(false);
     }
@@ -557,6 +567,10 @@ function StudentDetailModal({
                     : "Autoriser à voler en vol baptême"}
                 </button>
               </div>
+            )}
+
+            {toggleError && (
+              <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2 -mt-2">{toggleError}</p>
             )}
 
             <div className="grid grid-cols-3 gap-3">
