@@ -97,10 +97,17 @@ export function FleetView() {
           >
             <div className="relative h-28">
               {a.photoMimeType ? (
+                // Pas next/image : sa pipeline d'optimisation refait la
+                // requête côté serveur, et rien ne garantit qu'elle
+                // transmette le cookie de session jusqu'à cette route
+                // authentifiée — risque de casser l'affichage plutôt que de
+                // l'accélérer. loading="lazy" reste un gain sûr dès que la
+                // flotte compte plus que 2-3 avions à l'écran à la fois.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={`/api/aircraft/${a.id}/photo`}
                   alt={a.registration}
+                  loading="lazy"
                   className="w-full h-full object-cover"
                 />
               ) : (

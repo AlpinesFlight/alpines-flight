@@ -179,6 +179,10 @@ model MaintenanceRecord {
   updatedAt     DateTime @updatedAt
 
   kardexEntries KardexEntry[]
+
+  // Le tableau de bord (Gérant) filtre systématiquement les échéances
+  // DUE/OVERDUE.
+  @@index([status])
 }
 
 // ---------- Kardex (dossier technique de chaque avion) ----------
@@ -243,6 +247,11 @@ model MaintenanceIssue {
   resolvedById    String?
   resolvedBy      User?                   @relation("MaintenanceIssueResolvedBy", fields: [resolvedById], references: [id])
   resolutionNotes String?
+
+  // GET /api/maintenance-issues filtre systématiquement par status (Gérant :
+  // OPEN en priorité) et par reportedById (tout autre compte : les siens).
+  @@index([status])
+  @@index([reportedById])
 }
 
 // ---------- Planning ----------
@@ -293,6 +302,14 @@ model Reservation {
   updatedAt           DateTime @updatedAt
 
   flight FlightLog?
+
+  // La vérification de conflit (même avion/instructeur sur un créneau
+  // chevauchant, voir /api/reservations) tourne à chaque création/édition —
+  // le point le plus chaud du planning. status+startTime couvre en plus les
+  // listages du Planning/tableau de bord, filtrés par période.
+  @@index([aircraftId, startTime, endTime])
+  @@index([instructorId, startTime, endTime])
+  @@index([status, startTime])
 }
 
 // ---------- Carnet de vol ----------
@@ -351,6 +368,10 @@ model FlightLog {
   fuelLiters       Float?
   fuelType         FuelType?
   fuelAirfield     String?
+
+  // /api/flights (carnet de vol) et le tableau de bord filtrent
+  // systématiquement par plage de dates.
+  @@index([date])
 }
 
 enum FuelCard {
@@ -421,6 +442,11 @@ model AccountTransaction {
   confirmedAt   DateTime?
   confirmedById String?
   confirmedBy   User?              @relation("TransactionConfirmedBy", fields: [confirmedById], references: [id])
+
+  // BillingView sépare systématiquement PENDING/le reste par status ; l'export
+  // comptable (comptes-pilotes/print) filtre par confirmedAt.
+  @@index([status])
+  @@index([confirmedAt])
 }
 
 // ---------- Licences, qualifications, médicales ----------
