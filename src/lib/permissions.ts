@@ -43,3 +43,12 @@ export function isInstructorOrAbove(role: string | undefined | null): boolean {
 export function isGerant(role: string | undefined | null): boolean {
   return role === "GERANT";
 }
+
+// Disponibilités FI (sous-page de Planning) : volontairement PAS
+// canManageSchool/isInstructorOrAbove — l'Admin gère l'école mais n'a pas
+// à voir ni donner des disponibilités de vol, seuls les FI (qui les
+// saisissent) et le Gérant (qui les consulte pour adapter l'activité de
+// l'école) y ont accès.
+export function canSeeInstructorAvailability(role: string | undefined | null): boolean {
+  return role === "GERANT" || role === "INSTRUCTOR";
+}

@@ -132,6 +132,15 @@ export interface Reservation {
   priceCents: number | null;
 }
 
+export interface InstructorAvailability {
+  id: string;
+  instructorId: string;
+  instructor: UserLite;
+  startTime: string;
+  endTime: string;
+  notes: string | null;
+}
+
 // ---------- Carnet de vol ----------
 
 export interface FlightStop {

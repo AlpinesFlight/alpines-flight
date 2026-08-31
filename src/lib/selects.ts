@@ -43,6 +43,15 @@ export const safeReservationStudentSelect = {
   studentProfile: { select: { canGiveBaptism: true } },
 } as const;
 
+// Le `instructor` d'une InstructorAvailability — safeUserSelect, plus la
+// couleur planning de l'instructeur (InstructorProfile.color, déjà
+// utilisée pour le distinguer sur le Planning avions) pour appliquer la
+// même couleur sur ses créneaux de disponibilité.
+export const safeAvailabilityInstructorSelect = {
+  ...safeUserSelect,
+  instructorProfile: { select: { color: true } },
+} as const;
+
 // Champs d'un QualificationDocument à renvoyer au client — exclut
 // systématiquement fileData (le contenu binaire, potentiellement volumineux,
 // ne doit transiter que par la route de streaming dédiée

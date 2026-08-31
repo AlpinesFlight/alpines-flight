@@ -58,6 +58,7 @@ model User {
   kardexEntriesCreated KardexEntry[] @relation("KardexCreatedBy")
   maintenanceIssuesReported MaintenanceIssue[] @relation("MaintenanceIssueReportedBy")
   maintenanceIssuesResolved MaintenanceIssue[] @relation("MaintenanceIssueResolvedBy")
+  instructorAvailability InstructorAvailability[]
 
   // Licences, qualifications, médicales... (élèves ET instructeurs)
   qualifications          Qualification[]         @relation("QualificationHolder")
@@ -252,6 +253,28 @@ model MaintenanceIssue {
   // OPEN en priorité) et par reportedById (tout autre compte : les siens).
   @@index([status])
   @@index([reportedById])
+}
+
+// ---------- Disponibilités FI ----------
+//
+// Un instructeur déclare les créneaux où il est disponible pour voler —
+// distinct des Reservation (qui occupent un avion précis) : ceci occupe
+// seulement l'instructeur, sert au Gérant à adapter l'activité de l'école
+// (page /planning/disponibilites, visible FI + Gérant uniquement, voir
+// canSeeInstructorAvailability dans src/lib/permissions.ts).
+
+model InstructorAvailability {
+  id           String   @id @default(cuid())
+  instructorId String
+  instructor   User     @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  startTime    DateTime
+  endTime      DateTime
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([instructorId, startTime, endTime])
+  @@index([startTime])
 }
 
 // ---------- Planning ----------
