@@ -321,6 +321,11 @@ model Reservation {
   clientPhone         String?
   clientEmail         String?
   priceCents          Int?
+  // Vol baptême donné par un pilote autorisé (StudentProfile.
+  // canGiveBaptism) — choisi ici, à la réservation, pas à la clôture :
+  // recopié tel quel sur FlightLog.isBaptism une fois le vol clôturé, et
+  // revérifié à ce moment-là (voir /api/reservations/[id]/complete).
+  isBaptism           Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

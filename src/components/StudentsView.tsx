@@ -80,7 +80,7 @@ export function StudentsView() {
           onClick={() => setShowCreate(true)}
           className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
         >
-          <Plus size={16} /> Nouvel élève
+          <Plus size={16} /> Ajouter un nouveau membre
         </button>
       </div>
 
@@ -148,7 +148,7 @@ export function StudentsView() {
       </div>
 
       {showCreate && (
-        <CreateStudentModal
+        <CreateMemberModal
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -164,42 +164,78 @@ export function StudentsView() {
   );
 }
 
-function CreateStudentModal({
+type NewMemberRole = "STUDENT" | "PILOT" | "INSTRUCTOR";
+
+const NEW_MEMBER_ROLES: { key: NewMemberRole; label: string }[] = [
+  { key: "STUDENT", label: "Élève" },
+  { key: "PILOT", label: "Pilote" },
+  { key: "INSTRUCTOR", label: "FI" },
+];
+
+// Point d'entrée unique pour ajouter n'importe qui — élève, pilote ou FI —
+// avec le choix du type à ce moment-là, plutôt que deux formulaires
+// séparés sur deux pages (l'ancien "Nouvel instructeur" de la page
+// Instructeurs a été retiré en conséquence, voir InstructorsView.tsx).
+// Élève/Pilote posent le même compte STUDENT (isPilot true/false, voir
+// StudentProfile) ; FI crée un compte INSTRUCTOR à part — deux routes
+// différentes derrière un seul formulaire.
+function CreateMemberModal({
   onClose,
   onCreated,
 }: {
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const [role, setRole] = useState<NewMemberRole>("STUDENT");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [licenseType, setLicenseType] = useState("");
-  const [isPilot, setIsPilot] = useState(false);
+  const [qualifications, setQualifications] = useState("");
+  const [hourlyRate, setHourlyRate] = useState("");
+  const [color, setColor] = useState("#0C2448");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
 
+  const isInstructor = role === "INSTRUCTOR";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const res = await apiFetch<{ tempPassword: string | null }>("/api/students", {
-        method: "POST",
-        body: JSON.stringify({
-          firstName,
-          lastName,
-          email,
-          phone,
-          licenseType,
-          isPilot,
-          password: password || undefined,
-        }),
-      });
+      const res = await apiFetch<{ tempPassword: string | null }>(
+        isInstructor ? "/api/instructors" : "/api/students",
+        {
+          method: "POST",
+          body: JSON.stringify(
+            isInstructor
+              ? {
+                  firstName,
+                  lastName,
+                  email,
+                  phone,
+                  qualifications,
+                  hourlyRateCents: hourlyRate ? Math.round(parseFloat(hourlyRate) * 100) : null,
+                  color,
+                  password: password || undefined,
+                }
+              : {
+                  firstName,
+                  lastName,
+                  email,
+                  phone,
+                  licenseType,
+                  isPilot: role === "PILOT",
+                  password: password || undefined,
+                }
+          ),
+        }
+      );
       setTempPassword(res.tempPassword);
       setCreated(true);
     } catch (err) {
@@ -213,7 +249,7 @@ function CreateStudentModal({
     <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
-          <h2 className="font-semibold text-navy-900">Nouvel élève</h2>
+          <h2 className="font-semibold text-navy-900">Ajouter un nouveau membre</h2>
           <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
             <X size={20} />
           </button>
@@ -224,7 +260,7 @@ function CreateStudentModal({
             {tempPassword ? (
               <>
                 <p className="text-sm text-navy-700">
-                  Compte créé. Mot de passe temporaire à communiquer à l&apos;élève :
+                  Compte créé. Mot de passe temporaire à communiquer :
                 </p>
                 <p className="font-mono text-sm bg-navy-50 rounded-lg px-3 py-2">
                   {tempPassword}
@@ -244,6 +280,21 @@ function CreateStudentModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+            <div className="flex items-center bg-navy-50 rounded-lg p-1 gap-1">
+              {NEW_MEMBER_ROLES.map((r) => (
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => setRole(r.key)}
+                  className={clsx(
+                    "flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                    role === r.key ? "bg-white text-navy-900 shadow-sm" : "text-navy-600 hover:text-navy-900"
+                  )}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 required
@@ -274,20 +325,21 @@ function CreateStudentModal({
               onChange={(e) => setPhone(e.target.value)}
               className="input"
             />
-            <input
-              placeholder="Licence (ex: PPL, LAPL)"
-              value={licenseType}
-              onChange={(e) => setLicenseType(e.target.value)}
-              className="input"
-            />
-            <label className="flex items-center gap-2 text-sm text-navy-700 rounded-lg border border-navy-100 px-3 py-2.5 cursor-pointer">
+            {isInstructor ? (
               <input
-                type="checkbox"
-                checked={isPilot}
-                onChange={(e) => setIsPilot(e.target.checked)}
+                placeholder="Qualifications (ex: FI(A), IRI)"
+                value={qualifications}
+                onChange={(e) => setQualifications(e.target.value)}
+                className="input"
               />
-              Pilote déjà breveté (plutôt qu&apos;élève en formation)
-            </label>
+            ) : (
+              <input
+                placeholder="Licence (ex: PPL, LAPL)"
+                value={licenseType}
+                onChange={(e) => setLicenseType(e.target.value)}
+                className="input"
+              />
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-navy-600">
                 Mot de passe (laisser vide pour en générer un automatiquement)
@@ -300,6 +352,27 @@ function CreateStudentModal({
                 className="input"
               />
             </label>
+            {isInstructor && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Tarif instruction €/h (optionnel)"
+                  value={hourlyRate}
+                  onChange={(e) => setHourlyRate(e.target.value)}
+                  className="input"
+                />
+                <label className="flex items-center gap-2 text-sm text-navy-700">
+                  Couleur
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-9 h-9 rounded border border-navy-100"
+                  />
+                </label>
+              </div>
+            )}
             {error && (
               <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>
             )}
@@ -308,7 +381,7 @@ function CreateStudentModal({
               disabled={saving}
               className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
             >
-              {saving ? "Création..." : "Créer l'élève"}
+              {saving ? "Création..." : "Créer le compte"}
             </button>
           </form>
         )}

@@ -130,6 +130,7 @@ export interface Reservation {
   clientPhone: string | null;
   clientEmail: string | null;
   priceCents: number | null;
+  isBaptism: boolean;
 }
 
 export interface InstructorAvailability {

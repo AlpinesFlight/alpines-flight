@@ -34,6 +34,11 @@ export async function GET() {
               licenseType: true,
               totalHours: true,
               isPilot: true,
+              // Comme isPilot juste au-dessus : simple étiquette, pas une
+              // donnée financière/médicale, donc visible de tous comme le
+              // reste de ce trombinoscope — sert au choix "Vol baptême" à
+              // la réservation (voir ReservationModal.tsx).
+              canGiveBaptism: true,
               createdAt: true,
               updatedAt: true,
             },

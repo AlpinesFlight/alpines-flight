@@ -31,11 +31,6 @@ const schema = z
     fuelLiters: z.number().positive().optional().nullable(),
     fuelType: z.enum(["AVGAS_100LL", "SP98"]).optional().nullable(),
     fuelAirfield: z.string().optional().nullable(),
-    // Vol baptême donné par un pilote autorisé — voir plus bas, revérifié
-    // côté serveur (StudentProfile.canGiveBaptism) avant d'être honoré :
-    // jamais se fier au seul booléen envoyé par le client pour dispenser
-    // un débit.
-    isBaptism: z.boolean().optional().default(false),
   })
   .refine(
     (d) => !d.fuelRefillDone || (d.fuelCard && d.fuelLiters && d.fuelType && d.fuelAirfield),
@@ -50,9 +45,10 @@ const schema = z
 // retour : heures réelles, terrains + touchés, instructeur, plein éventuel.
 // Crée le carnet de vol, débite automatiquement le compte pilote (avion +
 // prestation d'instruction si vol d'instruction) sauf s'il n'y a pas
-// d'élève associé (vol découverte/baptême — voir plus bas), et met à jour
-// les heures / cycles de l'avion (déclenchant le recalcul des échéances
-// maintenance).
+// d'élève associé (vol découverte) ou si c'est un vol baptême — choisi à
+// la réservation, pas ici, voir Reservation.isBaptism plus bas — et met à
+// jour les heures / cycles de l'avion (déclenchant le recalcul des
+// échéances maintenance).
 export async function POST(req: Request, { params }: Params) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -77,7 +73,6 @@ export async function POST(req: Request, { params }: Params) {
     fuelLiters,
     fuelType,
     fuelAirfield,
-    isBaptism: requestedBaptism,
   } = parsed.data;
   const start = new Date(departureTime);
   const end = new Date(arrivalTime);
@@ -99,11 +94,11 @@ export async function POST(req: Request, { params }: Params) {
   });
   if (!reservation) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Revérifié ici plutôt que de faire confiance au booléen envoyé par le
-  // client : sans ça n'importe quel appel direct à cette route pourrait se
-  // dispenser de débit en se déclarant "vol baptême" sans l'autorisation du
-  // Gérant.
-  const isBaptism = requestedBaptism && reservation.student?.studentProfile?.canGiveBaptism === true;
+  // La décision "vol baptême" a été prise à la réservation
+  // (Reservation.isBaptism, voir POST/PATCH /api/reservations) — revérifiée
+  // ici, pas simplement recopiée : si l'autorisation du pilote a été
+  // retirée entre la réservation et le vol, elle ne doit plus s'appliquer.
+  const isBaptism = reservation.isBaptism && reservation.student?.studentProfile?.canGiveBaptism === true;
 
   const isOwner = reservation.studentId === session.user.id;
   const isStaff = isInstructorOrAbove(session.user.role);

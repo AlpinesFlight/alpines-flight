@@ -58,6 +58,10 @@ const createSchema = z
     clientPhone: z.string().optional().nullable(),
     clientEmail: z.string().optional().nullable(),
     priceCents: z.number().int().nonnegative().optional().nullable(),
+    // Choisi ici, à la réservation — pas à la clôture (voir complete/
+    // route.ts) — revérifié plus bas contre StudentProfile.canGiveBaptism,
+    // jamais fait confiance au seul booléen envoyé par le client.
+    isBaptism: z.boolean().optional().default(false),
   })
   .refine((d) => d.type !== "DISCOVERY" || !!d.clientName?.trim(), {
     message: "Le nom du client est requis pour un vol découverte.",
@@ -80,7 +84,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { aircraftId, instructorId, startTime, endTime } = parsed.data;
+  const { aircraftId, instructorId, studentId, startTime, endTime, isBaptism: requestedBaptism } = parsed.data;
   const start = new Date(startTime);
   const end = new Date(endTime);
 
@@ -128,11 +132,23 @@ export async function POST(req: Request) {
     }
   }
 
+  // Revérifié ici plutôt que de faire confiance au booléen envoyé par le
+  // client (même logique qu'à la clôture, voir complete/route.ts).
+  let isBaptism = false;
+  if (requestedBaptism && studentId) {
+    const profile = await prisma.studentProfile.findUnique({
+      where: { userId: studentId },
+      select: { canGiveBaptism: true },
+    });
+    isBaptism = profile?.canGiveBaptism === true;
+  }
+
   const reservation = await prisma.reservation.create({
     data: {
       ...parsed.data,
       startTime: start,
       endTime: end,
+      isBaptism,
     },
     include: {
       aircraft: { select: safeAircraftSelect },

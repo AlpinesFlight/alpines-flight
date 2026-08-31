@@ -24,6 +24,9 @@ const patchSchema = z.object({
   clientPhone: z.string().nullable().optional(),
   clientEmail: z.string().nullable().optional(),
   priceCents: z.number().int().nonnegative().nullable().optional(),
+  // Revérifié plus bas contre StudentProfile.canGiveBaptism si true, comme
+  // à la création — jamais fait confiance au seul booléen du client.
+  isBaptism: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -58,7 +61,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { startTime, endTime, ...rest } = parsed.data;
+  const { startTime, endTime, isBaptism: requestedBaptism, ...rest } = parsed.data;
 
   // Recalcule l'état effectif après patch (champs non fournis = valeur
   // actuelle) pour revérifier les conflits d'agenda, comme à la création —
@@ -67,10 +70,29 @@ export async function PATCH(req: Request, { params }: Params) {
   const effectiveAircraftId = parsed.data.aircraftId ?? existing.aircraftId;
   const effectiveInstructorId =
     parsed.data.instructorId !== undefined ? parsed.data.instructorId : existing.instructorId;
+  const effectiveStudentId =
+    parsed.data.studentId !== undefined ? parsed.data.studentId : existing.studentId;
   const effectiveType = parsed.data.type ?? existing.type;
   const effectiveStatus = parsed.data.status ?? existing.status;
   const effectiveStart = startTime ? new Date(startTime) : existing.startTime;
   const effectiveEnd = endTime ? new Date(endTime) : existing.endTime;
+
+  // Si le client redemande le baptême (ou change l'élève/pilote), revérifie
+  // contre l'autorisation réelle plutôt que de recopier tel quel — un
+  // false explicite n'a lui pas besoin d'être revérifié (retirer le
+  // baptême est toujours sûr).
+  let isBaptismUpdate: { isBaptism?: boolean } = {};
+  if (requestedBaptism !== undefined) {
+    if (requestedBaptism && effectiveStudentId) {
+      const profile = await prisma.studentProfile.findUnique({
+        where: { userId: effectiveStudentId },
+        select: { canGiveBaptism: true },
+      });
+      isBaptismUpdate = { isBaptism: profile?.canGiveBaptism === true };
+    } else {
+      isBaptismUpdate = { isBaptism: false };
+    }
+  }
 
   if (effectiveStatus !== "CANCELLED") {
     if (effectiveEnd <= effectiveStart) {
@@ -125,6 +147,7 @@ export async function PATCH(req: Request, { params }: Params) {
       ...rest,
       ...(startTime ? { startTime: new Date(startTime) } : {}),
       ...(endTime ? { endTime: new Date(endTime) } : {}),
+      ...isBaptismUpdate,
     },
     include: {
       aircraft: { select: safeAircraftSelect },

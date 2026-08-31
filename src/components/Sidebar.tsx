@@ -35,7 +35,7 @@ const NAV_ITEMS = [
   // publique (voir la page), donc réservé au staff pédagogique comme le
   // reste de la gestion des vols.
   { href: "/decouverte", label: "Vol découverte", icon: Compass, staffOnly: true },
-  { href: "/eleves", label: "Élèves", icon: Users },
+  { href: "/eleves", label: "Élèves & pilotes", icon: Users },
   { href: "/instructeurs", label: "Instructeurs", icon: UserCog },
   { href: "/formation", label: "Formation", icon: GraduationCap },
   { href: "/licences", label: "Licences", icon: ShieldCheck },
@@ -113,7 +113,12 @@ export function Sidebar({
       <aside
         className={clsx(
           "fixed md:relative inset-y-0 left-0 z-50 md:z-auto",
-          "w-64 shrink-0 bg-navy-800 text-cream-50 flex flex-col min-h-screen",
+          // overflow-y-auto : en dessous de md, inset-y-0 + fixed forcent la
+          // hauteur du tiroir à exactement 100vh — sur un écran court, les
+          // ~13 liens + l'en-tête + le pied (export/mot de passe/
+          // déconnexion) dépassent cette hauteur, et le pied (donc la
+          // déconnexion) devenait inatteignable, aucun scroll possible.
+          "w-64 shrink-0 bg-navy-800 text-cream-50 flex flex-col min-h-screen overflow-y-auto",
           // Propriété transform "classique" (pas le raccourci translate/scale/
           // rotate individuel plus récent) — support universel éprouvé sur
           // tous les navigateurs mobiles, sans les soucis d'invalidation

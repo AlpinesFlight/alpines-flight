@@ -5,10 +5,7 @@ import { PlanningTabs } from "@/components/PlanningTabs";
 export default function DisponibilitesPage() {
   return (
     <div>
-      <PageHeader
-        title="Disponibilités FI"
-        subtitle="Visible uniquement des instructeurs et du Gérant"
-      />
+      <PageHeader title="Disponibilités FI" />
       <PlanningTabs />
       <InstructorAvailabilityView />
     </div>

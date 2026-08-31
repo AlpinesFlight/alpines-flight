@@ -11,7 +11,6 @@ export function InstructorsView() {
   const [instructors, setInstructors] = useState<UserLite[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
   const [detail, setDetail] = useState<UserLite | null>(null);
 
   async function load() {
@@ -44,12 +43,15 @@ export function InstructorsView() {
             className="input pl-9"
           />
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
+        {/* Création unifiée élève/pilote/FI depuis la page Élèves &
+            pilotes (voir CreateMemberModal dans StudentsView.tsx) — pas de
+            second formulaire de création ici. */}
+        <Link
+          href="/eleves"
           className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
         >
-          <Plus size={16} /> Nouvel instructeur
-        </button>
+          <Plus size={16} /> Ajouter un nouveau membre
+        </Link>
       </div>
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
@@ -103,16 +105,6 @@ export function InstructorsView() {
         </div>
       </div>
 
-      {showCreate && (
-        <CreateInstructorModal
-          onClose={() => setShowCreate(false)}
-          onCreated={() => {
-            setShowCreate(false);
-            load();
-          }}
-        />
-      )}
-
       {detail && (
         <InstructorDetailModal
           instructor={detail}
@@ -123,170 +115,6 @@ export function InstructorsView() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function CreateInstructorModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [qualifications, setQualifications] = useState("");
-  const [hourlyRate, setHourlyRate] = useState("");
-  const [color, setColor] = useState("#0C2448");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [created, setCreated] = useState(false);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await apiFetch<{ tempPassword: string | null }>("/api/instructors", {
-        method: "POST",
-        body: JSON.stringify({
-          firstName,
-          lastName,
-          email,
-          phone,
-          qualifications,
-          hourlyRateCents: hourlyRate ? Math.round(parseFloat(hourlyRate) * 100) : null,
-          color,
-          password: password || undefined,
-        }),
-      });
-      setTempPassword(res.tempPassword);
-      setCreated(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
-          <h2 className="font-semibold text-navy-900">Nouvel instructeur</h2>
-          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
-            <X size={20} />
-          </button>
-        </div>
-
-        {created ? (
-          <div className="p-5 flex flex-col gap-3">
-            {tempPassword ? (
-              <>
-                <p className="text-sm text-navy-700">
-                  Compte créé. Mot de passe temporaire à communiquer à l&apos;instructeur :
-                </p>
-                <p className="font-mono text-sm bg-navy-50 rounded-lg px-3 py-2">{tempPassword}</p>
-              </>
-            ) : (
-              <p className="text-sm text-navy-700">
-                Compte créé avec le mot de passe que tu as choisi.
-              </p>
-            )}
-            <button
-              onClick={onCreated}
-              className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm"
-            >
-              Fermer
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                required
-                placeholder="Prénom"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="input"
-              />
-              <input
-                required
-                placeholder="Nom"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                className="input"
-              />
-            </div>
-            <input
-              required
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input"
-            />
-            <input
-              placeholder="Téléphone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="input"
-            />
-            <input
-              placeholder="Qualifications (ex: FI(A), IRI)"
-              value={qualifications}
-              onChange={(e) => setQualifications(e.target.value)}
-              className="input"
-            />
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">
-                Mot de passe (laisser vide pour en générer un automatiquement)
-              </span>
-              <input
-                type="text"
-                placeholder="Min. 8 caractères"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input"
-              />
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Tarif instruction €/h (optionnel, tarif par défaut)"
-                value={hourlyRate}
-                onChange={(e) => setHourlyRate(e.target.value)}
-                className="input"
-              />
-              <label className="flex items-center gap-2 text-sm text-navy-700">
-                Couleur
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="w-9 h-9 rounded border border-navy-100"
-                />
-              </label>
-            </div>
-            {error && (
-              <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>
-            )}
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
-            >
-              {saving ? "Création..." : "Créer l'instructeur"}
-            </button>
-          </form>
-        )}
-      </div>
     </div>
   );
 }

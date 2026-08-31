@@ -157,7 +157,7 @@ export function InstructorAvailabilityView() {
     <div className="p-3 md:p-6 flex flex-col gap-3 md:gap-4 h-[calc(100vh-160px)] md:h-[calc(100vh-97px)]">
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-navy-600">
-          Clique-glisse sur un créneau pour indiquer une disponibilité. Visible uniquement des FI et du Gérant.
+          Clique-glisse sur un créneau pour indiquer une disponibilité.
         </p>
         <button
           onClick={() =>
