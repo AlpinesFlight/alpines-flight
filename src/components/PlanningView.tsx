@@ -78,14 +78,22 @@ export function PlanningView() {
   const [instructorFilter, setInstructorFilter] = useState<string>("ALL");
   const [view, setView] = useState<View>(Views.WEEK);
   const [date, setDate] = useState(new Date());
-
   // Semaine (7 colonnes) tient sur un écran de bureau/tablette mais devient
-  // illisible sur téléphone (colonnes trop étroites pour lire l'immatriculation)
-  // — bascule sur Jour par défaut en dessous de md, une fois monté pour ne
-  // pas désynchroniser le rendu serveur/client (voir aussi Sidebar.tsx pour
-  // le même seuil).
+  // illisible sur téléphone — vérifié : à 375px de large, chaque colonne
+  // d'événement retombe à ~15px, le texte (immatriculation/nom) s'écrase en
+  // bouillie verticale au lieu de simplement se tronquer. Mois (cellules
+  // plus hautes, ellipsis sur une ligne) et Agenda (liste, pas de grille)
+  // restent lisibles à cette largeur, donc Semaine est carrément retirée du
+  // choix plutôt que rafistolée, sous md.
+  const [narrowScreen, setNarrowScreen] = useState(false);
+
+  // Une fois monté seulement, pour ne pas désynchroniser le rendu
+  // serveur/client (voir aussi Sidebar.tsx pour le même seuil).
   useEffect(() => {
-    if (window.innerWidth < 768) setView(Views.DAY);
+    if (window.innerWidth < 768) {
+      setView(Views.DAY);
+      setNarrowScreen(true);
+    }
   }, []);
   const [modalState, setModalState] = useState<
     | { mode: "create"; start: Date; end: Date }
@@ -229,7 +237,11 @@ export function PlanningView() {
           onView={setView}
           date={date}
           onNavigate={setDate}
-          views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
+          views={
+            narrowScreen
+              ? [Views.MONTH, Views.DAY, Views.AGENDA]
+              : [Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]
+          }
           selectable
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
