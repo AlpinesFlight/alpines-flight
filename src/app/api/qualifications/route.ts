@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeDocumentSelect } from "@/lib/selects";
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const parsed = createSchema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   if (!canManageSchool(session.user.role) && parsed.data.userId !== session.user.id) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

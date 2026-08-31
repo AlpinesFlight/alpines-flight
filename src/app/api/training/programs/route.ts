@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canManageSchool } from "@/lib/permissions";
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const parsed = createSchema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   const dup = await prisma.trainingProgram.findUnique({ where: { code: parsed.data.code } });
   if (dup) return NextResponse.json({ error: "Ce code de programme est déjà utilisé." }, { status: 409 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canManageSchool } from "@/lib/permissions";
@@ -50,7 +51,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = await req.json();
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   if (parsed.data.code) {
     const dup = await prisma.trainingProgram.findUnique({ where: { code: parsed.data.code } });

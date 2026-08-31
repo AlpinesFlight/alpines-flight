@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
@@ -6,7 +7,7 @@ import { z } from "zod";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, "8 caractères minimum"),
+  newPassword: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères."),
 });
 
 // Changement de mot de passe en libre-service — n'importe quel compte
@@ -19,7 +20,7 @@ export async function PATCH(req: Request) {
   const body = await req.json();
   const parsed = schema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id } });
   if (!user) return NextResponse.json({ error: "not found" }, { status: 404 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
   if (body.type === "DEPOSIT") {
     const parsed = depositSchema.safeParse(body);
     if (!parsed.success)
-      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+      return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
     // Seul le Gérant peut déclarer un versement pour quelqu'un d'autre (ex.
     // espèces reçues en personne) — tout autre compte ne peut déclarer que
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
 
     const parsed = adjustmentSchema.safeParse(body);
     if (!parsed.success)
-      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+      return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
     const tx = await prisma.$transaction(async (db) => {
       const created = await db.accountTransaction.create({

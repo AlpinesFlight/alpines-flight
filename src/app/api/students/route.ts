@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
@@ -55,7 +56,7 @@ const createSchema = z.object({
   // Optionnel : l'admin peut fixer le mot de passe lui-même. Laissé vide,
   // un mot de passe temporaire est généré et renvoyé une fois pour être
   // communiqué à l'élève.
-  password: z.string().min(8, "8 caractères minimum").optional(),
+  password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères.").optional(),
 });
 
 export async function POST(req: Request) {
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const parsed = createSchema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   const dup = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (dup) return NextResponse.json({ error: "Cet email est déjà utilisé." }, { status: 409 });

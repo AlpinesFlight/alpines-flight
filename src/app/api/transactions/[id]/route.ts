@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -39,7 +40,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body && typeof body === "object" && "action" in body) {
     const parsed = actionSchema.safeParse(body);
     if (!parsed.success)
-      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+      return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
     const existing = await prisma.accountTransaction.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -68,7 +69,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const parsed = editSchema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   const existing = await prisma.accountTransaction.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });

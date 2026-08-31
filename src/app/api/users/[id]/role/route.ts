@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect } from "@/lib/selects";
@@ -26,7 +27,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = await req.json();
   const parsed = schema.safeParse(body);
   if (!parsed.success)
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
   // Un Gérant ne peut pas changer son propre rôle depuis cette page — évite
   // de se verrouiller soi-même hors des finances par erreur de clic. Un
