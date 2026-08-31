@@ -60,7 +60,18 @@ export function ReservationModal({
   const { data: session } = useSession();
   const [aircraftId, setAircraftId] = useState(existing?.aircraftId ?? aircraftList[0]?.id ?? "");
   const [instructorId, setInstructorId] = useState(existing?.instructorId ?? "");
-  const [studentId, setStudentId] = useState(existing?.studentId ?? "");
+  // À la création (pas en édition), pré-remplit avec le compte qui réserve
+  // s'il apparaît dans la liste des élèves/pilotes (donc jamais pour un FI/
+  // Admin qui réserve pour quelqu'un d'autre) — sauf le Gérant, qui ne
+  // réserve jamais pour lui-même non plus, exclu explicitement à la
+  // demande même si en pratique il n'apparaît de toute façon pas dans
+  // cette liste.
+  const [studentId, setStudentId] = useState(() => {
+    if (existing) return existing.studentId ?? "";
+    if (session?.user?.role === "GERANT") return "";
+    const self = students.find((s) => s.id === session?.user?.id);
+    return self?.id ?? "";
+  });
   const [trainingProgramId, setTrainingProgramId] = useState(existing?.trainingProgramId ?? "");
   const [type, setType] = useState<ReservationType>(existing?.type ?? "INSTRUCTION");
   const [start, setStart] = useState(toLocalInput(existing ? new Date(existing.startTime) : initialStart));
@@ -260,7 +271,10 @@ export function ReservationModal({
               </p>
             </Field>
           ) : (
-            <Field label="Élève">
+            // Une location est prise par un pilote déjà breveté, pas un
+            // élève en formation — même distinction que partout ailleurs
+            // dans l'appli (voir StudentProfile.isPilot).
+            <Field label={type === "LOCATION" ? "Pilote" : "Élève"}>
               <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
                 <option value="">—</option>
                 {students.map((s) => (
