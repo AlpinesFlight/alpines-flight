@@ -34,6 +34,15 @@ export const safeAircraftSelect = {
   updatedAt: true,
 } as const;
 
+// Le `student` d'une Reservation — safeUserSelect, plus juste ce qu'il faut
+// du StudentProfile pour que le formulaire de clôture de vol sache si ce
+// pilote est autorisé à voler en vol baptême sans être débité (voir
+// StudentProfile.canGiveBaptism, ReservationModal.tsx CompleteFlightPanel).
+export const safeReservationStudentSelect = {
+  ...safeUserSelect,
+  studentProfile: { select: { canGiveBaptism: true } },
+} as const;
+
 // Champs d'un QualificationDocument à renvoyer au client — exclut
 // systématiquement fileData (le contenu binaire, potentiellement volumineux,
 // ne doit transiter que par la route de streaming dédiée

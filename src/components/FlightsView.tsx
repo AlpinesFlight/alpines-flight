@@ -155,6 +155,14 @@ export function FlightsView() {
                 <td className="px-5 py-3 text-right text-navy-700">{f.totalLandings}</td>
                 <td className="px-5 py-3 text-right font-semibold text-navy-900 whitespace-nowrap">
                   {formatMoney(f.aircraftCostCents + f.instructionCostCents)}
+                  {f.isBaptism && (
+                    <span
+                      title="Vol baptême — coût indicatif, non débité"
+                      className="ml-1.5 align-middle text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    >
+                      Baptême
+                    </span>
+                  )}
                 </td>
                 {canFinanceAdmin && (
                   <td className="px-5 py-3">

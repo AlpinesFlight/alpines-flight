@@ -114,7 +114,10 @@ export async function PATCH(req: Request, { params }: Params) {
         where: { userId: existing.studentId },
         data: {
           totalHours: { increment: durationDelta },
-          balanceCents: { decrement: costDelta },
+          // Vol baptême (voir StudentProfile.canGiveBaptism) : aucun débit
+          // à l'origine, donc rien à ajuster sur le solde même si le coût
+          // change — seules les heures suivent la correction.
+          ...(existing.isBaptism ? {} : { balanceCents: { decrement: costDelta } }),
         },
       });
     }
@@ -167,7 +170,12 @@ export async function DELETE(_req: Request, { params }: Params) {
         where: { userId: existing.studentId },
         data: {
           totalHours: { decrement: existing.duration },
-          balanceCents: { increment: existing.aircraftCostCents + existing.instructionCostCents },
+          // Vol baptême : aucun débit n'a jamais eu lieu pour ce vol (voir
+          // POST .../complete), donc rien à recréditer ici — sans cette
+          // garde, supprimer un vol baptême offrirait un crédit au pilote.
+          ...(existing.isBaptism
+            ? {}
+            : { balanceCents: { increment: existing.aircraftCostCents + existing.instructionCostCents } }),
         },
       });
     }

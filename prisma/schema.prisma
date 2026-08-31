@@ -90,6 +90,12 @@ model StudentProfile {
   // mécanismes de réservation/compte pilote). Purement une étiquette
   // d'affichage sur la page Élèves.
   isPilot       Boolean  @default(false)
+  // Autorisation, donnée ou retirée par le Gérant uniquement (voir
+  // /api/students/[id]), à faire voler des passagers en vol baptême sans
+  // que ça débite son propre compte pilote — voir FlightLog.isBaptism et
+  // /api/reservations/[id]/complete. Sans effet si isPilot est false (pas
+  // de sens pour un élève en formation).
+  canGiveBaptism Boolean @default(false)
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -325,6 +331,12 @@ model FlightLog {
   // Détail du coût débité au pilote (voir AccountTransaction.amountCents = -(aircraftCostCents + instructionCostCents))
   aircraftCostCents    Int          @default(0) // duration × aircraft.hourlyRateCents
   instructionCostCents Int          @default(0) // duration × tarif applicable (programme de formation si renseigné, sinon instructor.hourlyRateCents), si vol d'instruction
+  // Vol baptême donné par un pilote autorisé (voir StudentProfile.
+  // canGiveBaptism) : les coûts ci-dessus restent calculés/enregistrés pour
+  // les statistiques, mais aucune transaction n'a débité son compte pilote
+  // à la clôture — voir /api/reservations/[id]/complete. Distinct d'un vol
+  // découverte (Reservation.type DISCOVERY, client sans compte).
+  isBaptism            Boolean      @default(false)
   remarks              String?
   accountTransaction   AccountTransaction?
   stops                FlightStop[] // terrains survolés/posés + nombre de touchés

@@ -355,6 +355,7 @@ function StudentDetailModal({
   const [data, setData] = useState<StudentDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [togglingPilot, setTogglingPilot] = useState(false);
+  const [togglingBaptism, setTogglingBaptism] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -385,6 +386,25 @@ function StudentDetailModal({
       onUpdated();
     } finally {
       setTogglingPilot(false);
+    }
+  }
+
+  // Autorisation "vol baptême" — voir StudentProfile.canGiveBaptism : le
+  // serveur revérifie de toute façon que c'est bien le Gérant qui appelle
+  // (voir /api/students/[id]), le bouton n'est de toute façon affiché que
+  // dans ce cas (voir plus bas).
+  async function handleToggleBaptism() {
+    if (!data) return;
+    setTogglingBaptism(true);
+    try {
+      await apiFetch(`/api/students/${studentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ canGiveBaptism: !data.studentProfile?.canGiveBaptism }),
+      });
+      await load();
+      onUpdated();
+    } finally {
+      setTogglingBaptism(false);
     }
   }
 
@@ -511,6 +531,33 @@ function StudentDetailModal({
                 {data.studentProfile?.isPilot ? "Repasser en élève" : "Marquer comme pilote breveté"}
               </button>
             </div>
+
+            {/* Autorisation vol baptême — n'a de sens que pour un pilote
+                déjà breveté, et seul le Gérant peut la donner/retirer (voir
+                /api/students/[id]). */}
+            {isGerant && data.studentProfile?.isPilot && (
+              <div className="flex items-center flex-wrap gap-2 -mt-3">
+                <span
+                  className={clsx(
+                    "text-[11px] font-semibold px-2 py-1 rounded-full",
+                    data.studentProfile?.canGiveBaptism
+                      ? "bg-green-100 text-green-700"
+                      : "bg-navy-100 text-navy-500"
+                  )}
+                >
+                  {data.studentProfile?.canGiveBaptism ? "Autorisé vol baptême" : "Non autorisé vol baptême"}
+                </span>
+                <button
+                  onClick={handleToggleBaptism}
+                  disabled={togglingBaptism}
+                  className="text-xs text-navy-500 hover:text-navy-800 hover:underline disabled:opacity-50"
+                >
+                  {data.studentProfile?.canGiveBaptism
+                    ? "Retirer l'autorisation"
+                    : "Autoriser à voler en vol baptême"}
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-3">
               <Stat label="Heures totales" value={formatHours(data.studentProfile?.totalHours ?? 0)} />

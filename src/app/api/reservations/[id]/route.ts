@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect, safeReservationStudentSelect } from "@/lib/selects";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
 import { OCCUPYING_RESERVATION_TYPES } from "@/lib/reservations";
 import { notifyReservation } from "@/lib/reservation-emails";
@@ -127,7 +127,7 @@ export async function PATCH(req: Request, { params }: Params) {
     },
     include: {
       aircraft: { select: safeAircraftSelect },
-      student: { select: safeUserSelect },
+      student: { select: safeReservationStudentSelect },
       instructor: { select: safeUserSelect },
       trainingProgram: { select: { id: true, code: true, title: true, instructionRateCents: true } },
     },

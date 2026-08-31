@@ -41,6 +41,7 @@ export async function GET(_req: Request, { params }: Params) {
               licenseType: true,
               totalHours: true,
               isPilot: true,
+              canGiveBaptism: true,
               createdAt: true,
               updatedAt: true,
             },
@@ -79,10 +80,26 @@ export async function PATCH(req: Request, { params }: Params) {
   // Le solde n'est jamais modifié ici : il ne peut évoluer que via le grand
   // livre (versements confirmés, débits de vol, écritures d'ajustement) —
   // voir /api/transactions.
-  const { firstName, lastName, phone, licenseType, licenseNumber, medicalExpiry, notes, isPilot } = body;
+  const { firstName, lastName, phone, licenseType, licenseNumber, medicalExpiry, notes, isPilot, canGiveBaptism } = body;
 
   if (typeof isPilot !== "undefined" && typeof isPilot !== "boolean") {
     return NextResponse.json({ error: "isPilot doit être un booléen." }, { status: 400 });
+  }
+  if (typeof canGiveBaptism !== "undefined") {
+    if (typeof canGiveBaptism !== "boolean") {
+      return NextResponse.json({ error: "canGiveBaptism doit être un booléen." }, { status: 400 });
+    }
+    // Autorisation "vol baptême" : contrairement au reste de ce PATCH
+    // (ouvert à canManageSchool, donc Admin compris), seul le Gérant peut
+    // la donner ou la retirer — elle dispense de débit sur le compte
+    // pilote, donc une question financière au même titre que le reste de
+    // ce qui est réservé au Gérant (voir src/lib/permissions.ts).
+    if (!isGerant(session.user.role)) {
+      return NextResponse.json(
+        { error: "Seul le Gérant peut donner ou retirer l'autorisation vol baptême." },
+        { status: 401 }
+      );
+    }
   }
 
   const user = await prisma.user.update({
@@ -98,6 +115,7 @@ export async function PATCH(req: Request, { params }: Params) {
           medicalExpiry: medicalExpiry ? new Date(medicalExpiry) : undefined,
           notes,
           isPilot,
+          canGiveBaptism,
         },
       },
     },

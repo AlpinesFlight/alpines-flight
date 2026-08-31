@@ -522,8 +522,18 @@ export function CompleteFlightPanel({
   const [fuelLiters, setFuelLiters] = useState("");
   const [fuelType, setFuelType] = useState("AVGAS_100LL");
   const [fuelAirfield, setFuelAirfield] = useState("");
+  const [isBaptism, setIsBaptism] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Vol baptême : le pilote qui vole (pas l'instructeur) doit être autorisé
+  // par le Gérant (voir StudentProfile.canGiveBaptism) — revérifié côté
+  // serveur de toute façon. N'a de sens que pour un vol solo/location : un
+  // vol d'instruction facture déjà l'instructeur séparément.
+  const canBeBaptism =
+    !!reservation.studentId &&
+    reservation.student?.studentProfile?.canGiveBaptism === true &&
+    (reservation.type === "SOLO" || reservation.type === "LOCATION");
 
   const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
   const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
@@ -571,6 +581,7 @@ export function CompleteFlightPanel({
           stops: stops
             .filter((s) => s.airfield.trim())
             .map((s) => ({ airfield: s.airfield.trim().toUpperCase(), touchAndGo: parseInt(s.touchAndGo, 10) || 1 })),
+          isBaptism: canBeBaptism && isBaptism,
           fuelRefillDone,
           ...(fuelRefillDone
             ? {
@@ -594,12 +605,25 @@ export function CompleteFlightPanel({
     <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
       <p className="text-sm text-navy-600">
         {reservation.aircraft.registration}
-        {reservation.studentId
+        {reservation.studentId && canBeBaptism && isBaptism
+          ? " — vol baptême : les heures comptent, mais rien ne sera débité."
+          : reservation.studentId
           ? " — le compte du pilote sera débité automatiquement."
           : reservation.priceCents != null
           ? ` — forfait de ${formatMoney(reservation.priceCents)} à encaisser sur place (aucun compte à débiter).`
           : " — vol sans compte pilote associé (aucun débit)."}
       </p>
+
+      {canBeBaptism && (
+        <label className="flex items-center gap-2 text-sm text-navy-700 rounded-lg border border-navy-100 px-3 py-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isBaptism}
+            onChange={(e) => setIsBaptism(e.target.checked)}
+          />
+          Vol baptême — {reservation.student?.firstName} est autorisé(e), aucun débit sur son compte
+        </label>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Heure de départ">
@@ -811,7 +835,12 @@ export function CompleteFlightPanel({
               <span>{formatMoney(instructionCostCents)}</span>
             </div>
           )}
-          {reservation.studentId ? (
+          {reservation.studentId && canBeBaptism && isBaptism ? (
+            <div className="flex justify-between font-semibold text-green-700 border-t border-navy-100 pt-1 mt-0.5">
+              <span>Vol baptême — aucun débit (coût ci-dessus indicatif)</span>
+              <span>{formatMoney(totalCostCents)}</span>
+            </div>
+          ) : reservation.studentId ? (
             <div className="flex justify-between font-semibold text-red-600 border-t border-navy-100 pt-1 mt-0.5">
               <span>Total débité du compte pilote</span>
               <span>− {formatMoney(totalCostCents)}</span>
@@ -837,7 +866,13 @@ export function CompleteFlightPanel({
           className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-900 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
         >
           <PlaneLanding size={16} />{" "}
-          {saving ? "Clôture..." : reservation.studentId ? "Clôturer et débiter le compte" : "Clôturer le vol"}
+          {saving
+            ? "Clôture..."
+            : reservation.studentId && canBeBaptism && isBaptism
+            ? "Clôturer le vol baptême (sans débit)"
+            : reservation.studentId
+            ? "Clôturer et débiter le compte"
+            : "Clôturer le vol"}
         </button>
       </div>
     </form>

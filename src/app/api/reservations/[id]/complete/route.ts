@@ -30,6 +30,11 @@ const schema = z
     fuelLiters: z.number().positive().optional().nullable(),
     fuelType: z.enum(["AVGAS_100LL", "SP98"]).optional().nullable(),
     fuelAirfield: z.string().optional().nullable(),
+    // Vol baptême donné par un pilote autorisé — voir plus bas, revérifié
+    // côté serveur (StudentProfile.canGiveBaptism) avant d'être honoré :
+    // jamais se fier au seul booléen envoyé par le client pour dispenser
+    // un débit.
+    isBaptism: z.boolean().optional().default(false),
   })
   .refine(
     (d) => !d.fuelRefillDone || (d.fuelCard && d.fuelLiters && d.fuelType && d.fuelAirfield),
@@ -71,6 +76,7 @@ export async function POST(req: Request, { params }: Params) {
     fuelLiters,
     fuelType,
     fuelAirfield,
+    isBaptism: requestedBaptism,
   } = parsed.data;
   const start = new Date(departureTime);
   const end = new Date(arrivalTime);
@@ -85,9 +91,18 @@ export async function POST(req: Request, { params }: Params) {
 
   const reservation = await prisma.reservation.findUnique({
     where: { id },
-    include: { aircraft: { select: safeAircraftSelect } },
+    include: {
+      aircraft: { select: safeAircraftSelect },
+      student: { select: { studentProfile: { select: { canGiveBaptism: true } } } },
+    },
   });
   if (!reservation) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Revérifié ici plutôt que de faire confiance au booléen envoyé par le
+  // client : sans ça n'importe quel appel direct à cette route pourrait se
+  // dispenser de débit en se déclarant "vol baptême" sans l'autorisation du
+  // Gérant.
+  const isBaptism = requestedBaptism && reservation.student?.studentProfile?.canGiveBaptism === true;
 
   const isOwner = reservation.studentId === session.user.id;
   const isStaff = isInstructorOrAbove(session.user.role);
@@ -151,6 +166,7 @@ export async function POST(req: Request, { params }: Params) {
         totalLandings,
         aircraftCostCents,
         instructionCostCents,
+        isBaptism,
         remarks,
         stops: { create: stops },
         fuelRefillDone,
@@ -165,11 +181,14 @@ export async function POST(req: Request, { params }: Params) {
       },
     });
 
-    // Vol sans élève associé (vol découverte/baptême typiquement) : rien à
-    // débiter — le forfait éventuel (Reservation.priceCents) est encaissé
-    // directement sur place, jamais via le grand livre des comptes pilotes.
+    // Vol sans élève associé (vol découverte/baptême client, sans compte) :
+    // rien à débiter — le forfait éventuel (Reservation.priceCents) est
+    // encaissé directement sur place, jamais via le grand livre des comptes
+    // pilotes. Même chose pour un vol baptême donné par un pilote autorisé
+    // (isBaptism) : lui a bien un compte, mais ce vol-là ne le débite pas —
+    // voir StudentProfile.canGiveBaptism plus haut.
     let transaction = null;
-    if (reservation.studentId) {
+    if (reservation.studentId && !isBaptism) {
       const notesParts = [`Avion ${reservation.aircraft.registration} — ${duration}h`];
       if (instructionCostCents > 0) notesParts.push(`Instruction — ${duration}h`);
 
@@ -186,12 +205,17 @@ export async function POST(req: Request, { params }: Params) {
         },
         include: { student: { select: safeUserSelect } },
       });
+    }
 
+    // Les heures volées comptent pour le pilote qu'il ait payé ou non ce
+    // vol précis (carnet de vol réel) — seul le débit est conditionnel,
+    // voir juste au-dessus.
+    if (reservation.studentId) {
       await db.studentProfile.update({
         where: { userId: reservation.studentId },
         data: {
-          balanceCents: { decrement: amountCents },
           totalHours: { increment: duration },
+          ...(isBaptism ? {} : { balanceCents: { decrement: amountCents } }),
         },
       });
     }

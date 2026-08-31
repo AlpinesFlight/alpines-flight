@@ -20,6 +20,7 @@ export interface UserLite {
     medicalExpiry: string | null;
     notes: string | null;
     isPilot: boolean;
+    canGiveBaptism?: boolean;
   } | null;
 }
 
@@ -162,6 +163,7 @@ export interface FlightLog {
   totalLandings: number;
   aircraftCostCents: number;
   instructionCostCents: number;
+  isBaptism: boolean;
   remarks: string | null;
   stops: FlightStop[];
   fuelRefillDone: boolean;
