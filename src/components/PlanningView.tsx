@@ -14,7 +14,8 @@ import "react-big-calendar/lib/css/react-big-calendar.css";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, Reservation, TrainingProgram, UserLite } from "@/types/models";
 import { ReservationModal } from "./ReservationModal";
-import { Plus } from "lucide-react";
+import { Plus, MoonStar } from "lucide-react";
+import { isAeronauticalNight, nightWindowsOverlapping } from "@/lib/sun-times";
 
 const locales = { fr };
 const localizer = dateFnsLocalizer({
@@ -165,6 +166,14 @@ export function PlanningView() {
     const cancelled = event.resource.status === "CANCELLED";
     const inFlight = event.resource.status === "IN_FLIGHT";
     const completed = event.resource.status === "COMPLETED";
+    // Une réservation ne peut chevaucher une nuit aéronautique que si elle
+    // s'étend sur plusieurs jours (voir nightViolationMessage côté serveur,
+    // qui refuse tout chevauchement partiel — un vol court ne peut pas être
+    // réservé la nuit) : l'avion n'y "vole" pas vraiment, il est juste
+    // ailleurs. Bloc atténué plutôt que plein, pour ne pas laisser croire
+    // le contraire sur le planning.
+    const spansNight =
+      nightWindowsOverlapping(new Date(event.resource.startTime), new Date(event.resource.endTime)).length > 0;
     return {
       style: {
         // Clôturé = vert sourd et verrouillé (voir cadenas dans le titre) ;
@@ -173,11 +182,23 @@ export function PlanningView() {
         backgroundColor: cancelled ? "#94a3b8" : completed ? "#3f6b4f" : color,
         color: "white",
         borderRadius: "6px",
-        opacity: cancelled ? 0.5 : completed ? 0.85 : 1,
+        opacity: cancelled ? 0.5 : completed ? 0.85 : spansNight ? 0.6 : 1,
         border: inFlight ? "2px solid #F04818" : "none",
         cursor: completed ? "default" : "pointer",
       },
     };
+  }, []);
+
+  // Fond assombri pendant la nuit aéronautique (voir src/lib/sun-times.ts)
+  // — calcul 100% local, aucun appel réseau, coût négligeable même sur une
+  // vue Semaine complète (quelques centaines de créneaux, cache par jour
+  // interne au module).
+  const nightSlotPropGetter = useCallback((slotDate: Date) => {
+    const mid = new Date(slotDate.getTime() + 15 * 60 * 1000);
+    if (isAeronauticalNight(mid)) {
+      return { style: { backgroundColor: "rgba(7, 21, 39, 0.16)" } };
+    }
+    return {};
   }, []);
 
   return (
@@ -227,6 +248,11 @@ export function PlanningView() {
         </button>
       </div>
 
+      <p className="flex items-center gap-1.5 text-xs text-navy-500 -mt-1">
+        <MoonStar size={13} className="text-navy-400 shrink-0" />
+        Fond assombri = nuit aéronautique (avion non réservable pour un vol, sauf réservation de plusieurs jours).
+      </p>
+
       <div className="flex-1 bg-white rounded-2xl border border-navy-100 p-1.5 md:p-4 min-h-0 overflow-x-auto">
         <Calendar
           localizer={localizer}
@@ -246,10 +272,15 @@ export function PlanningView() {
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
           eventPropGetter={eventPropGetter}
+          slotPropGetter={nightSlotPropGetter}
           messages={MESSAGES}
           culture="fr"
-          min={new Date(1970, 0, 1, 6, 0)}
-          max={new Date(1970, 0, 1, 21, 0)}
+          // 5h-22h : assez large pour couvrir la nuit aéronautique la plus
+          // courte de l'année à LFNA (coucher + 30min ≈ 21h54 fin juin,
+          // lever - 30min ≈ 5h20) — sans ça, la teinte de nuit et les
+          // créneaux tôt/tard en été sortiraient du planning affiché.
+          min={new Date(1970, 0, 1, 5, 0)}
+          max={new Date(1970, 0, 1, 22, 0)}
           // L'algorithme par défaut de react-big-calendar ("overlap") élargit
           // volontairement les événements simultanés au-delà de leur juste
           // part (×1.7) pour un effet "empilé" façon Google Calendar — d'où

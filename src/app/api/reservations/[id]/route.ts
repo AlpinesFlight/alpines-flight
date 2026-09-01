@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect, safeReservationStudentSelect } from "@/lib/selects";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
-import { OCCUPYING_RESERVATION_TYPES } from "@/lib/reservations";
+import { OCCUPYING_RESERVATION_TYPES, nightViolationMessage } from "@/lib/reservations";
 import { notifyReservation } from "@/lib/reservation-emails";
 import { z } from "zod";
 
@@ -101,6 +101,9 @@ export async function PATCH(req: Request, { params }: Params) {
         { status: 400 }
       );
     }
+
+    const nightError = nightViolationMessage(effectiveType, effectiveStart, effectiveEnd);
+    if (nightError) return NextResponse.json({ error: nightError }, { status: 400 });
 
     const overlapWhere = {
       id: { not: id },

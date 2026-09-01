@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { safeUserSelect, safeAircraftSelect, safeReservationStudentSelect } from "@/lib/selects";
 import { isInstructorOrAbove } from "@/lib/permissions";
-import { OCCUPYING_RESERVATION_TYPES } from "@/lib/reservations";
+import { OCCUPYING_RESERVATION_TYPES, nightViolationMessage } from "@/lib/reservations";
 import { notifyReservation } from "@/lib/reservation-emails";
 
 export async function GET(req: Request) {
@@ -94,6 +94,9 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+
+  const nightError = nightViolationMessage(parsed.data.type, start, end);
+  if (nightError) return NextResponse.json({ error: nightError }, { status: 400 });
 
   // Vérification des conflits (même avion, ou même instructeur, sur un créneau chevauchant)
   const overlapWhere = {
