@@ -60,6 +60,10 @@ model User {
   maintenanceIssuesResolved MaintenanceIssue[] @relation("MaintenanceIssueResolvedBy")
   instructorAvailability InstructorAvailability[]
 
+  // Tarifs avion personnalisés (dérogations Gérant) — voir PilotAircraftRate
+  pilotAircraftRates    PilotAircraftRate[] @relation("PilotAircraftRateStudent")
+  pilotAircraftRatesSet PilotAircraftRate[] @relation("PilotAircraftRateSetBy")
+
   // Licences, qualifications, médicales... (élèves ET instructeurs)
   qualifications          Qualification[]         @relation("QualificationHolder")
   documentsUploaded       QualificationDocument[]  @relation("DocumentUploadedBy")
@@ -100,6 +104,29 @@ model StudentProfile {
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// Tarif avion personnalisé pour un pilote/élève donné — dérogation au
+// tarif standard de l'avion (Aircraft.hourlyRateCents), activée et fixée
+// par le Gérant uniquement (ex: tarif préférentiel négocié). La présence
+// d'une ligne pour (studentId, aircraftId) vaut dérogation active ; la
+// supprimer fait retomber sur le tarif standard de l'avion. Appliquée au
+// moment de la clôture du vol pour calculer le débit — voir
+// /api/reservations/[id]/complete. Jamais visible d'un autre compte que le
+// Gérant (même pas le pilote concerné), voir /api/students/[id].
+model PilotAircraftRate {
+  id              String   @id @default(cuid())
+  studentId       String
+  student         User     @relation("PilotAircraftRateStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  aircraftId      String
+  aircraft        Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  customRateCents Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  setById         String?
+  setBy           User?    @relation("PilotAircraftRateSetBy", fields: [setById], references: [id])
+
+  @@unique([studentId, aircraftId])
 }
 
 model InstructorProfile {
@@ -148,6 +175,7 @@ model Aircraft {
   kardexEntries       KardexEntry[]
   maintenanceIssues   MaintenanceIssue[]
   trainingSessions    TrainingSession[]
+  pilotRates          PilotAircraftRate[]
 }
 
 enum MaintenanceType {

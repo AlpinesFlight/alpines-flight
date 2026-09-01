@@ -63,6 +63,11 @@ export async function GET(_req: Request, { params }: Params) {
             take: 30,
           }
         : false,
+      // Tarifs avion personnalisés — jamais visible d'un autre compte que
+      // le Gérant, même pas le pilote concerné (voir PilotAircraftRate).
+      pilotAircraftRates: isGerant(session.user.role)
+        ? { include: { aircraft: { select: safeAircraftSelect } } }
+        : false,
     },
   });
   if (!student) return NextResponse.json({ error: "not found" }, { status: 404 });

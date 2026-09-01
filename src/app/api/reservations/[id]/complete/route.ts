@@ -122,7 +122,21 @@ export async function POST(req: Request, { params }: Params) {
   const finalTrainingProgramId =
     trainingProgramId !== undefined ? trainingProgramId : reservation.trainingProgramId;
 
-  const aircraftCostCents = Math.round(duration * reservation.aircraft.hourlyRateCents);
+  // Tarif avion : dérogation Gérant (voir PilotAircraftRate) si elle existe
+  // pour ce pilote sur cet avion précis, sinon le tarif standard de
+  // l'avion. Toujours relu en base ici, jamais fait confiance à une valeur
+  // transmise par le client — même logique que canGiveBaptism ci-dessus.
+  let effectiveRateCents = reservation.aircraft.hourlyRateCents;
+  if (reservation.studentId) {
+    const customRate = await prisma.pilotAircraftRate.findUnique({
+      where: {
+        studentId_aircraftId: { studentId: reservation.studentId, aircraftId: reservation.aircraftId },
+      },
+      select: { customRateCents: true },
+    });
+    if (customRate) effectiveRateCents = customRate.customRateCents;
+  }
+  const aircraftCostCents = Math.round(duration * effectiveRateCents);
 
   // Tarif d'instruction : priorité au tarif propre à la formation visée
   // (ex: PPL 25€/h, Montagne 40€/h — voir TrainingProgram.instructionRateCents),

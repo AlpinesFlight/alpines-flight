@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
-import { UserLite } from "@/types/models";
+import { UserLite, Aircraft } from "@/types/models";
 import { formatHours, formatMoney } from "@/lib/format";
 import { Plus, Search, X, ShieldCheck, Pencil, UserX, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -406,6 +406,13 @@ interface StudentDetail extends UserLite {
     createdAt: string;
     notes: string | null;
   }>;
+  // Gérant uniquement — voir PilotAircraftRate et /api/students/[id].
+  pilotAircraftRates?: Array<{
+    id: string;
+    aircraftId: string;
+    customRateCents: number;
+    aircraft: { id: string; registration: string; type: string; hourlyRateCents: number };
+  }>;
 }
 
 const TX_TYPE_LABEL: Record<string, string> = {
@@ -712,6 +719,14 @@ function StudentDetailModal({
                 ))}
               </div>
             </div>
+
+            {isGerant && (
+              <PilotRatesSection
+                studentId={data.id}
+                rates={data.pilotAircraftRates ?? []}
+                onChanged={load}
+              />
+            )}
           </div>
         )}
       </div>
@@ -729,6 +744,150 @@ function StudentDetailModal({
       />
     )}
     </>
+  );
+}
+
+// Dérogation de tarif avion par pilote — visible et modifiable du Gérant
+// uniquement (voir PilotAircraftRate). Une ligne par avion de la flotte ;
+// cocher "Tarif dérogatoire" révèle le champ prix, décocher retire
+// immédiatement la dérogation (retombe sur le tarif standard).
+function PilotRatesSection({
+  studentId,
+  rates,
+  onChanged,
+}: {
+  studentId: string;
+  rates: NonNullable<StudentDetail["pilotAircraftRates"]>;
+  onChanged: () => void;
+}) {
+  const [aircraftList, setAircraftList] = useState<Aircraft[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<Aircraft[]>("/api/aircraft")
+      .then(setAircraftList)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Erreur inconnue"));
+  }, []);
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-navy-900 mb-1">Tarifs avion personnalisés</h3>
+      <p className="text-xs text-navy-500 mb-2">Visible et modifiable du Gérant uniquement.</p>
+      {loadError && <p className="text-red-600 text-xs bg-red-100 rounded-lg px-3 py-2 mb-2">{loadError}</p>}
+      {!aircraftList && !loadError && <p className="text-xs text-navy-500">Chargement…</p>}
+      <div className="flex flex-col gap-2">
+        {aircraftList?.map((ac) => (
+          <PilotRateRow
+            key={ac.id}
+            studentId={studentId}
+            aircraft={ac}
+            existing={rates.find((r) => r.aircraftId === ac.id) ?? null}
+            onChanged={onChanged}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PilotRateRow({
+  studentId,
+  aircraft,
+  existing,
+  onChanged,
+}: {
+  studentId: string;
+  aircraft: Aircraft;
+  existing: NonNullable<StudentDetail["pilotAircraftRates"]>[number] | null;
+  onChanged: () => void;
+}) {
+  const [enabled, setEnabled] = useState(!!existing);
+  const [priceInput, setPriceInput] = useState(
+    ((existing?.customRateCents ?? aircraft.hourlyRateCents) / 100).toFixed(2)
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleToggle(next: boolean) {
+    setEnabled(next);
+    setError(null);
+    if (next) return; // on n'enregistre qu'au clic sur "Enregistrer" ci-dessous
+    setSaving(true);
+    try {
+      await apiFetch(`/api/students/${studentId}/aircraft-rates/${aircraft.id}`, { method: "DELETE" });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+      setEnabled(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSave() {
+    const euros = parseFloat(priceInput.replace(",", "."));
+    if (!euros || euros <= 0) {
+      setError("Indique un tarif valide.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/students/${studentId}/aircraft-rates/${aircraft.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ customRateCents: Math.round(euros * 100) }),
+      });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border border-navy-100 rounded-lg px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-navy-900">{aircraft.registration}</p>
+          <p className="text-xs text-navy-500">
+            {aircraft.type} · tarif standard {formatMoney(aircraft.hourlyRateCents)}/h
+          </p>
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-navy-600 shrink-0">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={saving}
+            onChange={(e) => handleToggle(e.target.checked)}
+          />
+          Tarif dérogatoire
+        </label>
+      </div>
+      {enabled && (
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={priceInput}
+            onChange={(e) => setPriceInput(e.target.value)}
+            disabled={saving}
+            className="rounded-lg border border-navy-100 px-2 py-1.5 text-sm text-navy-900 focus:outline-none focus:ring-2 focus:ring-sunset-500 w-28"
+          />
+          <span className="text-xs text-navy-500">€/h</span>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="ml-auto text-xs font-semibold text-sunset-600 hover:text-sunset-700 disabled:opacity-40"
+          >
+            {saving ? "..." : existing ? "Mettre à jour" : "Activer"}
+          </button>
+        </div>
+      )}
+      {error && <p className="text-red-600 text-xs mt-1.5">{error}</p>}
+    </div>
   );
 }
 
