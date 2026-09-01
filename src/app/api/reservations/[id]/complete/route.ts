@@ -112,7 +112,11 @@ export async function POST(req: Request, { params }: Params) {
       { status: 409 }
     );
   }
-  const totalLandings = stops.reduce((sum, s) => sum + s.touchAndGo, 0);
+  // +1 : l'atterrissage à destination compte par défaut, en plus des
+  // touchés éventuels aux terrains intermédiaires (stops) — sans ça, un
+  // vol direct sans arrêt en route (stops vide) comptait 0 atterrissage
+  // alors que se poser à l'arrivée en est bien un.
+  const totalLandings = stops.reduce((sum, s) => sum + s.touchAndGo, 0) + 1;
   const finalInstructorId =
     instructorId !== undefined ? instructorId : reservation.instructorId;
   const finalTrainingProgramId =

@@ -18,6 +18,15 @@ function firstOfMonthIso(): string {
   return toIsoDate(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
+// Le jour 0 du mois suivant = le dernier jour du mois en cours — filtre
+// par défaut sur le mois entier plutôt que "1er du mois → aujourd'hui",
+// qui ne montrait presque rien en tout début de mois (le 1er, ça ne
+// couvrait qu'une seule journée).
+function lastOfMonthIso(): string {
+  const d = new Date();
+  return toIsoDate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+}
+
 function toLocalInput(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
@@ -44,7 +53,7 @@ export function FlightsView() {
   const searchParams = useSearchParams();
 
   const [from, setFrom] = useState(searchParams.get("from") ?? firstOfMonthIso());
-  const [to, setTo] = useState(searchParams.get("to") ?? toIsoDate(new Date()));
+  const [to, setTo] = useState(searchParams.get("to") ?? lastOfMonthIso());
   const [flights, setFlights] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [editFlight, setEditFlight] = useState<FlightLog | null>(null);

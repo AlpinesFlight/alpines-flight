@@ -192,6 +192,7 @@ export interface SchoolSettings {
   bankName: string | null;
   notes: string | null;
   notifyOnReservationCreated: boolean;
+  notifyOnReservationUpdated: boolean;
   notifyOnReservationCancelled: boolean;
   notifyReminderEnabled: boolean;
   updatedAt: string | null;

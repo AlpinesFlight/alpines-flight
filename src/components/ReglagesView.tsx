@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { SchoolSettings } from "@/types/models";
-import { ShieldAlert, BellRing, PlaneTakeoff, Ban, Clock3 } from "lucide-react";
+import { ShieldAlert, BellRing, PlaneTakeoff, Pencil, Ban, Clock3 } from "lucide-react";
 
 export function ReglagesView() {
   const { data: session, status: sessionStatus } = useSession();
@@ -22,7 +22,13 @@ export function ReglagesView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStatus, canManage]);
 
-  async function toggle(field: "notifyOnReservationCreated" | "notifyOnReservationCancelled" | "notifyReminderEnabled") {
+  async function toggle(
+    field:
+      | "notifyOnReservationCreated"
+      | "notifyOnReservationUpdated"
+      | "notifyOnReservationCancelled"
+      | "notifyReminderEnabled"
+  ) {
     if (!settings) return;
     const next = { [field]: !settings[field] };
     setSaving(true);
@@ -74,6 +80,14 @@ export function ReglagesView() {
             desc="Email envoyé à l'élève et à l'instructeur concernés dès qu'un vol est réservé."
             checked={settings.notifyOnReservationCreated}
             onChange={() => toggle("notifyOnReservationCreated")}
+            disabled={saving}
+          />
+          <ToggleRow
+            icon={Pencil}
+            label="Modification de réservation"
+            desc="Email envoyé aux mêmes personnes si l'horaire, l'avion ou un autre détail du vol change."
+            checked={settings.notifyOnReservationUpdated}
+            onChange={() => toggle("notifyOnReservationUpdated")}
             disabled={saving}
           />
           <ToggleRow

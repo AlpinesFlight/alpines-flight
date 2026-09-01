@@ -715,6 +715,7 @@ model SchoolSettings {
   // financiers ci-dessus, modifiables par l'Admin (voir /api/settings pour
   // le cloisonnement des droits par champ).
   notifyOnReservationCreated   Boolean @default(true)
+  notifyOnReservationUpdated   Boolean @default(true)
   notifyOnReservationCancelled Boolean @default(true)
   notifyReminderEnabled        Boolean @default(true)
   updatedAt    DateTime @updatedAt

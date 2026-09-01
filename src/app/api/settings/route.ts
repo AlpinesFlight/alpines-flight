@@ -15,6 +15,7 @@ const SELECT = {
   bankName: true,
   notes: true,
   notifyOnReservationCreated: true,
+  notifyOnReservationUpdated: true,
   notifyOnReservationCancelled: true,
   notifyReminderEnabled: true,
   updatedAt: true,
@@ -28,6 +29,7 @@ const EMPTY = {
   bankName: null,
   notes: null,
   notifyOnReservationCreated: true,
+  notifyOnReservationUpdated: true,
   notifyOnReservationCancelled: true,
   notifyReminderEnabled: true,
   updatedAt: null,
@@ -54,6 +56,7 @@ const patchSchema = z.object({
   bankName: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   notifyOnReservationCreated: z.boolean().optional(),
+  notifyOnReservationUpdated: z.boolean().optional(),
   notifyOnReservationCancelled: z.boolean().optional(),
   notifyReminderEnabled: z.boolean().optional(),
 });

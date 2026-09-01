@@ -23,20 +23,23 @@ const TYPE_LABELS: Record<string, string> = {
   DISCOVERY: "Vol découverte",
 };
 
-type Kind = "created" | "cancelled" | "reminder";
+type Kind = "created" | "updated" | "cancelled" | "reminder";
 
 const SUBJECT: Record<Kind, string> = {
   created: "Réservation confirmée",
+  updated: "Réservation modifiée",
   cancelled: "Réservation annulée",
   reminder: "Rappel — vol demain",
 };
 const HEADING: Record<Kind, string> = {
   created: "Réservation confirmée",
+  updated: "Réservation modifiée",
   cancelled: "Réservation annulée",
   reminder: "Rappel de vol",
 };
 const INTRO: Record<Kind, (recipientFirstName: string) => string> = {
   created: (n) => `Bonjour ${n}, ta réservation a bien été enregistrée.`,
+  updated: (n) => `Bonjour ${n}, cette réservation a été modifiée.`,
   cancelled: (n) => `Bonjour ${n}, cette réservation a été annulée.`,
   reminder: (n) => `Bonjour ${n}, petit rappel : ce vol a lieu demain.`,
 };
@@ -51,6 +54,8 @@ export async function notifyReservation(reservation: ReservationWithRelations, k
   const enabled =
     kind === "created"
       ? (settings?.notifyOnReservationCreated ?? true)
+      : kind === "updated"
+      ? (settings?.notifyOnReservationUpdated ?? true)
       : kind === "cancelled"
       ? (settings?.notifyOnReservationCancelled ?? true)
       : (settings?.notifyReminderEnabled ?? true);

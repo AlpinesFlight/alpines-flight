@@ -156,6 +156,11 @@ export async function PATCH(req: Request, { params }: Params) {
       trainingProgram: { select: { id: true, code: true, title: true, instructionRateCents: true } },
     },
   });
+
+  // Manquait jusqu'ici : la création et l'annulation prévenaient déjà les
+  // concernés par email, pas la modification (horaire, avion...).
+  await notifyReservation(reservation, "updated");
+
   return NextResponse.json(reservation);
 }
 
