@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { isInstructorOrAbove } from "@/lib/permissions";
+import { effectiveAircraftRateCents } from "@/lib/reservations";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -126,16 +127,11 @@ export async function POST(req: Request, { params }: Params) {
   // pour ce pilote sur cet avion précis, sinon le tarif standard de
   // l'avion. Toujours relu en base ici, jamais fait confiance à une valeur
   // transmise par le client — même logique que canGiveBaptism ci-dessus.
-  let effectiveRateCents = reservation.aircraft.hourlyRateCents;
-  if (reservation.studentId) {
-    const customRate = await prisma.pilotAircraftRate.findUnique({
-      where: {
-        studentId_aircraftId: { studentId: reservation.studentId, aircraftId: reservation.aircraftId },
-      },
-      select: { customRateCents: true },
-    });
-    if (customRate) effectiveRateCents = customRate.customRateCents;
-  }
+  const effectiveRateCents = await effectiveAircraftRateCents(
+    reservation.studentId,
+    reservation.aircraftId,
+    reservation.aircraft.hourlyRateCents
+  );
   const aircraftCostCents = Math.round(duration * effectiveRateCents);
 
   // Tarif d'instruction : priorité au tarif propre à la formation visée

@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { nightWindowsOverlapping } from "@/lib/sun-times";
 
 // Types de vol qui exigent la présence physique de l'instructeur à bord —
@@ -32,10 +33,30 @@ export function nightViolationMessage(type: string, start: Date, end: Date): str
     if (!fullyContained) {
       return (
         `Ce créneau chevauche la nuit aéronautique (${formatNightBound(w.start)} → ${formatNightBound(w.end)}) : ` +
-        "l'avion ne peut pas être réservé pour voler pendant cette période. Pour un vol qui reste sur place " +
-        "plusieurs jours, prolonge la réservation pour englober la nuit entière."
+        "l'avion ne peut pas être réservé pour voler pendant cette période."
       );
     }
   }
   return null;
+}
+
+// Tarif horaire avion effectif pour un pilote/élève sur un avion donné : sa
+// dérogation (voir PilotAircraftRate, réglable par le Gérant uniquement
+// depuis le compte pilote) si elle existe pour cet avion précis, sinon le
+// tarif standard de l'avion. Source unique utilisée à la fois pour le
+// calcul réel à la clôture du vol (/api/reservations/[id]/complete) et pour
+// l'estimation affichée pendant la saisie (/api/reservations/[id]/
+// effective-rate) — sans ça, les deux pouvaient diverger silencieusement.
+// Toujours relue en base, jamais mise en cache côté client.
+export async function effectiveAircraftRateCents(
+  studentId: string | null,
+  aircraftId: string,
+  standardRateCents: number
+): Promise<number> {
+  if (!studentId) return standardRateCents;
+  const custom = await prisma.pilotAircraftRate.findUnique({
+    where: { studentId_aircraftId: { studentId, aircraftId } },
+    select: { customRateCents: true },
+  });
+  return custom?.customRateCents ?? standardRateCents;
 }

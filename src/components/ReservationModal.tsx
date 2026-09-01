@@ -564,6 +564,28 @@ export function CompleteFlightPanel({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Tarif avion réellement appliqué à la clôture — peut différer du tarif
+  // standard de l'avion si ce pilote a une dérogation (voir
+  // PilotAircraftRate, réglable par le Gérant uniquement). Le calcul final
+  // se fait de toute façon côté serveur (jamais transmis dans le POST
+  // ci-dessous) ; ceci ne sert qu'à afficher une estimation juste pendant
+  // la saisie plutôt que de laisser croire au tarif standard par défaut.
+  const [aircraftRateCents, setAircraftRateCents] = useState(reservation.aircraft.hourlyRateCents);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ rateCents: number }>(`/api/reservations/${reservation.id}/effective-rate`)
+      .then((r) => {
+        if (!cancelled) setAircraftRateCents(r.rateCents);
+      })
+      .catch(() => {
+        // Best-effort : en cas d'échec, on garde le tarif standard déjà
+        // affiché plutôt que de bloquer la saisie du compte-rendu.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reservation.id]);
+
   // Décidé à la réservation (Reservation.isBaptism), pas ici — voir
   // ReservationModal ci-dessus. Revérifié de toute façon côté serveur au
   // moment de la clôture (l'autorisation du pilote a pu être retirée
@@ -572,7 +594,7 @@ export function CompleteFlightPanel({
 
   const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
   const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
-  const aircraftCostCents = duration > 0 ? Math.round(duration * reservation.aircraft.hourlyRateCents) : 0;
+  const aircraftCostCents = duration > 0 ? Math.round(duration * aircraftRateCents) : 0;
 
   const selectedInstructor = instructors.find((i) => i.id === instructorId);
   const selectedProgram = programs.find((p) => p.id === trainingProgramId);
@@ -843,7 +865,7 @@ export function CompleteFlightPanel({
         <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-sm flex flex-col gap-1">
           <div className="flex justify-between text-navy-700">
             <span>
-              Avion — {duration}h × {formatMoney(reservation.aircraft.hourlyRateCents)}/h
+              Avion — {duration}h × {formatMoney(aircraftRateCents)}/h
             </span>
             <span>{formatMoney(aircraftCostCents)}</span>
           </div>
