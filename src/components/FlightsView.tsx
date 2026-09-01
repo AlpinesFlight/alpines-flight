@@ -43,6 +43,9 @@ const FUEL_TYPE_OPTIONS = [
   { value: "AVGAS_100LL", label: "Avgas 100LL" },
   { value: "SP98", label: "SP98" },
 ];
+const FUEL_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  FUEL_TYPE_OPTIONS.map((o) => [o.value, o.label])
+);
 
 export function FlightsView() {
   const { data: session } = useSession();
@@ -100,6 +103,50 @@ export function FlightsView() {
     return { count: flights.length, totalHours, totalLandings, totalRevenue };
   }, [flights]);
 
+  // Résumé de gestion (Gérant uniquement) — heures/CA par avion, conso
+  // carburant par type, et atterrissages par terrain (taxes d'atterrissage).
+  // Calculé uniquement à partir de ce qui est déjà chargé (flights), aucun
+  // appel supplémentaire.
+  const managementSummary = useMemo(() => {
+    const byAircraft = new Map<string, { registration: string; hours: number; landings: number; revenueCents: number }>();
+    const fuelByType = new Map<string, number>();
+    const landingsByAirfield = new Map<string, number>();
+
+    for (const f of flights) {
+      const ac = byAircraft.get(f.aircraft.registration) ?? {
+        registration: f.aircraft.registration,
+        hours: 0,
+        landings: 0,
+        revenueCents: 0,
+      };
+      ac.hours += f.duration;
+      ac.landings += f.totalLandings;
+      ac.revenueCents += f.aircraftCostCents + f.instructionCostCents;
+      byAircraft.set(f.aircraft.registration, ac);
+
+      if (f.fuelRefillDone && f.fuelLiters && f.fuelType) {
+        fuelByType.set(f.fuelType, (fuelByType.get(f.fuelType) ?? 0) + f.fuelLiters);
+      }
+
+      // Reconstruit qui a atterri où (indépendamment du seul totalLandings
+      // cumulé) : l'arrivée compte pour 1 atterrissage, chaque terrain de
+      // stop intermédiaire pour son nombre de touchés — voir la même règle
+      // appliquée à la clôture du vol, /api/reservations/[id]/complete.
+      if (f.arrivalAirfield) {
+        landingsByAirfield.set(f.arrivalAirfield, (landingsByAirfield.get(f.arrivalAirfield) ?? 0) + 1);
+      }
+      for (const stop of f.stops) {
+        landingsByAirfield.set(stop.airfield, (landingsByAirfield.get(stop.airfield) ?? 0) + stop.touchAndGo);
+      }
+    }
+
+    return {
+      byAircraft: Array.from(byAircraft.values()).sort((a, b) => b.hours - a.hours),
+      fuelByType: Array.from(fuelByType.entries()).sort((a, b) => b[1] - a[1]),
+      landingsByAirfield: Array.from(landingsByAirfield.entries()).sort((a, b) => b[1] - a[1]),
+    };
+  }, [flights]);
+
   return (
     <div className="p-4 md:p-8">
       <form onSubmit={applyRange} className="flex items-end gap-3 mb-5 flex-wrap">
@@ -125,6 +172,64 @@ export function FlightsView() {
         <SummaryTile label="Atterrissages" value={String(summary.totalLandings)} />
         <SummaryTile label="Chiffre d'affaires" value={formatMoney(summary.totalRevenue)} />
       </div>
+
+      {/* Résumé de gestion — Gérant uniquement, sur cette même page plutôt
+          qu'une nouvelle sous-page (voir Sidebar.tsx, déjà chargée). */}
+      {canFinanceAdmin && (
+        <div className="mb-6 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-navy-900">Résumé de gestion</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl border border-navy-100 p-4">
+              <h3 className="text-xs font-semibold text-navy-600 mb-3">Par avion</h3>
+              <div className="flex flex-col gap-2">
+                {managementSummary.byAircraft.map((a) => (
+                  <div key={a.registration} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="font-medium text-navy-900">{a.registration}</span>
+                    <span className="text-navy-600 text-right">
+                      {formatHours(a.hours)} · {a.landings} att. · {formatMoney(a.revenueCents)}
+                    </span>
+                  </div>
+                ))}
+                {managementSummary.byAircraft.length === 0 && (
+                  <p className="text-xs text-navy-500">Aucune donnée sur cette période.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-navy-100 p-4">
+              <h3 className="text-xs font-semibold text-navy-600 mb-3">Carburant consommé</h3>
+              <div className="flex flex-col gap-2">
+                {managementSummary.fuelByType.map(([type, liters]) => (
+                  <div key={type} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-navy-900">{FUEL_TYPE_LABEL[type] ?? type}</span>
+                    <span className="text-navy-600">{liters.toFixed(1)} L</span>
+                  </div>
+                ))}
+                {managementSummary.fuelByType.length === 0 && (
+                  <p className="text-xs text-navy-500">Aucun plein enregistré sur cette période.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-navy-100 p-4">
+              <h3 className="text-xs font-semibold text-navy-600 mb-3">
+                Atterrissages par terrain <span className="font-normal text-navy-400">(taxes)</span>
+              </h3>
+              <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
+                {managementSummary.landingsByAirfield.map(([field, count]) => (
+                  <div key={field} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-navy-900">{field}</span>
+                    <span className="text-navy-600">{count}</span>
+                  </div>
+                ))}
+                {managementSummary.landingsByAirfield.length === 0 && (
+                  <p className="text-xs text-navy-500">Aucun atterrissage sur cette période.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
         <div className="overflow-x-auto">
