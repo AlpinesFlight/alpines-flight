@@ -28,6 +28,8 @@ function formatNightBound(d: Date) {
 export function nightViolationMessage(type: string, start: Date, end: Date): string | null {
   if (!FLYING_RESERVATION_TYPES.includes(type as (typeof FLYING_RESERVATION_TYPES)[number])) return null;
 
+  // nightWindowsOverlapping échoue "ouvert" (tableau vide) en cas de
+  // problème interne — voir sun-times.ts — donc rien à revérifier ici.
   for (const w of nightWindowsOverlapping(start, end)) {
     const fullyContained = start <= w.start && end >= w.end;
     if (!fullyContained) {

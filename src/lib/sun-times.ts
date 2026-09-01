@@ -84,7 +84,7 @@ function nightWindowStartingEveningOf(parts: DayParts): { start: Date; end: Date
 // instant tombe dedans (sinon null). Teste la nuit ayant pu commencer la
 // veille (Paris) et celle du jour même — au plus une des deux contient
 // l'instant.
-export function currentNightWindow(instant: Date): { start: Date; end: Date } | null {
+function currentNightWindowUnsafe(instant: Date): { start: Date; end: Date } | null {
   const today = parisDateParts(instant);
   const yesterday = addDays(today, -1);
   for (const parts of [yesterday, today]) {
@@ -94,17 +94,12 @@ export function currentNightWindow(instant: Date): { start: Date; end: Date } | 
   return null;
 }
 
-export function isAeronauticalNight(instant: Date): boolean {
-  return currentNightWindow(instant) !== null;
-}
-
 // Toutes les fenêtres de nuit aéronautique qui chevauchent, même
-// partiellement, l'intervalle [start, end) donné — utilisé pour la
-// validation de réservation (voir /api/reservations). Parcourt jour par
-// jour de la veille du départ au lendemain de l'arrivée, largement
-// suffisant même pour un séjour de plusieurs semaines (coût négligeable,
-// suncalc est purement local).
-export function nightWindowsOverlapping(start: Date, end: Date): Array<{ start: Date; end: Date }> {
+// partiellement, l'intervalle [start, end) donné. Parcourt jour par jour de
+// la veille du départ au lendemain de l'arrivée, largement suffisant même
+// pour un séjour de plusieurs semaines (coût négligeable, suncalc est
+// purement local).
+function nightWindowsOverlappingUnsafe(start: Date, end: Date): Array<{ start: Date; end: Date }> {
   const results: Array<{ start: Date; end: Date }> = [];
   let cursor = addDays(parisDateParts(start), -1);
   const stop = parisDateParts(end);
@@ -118,4 +113,36 @@ export function nightWindowsOverlapping(start: Date, end: Date): Array<{ start: 
     cursor = addDays(cursor, 1);
   }
   return results;
+}
+
+// Toutes les fonctions exportées ci-dessous échouent "ouvert" (= comme si
+// de rien n'était côté nuit) plutôt que de faire planter l'appelant : ce
+// module dépend d'une bibliothèque tierce (suncalc) et d'API de fuseau
+// horaire (Intl) dont le comportement exact peut différer d'un
+// environnement à l'autre (ex: serveur Vercel vs navigateur) — une panne
+// ici ne doit jamais bloquer la prise de réservation (fonction cœur de
+// l'école) ni casser l'affichage du planning. Loggé pour diagnostic (logs
+// serveur Vercel côté route, console navigateur côté planning).
+export function currentNightWindow(instant: Date): { start: Date; end: Date } | null {
+  try {
+    return currentNightWindowUnsafe(instant);
+  } catch (err) {
+    console.error("currentNightWindow a échoué :", err);
+    return null;
+  }
+}
+
+export function isAeronauticalNight(instant: Date): boolean {
+  return currentNightWindow(instant) !== null;
+}
+
+// Utilisé pour la validation de réservation (voir /api/reservations) et
+// pour atténuer l'affichage d'une réservation multi-jours sur le planning.
+export function nightWindowsOverlapping(start: Date, end: Date): Array<{ start: Date; end: Date }> {
+  try {
+    return nightWindowsOverlappingUnsafe(start, end);
+  } catch (err) {
+    console.error("nightWindowsOverlapping a échoué :", err);
+    return [];
+  }
 }
