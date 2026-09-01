@@ -53,9 +53,11 @@ function CalendarEventContent({ event }: { event: CalEvent }) {
   const a = event.resource;
   return (
     <div className="leading-tight overflow-hidden">
-      <div className="font-bold text-[13px] truncate">
-        {a.instructor.firstName} {a.instructor.lastName}
-      </div>
+      {/* Prénom seul (pas le nom) : quand plusieurs FI sont dispo en même
+          temps, no-overlap partage la largeur entre eux et le nom complet
+          ne tient plus — voir aussi la légende couleur au-dessus du
+          calendrier pour lever toute ambiguïté. */}
+      <div className="font-bold text-[13px] truncate">{a.instructor.firstName}</div>
       {a.notes && <div className="text-[10px] opacity-90 truncate">{a.notes}</div>}
     </div>
   );
@@ -111,6 +113,43 @@ export function InstructorAvailabilityView() {
         end: new Date(a.endTime),
         resource: a,
       })),
+    [availability]
+  );
+
+  // Légende couleur : un FI par ligne, pour décoder les blocs d'un coup
+  // d'œil même quand plusieurs sont côte à côte et trop étroits pour
+  // afficher un nom lisible.
+  const instructorLegend = useMemo(() => {
+    const byId = new Map<string, { name: string; color: string }>();
+    for (const a of availability) {
+      if (!byId.has(a.instructorId)) {
+        byId.set(a.instructorId, {
+          name: `${a.instructor.firstName} ${a.instructor.lastName}`,
+          color: a.instructor.instructorProfile?.color || "#0C2448",
+        });
+      }
+    }
+    return Array.from(byId.values()).sort((x, y) => x.name.localeCompare(y.name));
+  }, [availability]);
+
+  // Fond de créneau plus marqué quand plusieurs FI sont dispo en même
+  // temps — pour repérer les créneaux à forte couverture (ou au contraire
+  // les trous) d'un coup d'œil, sans avoir à compter les blocs un par un.
+  // Recalculé seulement quand la liste des dispos change, pas à chaque
+  // rendu — coût négligeable (quelques dizaines de créneaux visibles à la
+  // fois, quelques dizaines de dispos à comparer).
+  const slotPropGetter = useCallback(
+    (slotDate: Date) => {
+      const slotEnd = new Date(slotDate.getTime() + 30 * 60 * 1000);
+      let count = 0;
+      for (const a of availability) {
+        if (new Date(a.startTime) < slotEnd && new Date(a.endTime) > slotDate) count++;
+        if (count >= 4) break;
+      }
+      if (count <= 1) return {};
+      const alpha = [0, 0, 0.14, 0.24, 0.36][count] ?? 0.36;
+      return { style: { backgroundColor: `rgba(240, 72, 24, ${alpha})` } };
+    },
     [availability]
   );
 
@@ -173,6 +212,24 @@ export function InstructorAvailabilityView() {
         </button>
       </div>
 
+      {instructorLegend.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-navy-600 -mt-1">
+          {instructorLegend.map((i) => (
+            <span key={i.name} className="flex items-center gap-1.5">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: i.color }}
+              />
+              {i.name}
+            </span>
+          ))}
+          <span className="flex items-center gap-1.5 text-navy-400">
+            <span className="w-2.5 h-2.5 rounded-full bg-sunset-500/25 shrink-0" />
+            Fond marqué = plusieurs FI dispo en même temps
+          </span>
+        </div>
+      )}
+
       <div className="flex-1 bg-white rounded-2xl border border-navy-100 p-1.5 md:p-4 min-h-0 overflow-x-auto">
         <Calendar
           localizer={localizer}
@@ -192,6 +249,7 @@ export function InstructorAvailabilityView() {
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
           eventPropGetter={eventPropGetter}
+          slotPropGetter={slotPropGetter}
           messages={MESSAGES}
           culture="fr"
           min={new Date(1970, 0, 1, 6, 0)}
