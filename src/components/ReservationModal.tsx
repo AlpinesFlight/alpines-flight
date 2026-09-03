@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { X, Trash2, PlaneTakeoff, PlaneLanding, Plus, Lock } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, Reservation, ReservationType, TrainingProgram, UserLite } from "@/types/models";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatHoursMinutes } from "@/lib/format";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
 
 // Types proposés à la création/édition depuis ce formulaire générique —
@@ -865,7 +865,7 @@ export function CompleteFlightPanel({
         <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-sm flex flex-col gap-1">
           <div className="flex justify-between text-navy-700">
             <span>
-              Avion — {duration}h × {formatMoney(aircraftRateCents)}/h
+              Avion — {formatHoursMinutes(duration)} × {formatMoney(aircraftRateCents)}/h
             </span>
             <span>{formatMoney(aircraftCostCents)}</span>
           </div>
@@ -874,7 +874,7 @@ export function CompleteFlightPanel({
               <span>
                 Instruction
                 {instructionRateCents
-                  ? ` (${programRateCents ? selectedProgram!.title : "tarif instructeur"}) — ${duration}h × ${formatMoney(instructionRateCents)}/h`
+                  ? ` (${programRateCents ? selectedProgram!.title : "tarif instructeur"}) — ${formatHoursMinutes(duration)} × ${formatMoney(instructionRateCents)}/h`
                   : " (aucun tarif renseigné — ni formation, ni instructeur)"}
               </span>
               <span>{formatMoney(instructionCostCents)}</span>

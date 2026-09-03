@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { FlightLog } from "@/types/models";
-import { formatDate, formatHours, formatMoney } from "@/lib/format";
+import { formatDate, formatHours, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { Pencil, Trash2, X } from "lucide-react";
 
 function toIsoDate(date: Date): string {
@@ -88,7 +88,7 @@ export function FlightsView() {
   async function handleDelete(f: FlightLog) {
     if (
       !window.confirm(
-        `Supprimer ce vol (${f.aircraft.registration}, ${formatDate(f.date)}, ${f.duration}h) ? Le solde du pilote, les heures de l'avion et la réservation d'origine seront réajustés en conséquence.`
+        `Supprimer ce vol (${f.aircraft.registration}, ${formatDate(f.date)}, ${formatHoursMinutes(f.duration)}) ? Le solde du pilote, les heures de l'avion et la réservation d'origine seront réajustés en conséquence.`
       )
     )
       return;
@@ -265,7 +265,7 @@ export function FlightsView() {
                     ? `${f.departureAirfield} → ${f.arrivalAirfield}`
                     : "—"}
                 </td>
-                <td className="px-5 py-3 text-right text-navy-700 whitespace-nowrap">{formatHours(f.duration)}</td>
+                <td className="px-5 py-3 text-right text-navy-700 whitespace-nowrap">{formatHoursMinutes(f.duration)}</td>
                 <td className="px-5 py-3 text-right text-navy-700">{f.totalLandings}</td>
                 <td className="px-5 py-3 text-right font-semibold text-navy-900 whitespace-nowrap">
                   {formatMoney(f.aircraftCostCents + f.instructionCostCents)}
@@ -434,7 +434,7 @@ function EditFlightModal({
               />
             </label>
           </div>
-          <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHours(duration)}</p>
+          <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHoursMinutes(duration)}</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
