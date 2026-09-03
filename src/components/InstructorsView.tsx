@@ -45,9 +45,12 @@ export function InstructorsView() {
         </div>
         {/* Création unifiée élève/pilote/FI depuis la page Élèves &
             pilotes (voir CreateMemberModal dans StudentsView.tsx) — pas de
-            second formulaire de création ici. */}
+            second formulaire de création ici. ?newRole=INSTRUCTOR ouvre ce
+            formulaire directement avec l'onglet FI déjà sélectionné, sans
+            quoi arriver ici pour ajouter un instructeur retombait par
+            défaut sur Élève. */}
         <Link
-          href="/eleves"
+          href="/eleves?newRole=INSTRUCTOR"
           className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
         >
           <Plus size={16} /> Ajouter un nouveau membre

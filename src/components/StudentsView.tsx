@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { UserLite, Aircraft } from "@/types/models";
 import { formatHours, formatMoney } from "@/lib/format";
@@ -16,11 +17,17 @@ const TYPE_FILTERS = [
 ] as const;
 
 export function StudentsView() {
+  const searchParams = useSearchParams();
+  // Arrivée depuis "+" sur la page Instructeurs (voir InstructorsView.tsx,
+  // qui renvoie ici faute de formulaire dédié) : ouvre directement le
+  // formulaire de création avec l'onglet FI déjà sélectionné, plutôt que de
+  // laisser retomber sur Élève et forcer un clic de plus.
+  const startAsInstructor = searchParams.get("newRole") === "INSTRUCTOR";
   const [students, setStudents] = useState<UserLite[]>([]);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<(typeof TYPE_FILTERS)[number]["key"]>("ALL");
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(startAsInstructor);
   const [detail, setDetail] = useState<UserLite | null>(null);
 
   async function load() {
@@ -149,6 +156,7 @@ export function StudentsView() {
 
       {showCreate && (
         <CreateMemberModal
+          initialRole={startAsInstructor ? "INSTRUCTOR" : "STUDENT"}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -180,13 +188,15 @@ const NEW_MEMBER_ROLES: { key: NewMemberRole; label: string }[] = [
 // StudentProfile) ; FI crée un compte INSTRUCTOR à part — deux routes
 // différentes derrière un seul formulaire.
 function CreateMemberModal({
+  initialRole = "STUDENT",
   onClose,
   onCreated,
 }: {
+  initialRole?: NewMemberRole;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [role, setRole] = useState<NewMemberRole>("STUDENT");
+  const [role, setRole] = useState<NewMemberRole>(initialRole);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
