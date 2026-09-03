@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { AccountTransaction, SchoolSettings, UserLite } from "@/types/models";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import { Plus, X, Check, Ban, Clock, FileDown, Pencil, Trash2, Landmark, PiggyBank } from "lucide-react";
+import { Plus, X, Check, Ban, Clock, FileDown, FileText, Pencil, Trash2, Landmark, PiggyBank } from "lucide-react";
 import { clsx } from "clsx";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -37,6 +37,7 @@ export function BillingView() {
   const [loading, setLoading] = useState(true);
   const [showDeposit, setShowDeposit] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showFlightsExport, setShowFlightsExport] = useState(false);
   const [showIban, setShowIban] = useState(false);
   const [editTx, setEditTx] = useState<AccountTransaction | null>(null);
 
@@ -118,6 +119,14 @@ export function BillingView() {
             className="flex items-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 text-sm font-semibold px-3.5 py-2 transition-colors"
           >
             <FileDown size={16} /> Exporter en PDF
+          </button>
+        )}
+        {canFinanceAdmin && (
+          <button
+            onClick={() => setShowFlightsExport(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 text-sm font-semibold px-3.5 py-2 transition-colors"
+          >
+            <FileText size={16} /> Extrait de vols (par pilote)
           </button>
         )}
         <button
@@ -316,6 +325,10 @@ export function BillingView() {
       )}
 
       {showExport && <ExportPdfModal onClose={() => setShowExport(false)} />}
+
+      {showFlightsExport && (
+        <ExportFlightsPdfModal students={students} onClose={() => setShowFlightsExport(false)} />
+      )}
 
       {showIban && (
         <EditIbanModal
@@ -666,6 +679,90 @@ function ExportPdfModal({ onClose }: { onClose: () => void }) {
           <button
             type="submit"
             className="flex items-center justify-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm transition-colors"
+          >
+            <FileDown size={16} /> Générer le PDF
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Extrait de vols d'UN pilote/élève sur une période — sert de justificatif
+// (facture, assurance...), voir /vols/print. Distinct du relevé financier
+// ci-dessus : ici le détail vol par vol (avion, trajet, durée,
+// atterrissages) pour une seule personne, pas le grand livre de l'école.
+function ExportFlightsPdfModal({
+  students,
+  onClose,
+}: {
+  students: UserLite[];
+  onClose: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const firstOfMonth = today.slice(0, 8) + "01";
+  const [studentId, setStudentId] = useState("");
+  const [from, setFrom] = useState(firstOfMonth);
+  const [to, setTo] = useState(today);
+
+  function handleExport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!studentId) return;
+    const params = new URLSearchParams({ studentId });
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    window.open(`/vols/print?${params.toString()}`, "_blank");
+    onClose();
+  }
+
+  const sorted = [...students].sort((a, b) => a.lastName.localeCompare(b.lastName));
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+          <h2 className="font-semibold text-navy-900">Extrait de vols</h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleExport} className="p-5 flex flex-col gap-3">
+          <p className="text-xs text-navy-600 -mt-1">
+            Détail des vols (avion, trajet, durée, atterrissages, coût) d&apos;un pilote sur la
+            période choisie — utile comme justificatif.
+          </p>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Pilote / élève</span>
+            <select
+              required
+              value={studentId}
+              onChange={(e) => setStudentId(e.target.value)}
+              className="input"
+            >
+              <option value="" disabled>
+                Choisir...
+              </option>
+              {sorted.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.firstName} {s.lastName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Du</span>
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Au</span>
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input" />
+            </label>
+          </div>
+          <button
+            type="submit"
+            disabled={!studentId}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
           >
             <FileDown size={16} /> Générer le PDF
           </button>
