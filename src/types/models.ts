@@ -227,6 +227,7 @@ export interface SchoolDocument {
   title: string;
   category: string | null;
   visibility: DocumentVisibility;
+  archived: boolean;
   fileName: string;
   fileMimeType: string;
   fileSize: number;

@@ -99,6 +99,7 @@ export const safeSchoolDocumentSelect = {
   title: true,
   category: true,
   visibility: true,
+  archived: true,
   fileName: true,
   fileMimeType: true,
   fileSize: true,

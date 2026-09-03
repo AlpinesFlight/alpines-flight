@@ -21,14 +21,27 @@ const ALLOWED_MIME = new Set([
 // élève/pilote ne voit que les documents ALL ; le staff pédagogique (FI et
 // au-dessus) voit aussi les documents FI_ONLY (ex. notes internes,
 // procédures d'instruction) — voir SchoolDocument.visibility.
-export async function GET() {
+// ?archived=true bascule sur les documents archivés (voir archived
+// ci-dessous) plutôt que les actifs — jamais les deux mélangés, pour que
+// la liste principale reste celle qu'on utilise au quotidien.
+export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const staff = isInstructorOrAbove(session.user.role);
+  const { searchParams } = new URL(req.url);
+  const archived = searchParams.get("archived") === "true";
+  // Les archives (anciennes versions, procédures périmées...) ne sont
+  // montrées qu'à qui peut les gérer — les montrer à tout le monde
+  // risquerait de faire lire une version périmée par erreur.
+  if (archived && !canManageSchool(session.user.role))
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const documents = await prisma.schoolDocument.findMany({
-    where: staff ? undefined : { visibility: "ALL" },
+    where: {
+      archived,
+      ...(staff ? {} : { visibility: "ALL" }),
+    },
     select: {
       ...safeSchoolDocumentSelect,
       notifications: {

@@ -2,11 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { clsx } from "clsx";
 import { apiFetch } from "@/lib/api";
 import { DocumentAcknowledgment, DocumentVisibility, SchoolDocument } from "@/types/models";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
-import { FileText, Plus, X, Trash2, FolderOpen, Lock, CheckCircle2, Circle, ClipboardCheck } from "lucide-react";
+import {
+  FileText,
+  Plus,
+  X,
+  Trash2,
+  FolderOpen,
+  Lock,
+  CheckCircle2,
+  Circle,
+  ClipboardCheck,
+  Archive,
+  ArchiveRestore,
+} from "lucide-react";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
@@ -18,14 +31,18 @@ export function DocumentationView() {
   const canManage = canManageSchool(session?.user?.role);
   const isStaff = isInstructorOrAbove(session?.user?.role);
   const [documents, setDocuments] = useState<SchoolDocument[]>([]);
+  // Sorti de la liste active sans être supprimé (voir SchoolDocument.
+  // archived) — utile pour garder une ancienne version d'un document
+  // consultable lors d'une mise à jour, et la retrouver plus tard.
+  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [proofDoc, setProofDoc] = useState<SchoolDocument | null>(null);
 
-  async function load() {
+  async function load(archived = showArchived) {
     setLoading(true);
     try {
-      const data = await apiFetch<SchoolDocument[]>("/api/documents");
+      const data = await apiFetch<SchoolDocument[]>(`/api/documents?archived=${archived}`);
       setDocuments(data);
     } finally {
       setLoading(false);
@@ -34,12 +51,21 @@ export function DocumentationView() {
 
   useEffect(() => {
     if (sessionStatus === "loading") return;
-    load();
-  }, [sessionStatus]);
+    load(showArchived);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, showArchived]);
 
   async function handleDelete(doc: SchoolDocument) {
-    if (!window.confirm(`Supprimer « ${doc.title} » ?`)) return;
+    if (!window.confirm(`Supprimer définitivement « ${doc.title} » ? Cette action est irréversible.`)) return;
     await apiFetch(`/api/documents/${doc.id}`, { method: "DELETE" });
+    load();
+  }
+
+  async function handleArchive(doc: SchoolDocument, archived: boolean) {
+    await apiFetch(`/api/documents/${doc.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived }),
+    });
     load();
   }
 
@@ -61,11 +87,33 @@ export function DocumentationView() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex justify-end mb-5">
+      <div className="flex items-center flex-wrap gap-3 mb-5">
+        {canManage && (
+          <div className="flex items-center bg-navy-50 rounded-lg p-1 gap-1">
+            <button
+              onClick={() => setShowArchived(false)}
+              className={clsx(
+                "px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                !showArchived ? "bg-white text-navy-900 shadow-sm" : "text-navy-600 hover:text-navy-900"
+              )}
+            >
+              Actifs
+            </button>
+            <button
+              onClick={() => setShowArchived(true)}
+              className={clsx(
+                "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                showArchived ? "bg-white text-navy-900 shadow-sm" : "text-navy-600 hover:text-navy-900"
+              )}
+            >
+              <Archive size={12} /> Archivés
+            </button>
+          </div>
+        )}
         {canManage && (
           <button
             onClick={() => setShowUpload(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
+            className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
           >
             <Plus size={16} /> Ajouter un document
           </button>
@@ -74,7 +122,7 @@ export function DocumentationView() {
 
       {!loading && documents.length === 0 && (
         <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
-          Aucun document pour l&apos;instant.
+          {showArchived ? "Aucun document archivé." : "Aucun document pour l'instant."}
         </div>
       )}
 
@@ -137,10 +185,28 @@ export function DocumentationView() {
                       <ClipboardCheck size={15} />
                     </button>
                   )}
+                  {canManage &&
+                    (showArchived ? (
+                      <button
+                        onClick={() => handleArchive(d, false)}
+                        title="Désarchiver (remettre dans les documents actifs)"
+                        className="text-navy-400 hover:text-navy-800"
+                      >
+                        <ArchiveRestore size={15} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleArchive(d, true)}
+                        title="Archiver (garder le fichier, le sortir des documents actifs)"
+                        className="text-navy-400 hover:text-navy-800"
+                      >
+                        <Archive size={15} />
+                      </button>
+                    ))}
                   {canManage && (
                     <button
                       onClick={() => handleDelete(d)}
-                      title="Supprimer"
+                      title="Supprimer définitivement (pour garder une trace, préfère Archiver)"
                       className="text-navy-400 hover:text-red-600"
                     >
                       <Trash2 size={15} />

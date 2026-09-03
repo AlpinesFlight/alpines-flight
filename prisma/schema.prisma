@@ -798,6 +798,10 @@ model SchoolDocument {
   title        String
   category     String? // ex: "Procédures", "Manuels avion", "Réglementation"
   visibility   DocumentVisibility @default(ALL)
+  // Sorti de la liste active sans être supprimé — utile lors d'une mise à
+  // jour (garder l'ancienne version consultable) plutôt que de perdre le
+  // fichier. Le retrouver plus tard : voir GET /api/documents?archived=true.
+  archived     Boolean            @default(false)
   fileName     String
   fileMimeType String
   fileSize     Int
