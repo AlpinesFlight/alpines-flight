@@ -397,8 +397,11 @@ function IbanCard({
           <Landmark size={14} /> Coordonnées bancaires
         </span>
         {canEdit && (
-          <button onClick={onEdit} className="text-navy-200 hover:text-white">
-            <Pencil size={13} />
+          <button
+            onClick={onEdit}
+            className="flex items-center gap-1 text-xs font-medium text-navy-200 hover:text-white"
+          >
+            <Pencil size={13} /> Modifier
           </button>
         )}
       </div>
@@ -411,7 +414,7 @@ function IbanCard({
         </div>
       ) : (
         <p className="text-sm text-navy-200">
-          {canEdit ? "Aucun IBAN renseigné — clique sur le crayon pour l'ajouter." : "IBAN non renseigné."}
+          {canEdit ? "Aucun IBAN renseigné — clique sur « Modifier » pour l'ajouter." : "IBAN non renseigné."}
         </p>
       )}
     </div>
