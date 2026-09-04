@@ -533,7 +533,7 @@ function QualificationCard({
               <span>Expire le {formatDate(qualification.currentDocument.expiresAt)}</span>
             )}
           </span>
-          {qualification.currentDocument.fileName && (
+          {qualification.currentDocument.fileName ? (
             <a
               href={`/api/qualifications/documents/${qualification.currentDocument.id}/file`}
               target="_blank"
@@ -542,6 +542,12 @@ function QualificationCard({
             >
               <FileText size={13} /> Voir le document validé
             </a>
+          ) : (
+            // Un import récent n'imposait pas de fichier — corrigé (voir
+            // UploadDocumentModal/POST .../documents), mais d'anciens
+            // documents sans fichier existent encore : le dire clairement
+            // plutôt que de laisser croire qu'il n'y a simplement rien ici.
+            <span className="italic text-navy-400">Aucun fichier associé à ce document</span>
           )}
           {canManage && (
             <button
@@ -806,6 +812,14 @@ function UploadDocumentModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Un document sans fichier n'a aucune valeur (rien à consulter) et,
+    // s'il est ensuite validé, masque silencieusement un éventuel document
+    // réel existant en le reléguant dans l'historique — déjà arrivé en
+    // conditions réelles sur plusieurs comptes.
+    if (!file) {
+      setError("Choisis un fichier à importer.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -908,6 +922,7 @@ function UploadDocumentModal({
             <span className="text-xs font-medium text-navy-600">Fichier (PDF, JPEG, PNG — 10 Mo max)</span>
             <input
               type="file"
+              required
               accept="application/pdf,image/jpeg,image/png,image/heic,image/webp"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="text-sm"

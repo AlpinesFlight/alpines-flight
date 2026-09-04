@@ -39,6 +39,13 @@ export async function POST(req: Request) {
   if (!canManageSchool(session.user.role) && userId !== session.user.id) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Un document sans fichier n'a rien à faire valider : ça a déjà produit
+  // un document "courant" vide masquant silencieusement, dans l'historique,
+  // le vrai document avec son fichier — revérifié ici, jamais fait
+  // confiance au seul contrôle du formulaire.
+  if (!(file instanceof File) || file.size === 0) {
+    return NextResponse.json({ error: "Un fichier est requis." }, { status: 400 });
+  }
 
   let qualification;
   if (qualificationId) {
