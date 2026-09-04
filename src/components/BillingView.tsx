@@ -391,7 +391,7 @@ function IbanCard({
 }) {
   const hasIban = !!settings?.iban;
   return (
-    <div className="bg-navy-800 rounded-2xl p-5 flex flex-col gap-2 lg:w-72 shrink-0">
+    <div className="bg-navy-800 rounded-2xl p-5 flex flex-col gap-2 lg:w-96 shrink-0">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-semibold text-cream-50 uppercase tracking-wide">
           <Landmark size={14} /> Coordonnées bancaires
@@ -408,7 +408,12 @@ function IbanCard({
       {hasIban ? (
         <div className="text-sm text-cream-50">
           {settings?.ibanHolder && <p className="font-medium">{settings.ibanHolder}</p>}
-          <p className="font-mono tracking-wide">{settings?.iban}</p>
+          {/* Un IBAN complet ne tient pas en text-sm sur une largeur de
+              carte raisonnable — plus petit et sans tracking-wide (qui
+              n'apporte rien à la lisibilité d'un simple code à recopier),
+              overflow-x-auto en filet de sécurité si jamais ça ne suffit
+              toujours pas (ex: IBAN étranger plus long). */}
+          <p className="font-mono text-xs whitespace-nowrap overflow-x-auto">{settings?.iban}</p>
           {settings?.bic && <p className="text-navy-200 text-xs">BIC : {settings.bic}</p>}
           {settings?.bankName && <p className="text-navy-200 text-xs">{settings.bankName}</p>}
         </div>
