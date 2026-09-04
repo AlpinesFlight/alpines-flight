@@ -20,6 +20,7 @@ import {
   History,
   ChevronDown,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -452,6 +453,10 @@ function QualificationCard({
   const [sending, setSending] = useState(false);
   const [deletingDoc, setDeletingDoc] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // Correction des infos d'un document déjà importé (n° erroné, date mal
+  // saisie...) — voir PATCH /api/qualifications/documents/[id]. Gérant/Admin
+  // uniquement, quel que soit le document (courant ou dans l'historique).
+  const [editingDoc, setEditingDoc] = useState<QualificationDocument | null>(null);
   const urgency = urgencyOf(qualification);
   const days = daysUntil(qualification.currentDocument?.expiresAt);
   const pendingDoc = qualification.documents.find((d) => d.status === "PENDING");
@@ -521,20 +526,32 @@ function QualificationCard({
       </div>
 
       {qualification.currentDocument ? (
-        <div className="mt-2 flex items-center gap-3 text-xs text-navy-600">
-          {qualification.currentDocument.number && <span>N° {qualification.currentDocument.number}</span>}
-          {qualification.currentDocument.expiresAt && (
-            <span>Expire le {formatDate(qualification.currentDocument.expiresAt)}</span>
-          )}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-navy-600">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {qualification.currentDocument.number && <span>N° {qualification.currentDocument.number}</span>}
+            {qualification.currentDocument.expiresAt && (
+              <span>Expire le {formatDate(qualification.currentDocument.expiresAt)}</span>
+            )}
+          </span>
           {qualification.currentDocument.fileName && (
             <a
               href={`/api/qualifications/documents/${qualification.currentDocument.id}/file`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-sunset-600 hover:underline"
+              className="flex items-center gap-1 font-semibold text-sunset-600 hover:text-sunset-700 hover:bg-sunset-100 rounded-lg px-2 py-1 -my-1"
             >
-              <FileText size={12} /> Voir le document
+              <FileText size={13} /> Voir le document validé
             </a>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setEditingDoc(qualification.currentDocument)}
+              title="Modifier les informations de ce document (n°, dates, notes)"
+              className="flex items-center gap-1 text-navy-500 hover:text-navy-900 hover:bg-navy-100 rounded-lg px-2 py-1 -my-1"
+            >
+              <Pencil size={12} /> Modifier
+            </button>
           )}
         </div>
       ) : (
@@ -556,6 +573,16 @@ function QualificationCard({
             >
               <FileText size={12} /> Voir
             </a>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setEditingDoc(pendingDoc)}
+              title="Modifier les informations de ce document"
+              className="flex items-center gap-1 text-navy-400 hover:text-navy-900"
+            >
+              <Pencil size={12} /> Modifier
+            </button>
           )}
           {canDeletePendingDoc && (
             <button
@@ -611,39 +638,142 @@ function QualificationCard({
         <div className="mt-2 flex flex-col gap-1 border-t border-navy-100 pt-2">
           {history
             .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-            .map((d) => {
-              // Toute la ligne est cliquable (pas juste une petite icône en
-              // bout de ligne) — sinon trop difficile à viser, surtout sur
-              // tablette/mobile, une fois le texte de méta-infos long.
-              const meta = (
+            .map((d) => (
+              // Zone large plutôt qu'une petite icône en bout de ligne —
+              // sinon trop difficile à viser, surtout sur tablette/mobile,
+              // une fois le texte de méta-infos long.
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-2 text-[11px] text-navy-600 hover:bg-navy-50 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
+              >
                 <span className="min-w-0 truncate">
                   {d.status === "ARCHIVED" ? "Archivé" : d.status === "REJECTED" ? "Rejeté" : d.status}
                   {d.expiresAt ? ` · expirait le ${formatDate(d.expiresAt)}` : ""}
                   {d.number ? ` · n° ${d.number}` : ""} · {formatDate(d.uploadedAt)}
                   {d.rejectionReason ? ` · motif : ${d.rejectionReason}` : ""}
                 </span>
-              );
-              return d.fileName ? (
-                <a
-                  key={d.id}
-                  href={`/api/qualifications/documents/${d.id}/file`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between gap-2 text-[11px] text-navy-600 hover:bg-navy-50 hover:text-sunset-600 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
-                >
-                  {meta}
-                  <span className="flex items-center gap-1 shrink-0 font-semibold">
-                    <FileText size={13} /> Voir
-                  </span>
-                </a>
-              ) : (
-                <div key={d.id} className="flex items-center text-[11px] text-navy-600 px-2 py-1.5 -mx-2">
-                  {meta}
-                </div>
-              );
-            })}
+                <span className="flex items-center gap-3 shrink-0">
+                  {d.fileName && (
+                    <a
+                      href={`/api/qualifications/documents/${d.id}/file`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 font-semibold text-navy-600 hover:text-sunset-600"
+                    >
+                      <FileText size={13} /> Voir
+                    </a>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingDoc(d)}
+                      title="Modifier les informations de ce document"
+                      className="flex items-center gap-1 text-navy-400 hover:text-navy-900"
+                    >
+                      <Pencil size={12} /> Modifier
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
         </div>
       )}
+
+      {editingDoc && (
+        <EditDocumentModal
+          document={editingDoc}
+          onClose={() => setEditingDoc(null)}
+          onSaved={() => {
+            setEditingDoc(null);
+            onChanged();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Corrige les infos d'un document déjà importé (n° de licence, dates,
+// notes) sans avoir à tout ré-importer — voir PATCH
+// /api/qualifications/documents/[id]. Ne touche jamais le fichier ni le
+// statut : ça reste le rôle du circuit valider/rejeter.
+function EditDocumentModal({
+  document,
+  onClose,
+  onSaved,
+}: {
+  document: QualificationDocument;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [number, setNumber] = useState(document.number ?? "");
+  const [issuedAt, setIssuedAt] = useState(document.issuedAt ? document.issuedAt.slice(0, 10) : "");
+  const [expiresAt, setExpiresAt] = useState(document.expiresAt ? document.expiresAt.slice(0, 10) : "");
+  const [notes, setNotes] = useState(document.notes ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/qualifications/documents/${document.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          number: number || null,
+          issuedAt: issuedAt || null,
+          expiresAt: expiresAt || null,
+          notes: notes || null,
+        }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+          <h2 className="font-semibold text-navy-900">Modifier le document</h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+          {document.fileName && <p className="text-xs text-navy-500 -mt-1 truncate">{document.fileName}</p>}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Numéro</span>
+            <input value={number} onChange={(e) => setNumber(e.target.value)} className="input" />
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Délivré le</span>
+              <input type="date" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} className="input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Expire le</span>
+              <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="input" />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Notes (optionnel)</span>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input min-h-16" />
+          </label>
+          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
