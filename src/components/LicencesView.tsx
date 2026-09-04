@@ -410,10 +410,9 @@ function PendingRow({
             href={`/api/qualifications/documents/${document.id}/file`}
             target="_blank"
             rel="noopener noreferrer"
-            title="Voir le document"
-            className="text-navy-500 hover:text-navy-900"
+            className="flex items-center gap-1 text-xs font-medium text-navy-600 hover:text-navy-900 hover:bg-navy-100 rounded-lg px-2 py-1.5"
           >
-            <FileText size={16} />
+            <FileText size={14} /> Voir
           </a>
         )}
         <button
@@ -448,8 +447,10 @@ function QualificationCard({
   onImport: () => void;
   onChanged: () => void;
 }) {
+  const { data: session } = useSession();
   const [showHistory, setShowHistory] = useState(false);
   const [sending, setSending] = useState(false);
+  const [deletingDoc, setDeletingDoc] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const urgency = urgencyOf(qualification);
   const days = daysUntil(qualification.currentDocument?.expiresAt);
@@ -457,6 +458,11 @@ function QualificationCard({
   const history = qualification.documents.filter(
     (d) => d.id !== qualification.currentDocumentId && d.status !== "PENDING"
   );
+  // Même règle que côté serveur (voir DELETE /api/qualifications/documents/
+  // [id]) : l'admin peut toujours retirer, celui qui l'a importé seulement
+  // tant que c'est encore en attente — pas quand c'est un admin qui l'a
+  // importé pour quelqu'un d'autre.
+  const canDeletePendingDoc = !!pendingDoc && (canManage || pendingDoc.uploadedById === session?.user?.id);
 
   async function handleRemind() {
     setSending(true);
@@ -482,6 +488,24 @@ function QualificationCard({
     if (!window.confirm(`Supprimer entièrement « ${qualification.label} » et son historique ?`)) return;
     await apiFetch(`/api/qualifications/${qualification.id}`, { method: "DELETE" });
     onChanged();
+  }
+
+  // Retire un document tout juste importé par erreur (mauvais fichier,
+  // mauvaise qualification...) — seulement possible tant qu'il n'a pas
+  // encore été traité, voir canDeletePendingDoc ci-dessus.
+  async function handleDeletePendingDoc() {
+    if (!pendingDoc) return;
+    if (!window.confirm("Retirer ce document en attente ?")) return;
+    setDeletingDoc(true);
+    setFeedback(null);
+    try {
+      await apiFetch(`/api/qualifications/documents/${pendingDoc.id}`, { method: "DELETE" });
+      onChanged();
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setDeletingDoc(false);
+    }
   }
 
   return (
@@ -518,10 +542,33 @@ function QualificationCard({
       )}
 
       {pendingDoc && (
-        <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-sunset-600">
-          <Clock size={12} /> Renouvellement en attente de validation
-          {pendingDoc.expiresAt ? ` (expire le ${formatDate(pendingDoc.expiresAt)})` : ""}
-        </p>
+        <div className="mt-2 flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-sunset-600">
+          <span className="flex items-center gap-1">
+            <Clock size={12} /> Renouvellement en attente de validation
+            {pendingDoc.expiresAt ? ` (expire le ${formatDate(pendingDoc.expiresAt)})` : ""}
+          </span>
+          {pendingDoc.fileName && (
+            <a
+              href={`/api/qualifications/documents/${pendingDoc.id}/file`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 font-semibold text-navy-600 hover:text-sunset-600 hover:underline"
+            >
+              <FileText size={12} /> Voir
+            </a>
+          )}
+          {canDeletePendingDoc && (
+            <button
+              type="button"
+              onClick={handleDeletePendingDoc}
+              disabled={deletingDoc}
+              title="Retirer ce document (envoyé par erreur ?)"
+              className="flex items-center gap-1 text-navy-400 hover:text-red-600 disabled:opacity-50"
+            >
+              <Trash2 size={12} /> Retirer
+            </button>
+          )}
+        </div>
       )}
 
       {feedback && <p className="mt-1 text-[11px] text-navy-500">{feedback}</p>}
@@ -561,29 +608,40 @@ function QualificationCard({
       </div>
 
       {showHistory && (
-        <div className="mt-2 flex flex-col gap-1.5 border-t border-navy-100 pt-2">
+        <div className="mt-2 flex flex-col gap-1 border-t border-navy-100 pt-2">
           {history
             .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-            .map((d) => (
-              <div key={d.id} className="flex items-center justify-between text-[11px] text-navy-600">
-                <span>
+            .map((d) => {
+              // Toute la ligne est cliquable (pas juste une petite icône en
+              // bout de ligne) — sinon trop difficile à viser, surtout sur
+              // tablette/mobile, une fois le texte de méta-infos long.
+              const meta = (
+                <span className="min-w-0 truncate">
                   {d.status === "ARCHIVED" ? "Archivé" : d.status === "REJECTED" ? "Rejeté" : d.status}
                   {d.expiresAt ? ` · expirait le ${formatDate(d.expiresAt)}` : ""}
                   {d.number ? ` · n° ${d.number}` : ""} · {formatDate(d.uploadedAt)}
                   {d.rejectionReason ? ` · motif : ${d.rejectionReason}` : ""}
                 </span>
-                {d.fileName && (
-                  <a
-                    href={`/api/qualifications/documents/${d.id}/file`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-navy-500 hover:text-sunset-600"
-                  >
-                    <FileText size={12} />
-                  </a>
-                )}
-              </div>
-            ))}
+              );
+              return d.fileName ? (
+                <a
+                  key={d.id}
+                  href={`/api/qualifications/documents/${d.id}/file`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-2 text-[11px] text-navy-600 hover:bg-navy-50 hover:text-sunset-600 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
+                >
+                  {meta}
+                  <span className="flex items-center gap-1 shrink-0 font-semibold">
+                    <FileText size={13} /> Voir
+                  </span>
+                </a>
+              ) : (
+                <div key={d.id} className="flex items-center text-[11px] text-navy-600 px-2 py-1.5 -mx-2">
+                  {meta}
+                </div>
+              );
+            })}
         </div>
       )}
     </div>
