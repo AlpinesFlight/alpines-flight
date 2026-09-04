@@ -39,6 +39,11 @@ export async function GET() {
               // reste de ce trombinoscope — sert au choix "Vol baptême" à
               // la réservation (voir ReservationModal.tsx).
               canGiveBaptism: true,
+              // Idem : lâchers solo, statut pédagogique visible de tous
+              // comme le reste de ce trombinoscope (voir aussi
+              // /api/students/[id]/solo-clearance).
+              soloGrassCleared: true,
+              soloPavedCleared: true,
               createdAt: true,
               updatedAt: true,
             },

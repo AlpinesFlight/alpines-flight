@@ -21,6 +21,8 @@ export interface UserLite {
     notes: string | null;
     isPilot: boolean;
     canGiveBaptism?: boolean;
+    soloGrassCleared?: boolean;
+    soloPavedCleared?: boolean;
   } | null;
 }
 

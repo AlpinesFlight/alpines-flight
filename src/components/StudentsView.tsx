@@ -9,6 +9,7 @@ import { formatHours, formatMoney } from "@/lib/format";
 import { Plus, Search, X, ShieldCheck, Pencil, UserX, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
+import { isInstructorOrAbove } from "@/lib/permissions";
 
 const TYPE_FILTERS = [
   { key: "ALL", label: "Tous" },
@@ -442,10 +443,14 @@ function StudentDetailModal({
 }) {
   const { data: session } = useSession();
   const isGerant = session?.user?.role === "GERANT";
+  // Lâchers solo : jugement pédagogique du FI, pas une question financière
+  // — voir isInstructorOrAbove.
+  const isStaff = isInstructorOrAbove(session?.user?.role);
   const [data, setData] = useState<StudentDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [togglingPilot, setTogglingPilot] = useState(false);
   const [togglingBaptism, setTogglingBaptism] = useState(false);
+  const [togglingSolo, setTogglingSolo] = useState<"GRASS" | "PAVED" | null>(null);
   // Ni handleTogglePilot ni handleToggleBaptism n'affichaient l'erreur en
   // cas d'échec (401 inattendu, coupure réseau...) — le bouton semblait
   // juste ne rien faire, sans aucun indice pour comprendre pourquoi.
@@ -505,6 +510,29 @@ function StudentDetailModal({
       setToggleError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setTogglingBaptism(false);
+    }
+  }
+
+  // Lâchers solo (piste en herbe / piste en dur) — deux autorisations
+  // indépendantes, voir StudentProfile.soloGrassCleared/soloPavedCleared et
+  // /api/students/[id]/solo-clearance (FI et au-dessus, pas Gérant-only —
+  // à la différence du baptême, ce n'est pas une question financière).
+  async function handleToggleSolo(field: "GRASS" | "PAVED") {
+    if (!data) return;
+    setTogglingSolo(field);
+    setToggleError(null);
+    const key = field === "GRASS" ? "soloGrassCleared" : "soloPavedCleared";
+    try {
+      await apiFetch(`/api/students/${studentId}/solo-clearance`, {
+        method: "PATCH",
+        body: JSON.stringify({ [key]: !data.studentProfile?.[key] }),
+      });
+      await load();
+      onUpdated();
+    } catch (err) {
+      setToggleError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setTogglingSolo(null);
     }
   }
 
@@ -656,6 +684,37 @@ function StudentDetailModal({
                     ? "Retirer l'autorisation"
                     : "Autoriser à voler en vol baptême"}
                 </button>
+              </div>
+            )}
+
+            {/* Lâchers solo — jugement pédagogique du FI, deux
+                autorisations indépendantes (herbe / dur). */}
+            {isStaff && (
+              <div className="flex items-center flex-wrap gap-x-4 gap-y-2 -mt-3">
+                {(
+                  [
+                    { field: "GRASS" as const, key: "soloGrassCleared" as const, label: "Lâché piste en herbe" },
+                    { field: "PAVED" as const, key: "soloPavedCleared" as const, label: "Lâché piste en dur" },
+                  ]
+                ).map(({ field, key, label }) => (
+                  <div key={field} className="flex items-center gap-2">
+                    <span
+                      className={clsx(
+                        "text-[11px] font-semibold px-2 py-1 rounded-full",
+                        data.studentProfile?.[key] ? "bg-green-100 text-green-700" : "bg-navy-100 text-navy-500"
+                      )}
+                    >
+                      {label}
+                    </span>
+                    <button
+                      onClick={() => handleToggleSolo(field)}
+                      disabled={togglingSolo !== null}
+                      className="text-xs text-navy-500 hover:text-navy-800 hover:underline disabled:opacity-50"
+                    >
+                      {data.studentProfile?.[key] ? "Retirer" : "Lâcher"}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 

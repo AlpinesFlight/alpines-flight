@@ -42,6 +42,8 @@ export async function GET(_req: Request, { params }: Params) {
               totalHours: true,
               isPilot: true,
               canGiveBaptism: true,
+              soloGrassCleared: true,
+              soloPavedCleared: true,
               createdAt: true,
               updatedAt: true,
             },

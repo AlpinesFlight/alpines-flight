@@ -101,6 +101,12 @@ model StudentProfile {
   // /api/reservations/[id]/complete. Sans effet si isPilot est false (pas
   // de sens pour un élève en formation).
   canGiveBaptism Boolean @default(false)
+  // Lâchers solo — deux autorisations indépendantes (une piste en dur ne
+  // suffit pas pour voler solo depuis l'herbe, et inversement), données par
+  // un FI ou le Gérant (jugement pédagogique, pas une question financière —
+  // voir isInstructorOrAbove) via /api/students/[id]/solo-clearance.
+  soloGrassCleared Boolean @default(false)
+  soloPavedCleared Boolean @default(false)
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
