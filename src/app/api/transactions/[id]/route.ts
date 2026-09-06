@@ -99,6 +99,13 @@ export async function PATCH(req: Request, { params }: Params) {
 // (annule son effet), sans jamais toucher au vol relié le cas échéant (le
 // vol reste dans le carnet ; voir /api/flights/[id] pour supprimer le vol
 // lui-même, qui lui supprime aussi sa transaction). Admin uniquement.
+//
+// Cas FLIGHT_DEBIT : "retirer la valeur d'un vol sans supprimer le vol" —
+// utile pour un vol antérieur déjà réglé autrement (espèces à l'époque...)
+// qu'on veut quand même avoir dans le carnet (heures, atterrissages...)
+// sans qu'il ne débite le compte. En plus d'annuler la transaction
+// ci-dessus, le coût affiché sur le vol lui-même est remis à zéro — sinon
+// la page Vols continuerait d'afficher un coût sans aucun débit associé.
 export async function DELETE(_req: Request, { params }: Params) {
   const session = await auth();
   if (!session || !canManageFinance(session.user.role))
@@ -113,6 +120,12 @@ export async function DELETE(_req: Request, { params }: Params) {
       await db.studentProfile.update({
         where: { userId: existing.studentId },
         data: { balanceCents: { decrement: existing.amountCents } },
+      });
+    }
+    if (existing.type === "FLIGHT_DEBIT" && existing.flightLogId) {
+      await db.flightLog.update({
+        where: { id: existing.flightLogId },
+        data: { aircraftCostCents: 0, instructionCostCents: 0 },
       });
     }
     await db.accountTransaction.delete({ where: { id } });

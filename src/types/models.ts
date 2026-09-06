@@ -266,6 +266,7 @@ export interface AccountTransaction {
     duration: number;
     departureTime: string;
     arrivalTime: string;
+    instructionCostCents: number;
     aircraft: Aircraft;
   } | null;
   notes: string | null;

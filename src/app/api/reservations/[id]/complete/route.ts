@@ -6,7 +6,7 @@ import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { effectiveAircraftRateCents } from "@/lib/reservations";
-import { durationHours } from "@/lib/format";
+import { durationHours, formatHoursMinutes } from "@/lib/format";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -200,8 +200,8 @@ export async function POST(req: Request, { params }: Params) {
     // voir StudentProfile.canGiveBaptism plus haut.
     let transaction = null;
     if (reservation.studentId && !isBaptism) {
-      const notesParts = [`Avion ${reservation.aircraft.registration} — ${duration}h`];
-      if (instructionCostCents > 0) notesParts.push(`Instruction — ${duration}h`);
+      const notesParts = [`Avion ${reservation.aircraft.registration} — ${formatHoursMinutes(duration)}`];
+      if (instructionCostCents > 0) notesParts.push(`Instruction — ${formatHoursMinutes(duration)}`);
 
       transaction = await db.accountTransaction.create({
         data: {

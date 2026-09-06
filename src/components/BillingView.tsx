@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { AccountTransaction, SchoolSettings, UserLite } from "@/types/models";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import { formatDateTime, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { Plus, X, Check, Ban, Clock, FileDown, FileText, Pencil, Trash2, Landmark, PiggyBank } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -20,6 +20,20 @@ const METHOD_LABEL: Record<string, string> = {
   CASH: "Espèces",
   CHECK: "Chèque",
 };
+
+// Reconstruit le détail d'un vol directement depuis le FlightLog relié
+// (toujours à jour, en heures et minutes) plutôt que de rejouer le texte
+// figé dans AccountTransaction.notes à la création — ça affiche
+// correctement même les vols enregistrés avant ce format-ci ou avec un
+// texte différent (ex. l'ancien "Vol antérieur saisi manuellement...").
+function flightDebitDetail(t: AccountTransaction): string {
+  if (!t.flightLog) return t.notes ?? "";
+  const parts = [`Avion ${t.flightLog.aircraft.registration} — ${formatHoursMinutes(t.flightLog.duration)}`];
+  if (t.flightLog.instructionCostCents > 0) {
+    parts.push(`Instruction — ${formatHoursMinutes(t.flightLog.duration)}`);
+  }
+  return parts.join(" + ");
+}
 
 export function BillingView() {
   const { data: session, status: sessionStatus } = useSession();
@@ -40,6 +54,10 @@ export function BillingView() {
   const [showFlightsExport, setShowFlightsExport] = useState(false);
   const [showIban, setShowIban] = useState(false);
   const [editTx, setEditTx] = useState<AccountTransaction | null>(null);
+  // Filtre d'affichage uniquement (Gérant) — pour retrouver rapidement tous
+  // les mouvements (vols compris) d'un seul pilote, sans changer les
+  // résumés ci-dessus qui restent toujours sur toute l'école.
+  const [filterStudentId, setFilterStudentId] = useState("");
 
   async function load() {
     setLoading(true);
@@ -79,6 +97,14 @@ export function BillingView() {
     () => transactions.filter((t) => t.status !== "PENDING"),
     [transactions]
   );
+  const filteredPending = useMemo(
+    () => (filterStudentId ? pending.filter((t) => t.studentId === filterStudentId) : pending),
+    [pending, filterStudentId]
+  );
+  const filteredHistory = useMemo(
+    () => (filterStudentId ? history.filter((t) => t.studentId === filterStudentId) : history),
+    [history, filterStudentId]
+  );
 
   const summary = useMemo(() => {
     const balances = students.map((s) => s.studentProfile?.balanceCents ?? 0);
@@ -99,13 +125,17 @@ export function BillingView() {
   }
 
   async function handleDeleteTx(t: AccountTransaction) {
-    if (
-      !window.confirm(
-        `Supprimer ce mouvement (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ?` +
-          (t.status === "CONFIRMED" ? " Le solde du pilote sera recrédité/redébité en conséquence." : "")
-      )
-    )
-      return;
+    // Pour un vol (FLIGHT_DEBIT), "supprimer" ce mouvement ne supprime pas
+    // le vol lui-même (voir /api/transactions/[id]) — seulement sa valeur :
+    // le solde est recrédité et le coût du vol remis à 0€, mais le vol
+    // reste dans le carnet (heures, atterrissages...). Utile pour un vol
+    // antérieur déjà réglé autrement avant d'être saisi dans l'appli.
+    const message =
+      t.type === "FLIGHT_DEBIT"
+        ? `Retirer la valeur de ce vol (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ? Le solde sera recrédité et le vol repassera à 0€, mais il restera enregistré dans le carnet (heures, atterrissages...).`
+        : `Supprimer ce mouvement (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ?` +
+          (t.status === "CONFIRMED" ? " Le solde du pilote sera recrédité/redébité en conséquence." : "");
+    if (!window.confirm(message)) return;
     await apiFetch(`/api/transactions/${t.id}`, { method: "DELETE" });
     load();
   }
@@ -168,25 +198,47 @@ export function BillingView() {
         <IbanCard settings={settings} canEdit={canFinanceAdmin} onEdit={() => setShowIban(true)} />
       </div>
 
+      {canFinanceAdmin && (
+        <label className="flex flex-col gap-1 mb-6 max-w-xs">
+          <span className="text-xs font-medium text-navy-600">
+            Filtrer par compte pilote (versements et vols ci-dessous)
+          </span>
+          <select
+            value={filterStudentId}
+            onChange={(e) => setFilterStudentId(e.target.value)}
+            className="input"
+          >
+            <option value="">— Tous les comptes —</option>
+            {[...students]
+              .sort((a, b) => a.lastName.localeCompare(b.lastName))
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.firstName} {s.lastName}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
+
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-6">
         <div className="flex items-center gap-2 px-5 py-4 border-b border-navy-100">
           <Clock size={16} className="text-sunset-600" />
           <h2 className="font-semibold text-navy-900">
             Versements en attente de vérification
           </h2>
-          {pending.length > 0 && (
+          {filteredPending.length > 0 && (
             <span className="ml-1 text-xs font-semibold bg-sunset-100 text-sunset-600 px-2 py-0.5 rounded-full">
-              {pending.length}
+              {filteredPending.length}
             </span>
           )}
         </div>
         <div className="divide-y divide-navy-100">
-          {pending.length === 0 && (
+          {filteredPending.length === 0 && (
             <p className="px-5 py-6 text-sm text-navy-600">
               Aucun versement en attente.
             </p>
           )}
-          {pending.map((t) => (
+          {filteredPending.map((t) => (
             <div key={t.id} className="px-5 py-3 flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-navy-900">
@@ -242,7 +294,7 @@ export function BillingView() {
             </tr>
           </thead>
           <tbody className="divide-y divide-navy-100">
-            {history.map((t) => (
+            {filteredHistory.map((t) => (
               <tr key={t.id} className="group">
                 <td className="px-5 py-3 text-navy-600 whitespace-nowrap">
                   {formatDateTime(t.confirmedAt ?? t.createdAt)}
@@ -254,7 +306,7 @@ export function BillingView() {
                 <td className="px-5 py-3 text-navy-600">
                   {t.type === "DEPOSIT" &&
                     `${t.method ? METHOD_LABEL[t.method] : ""}${t.reference ? ` · ${t.reference}` : ""}`}
-                  {t.type === "FLIGHT_DEBIT" && (t.notes ?? "")}
+                  {t.type === "FLIGHT_DEBIT" && flightDebitDetail(t)}
                   {t.type === "ADJUSTMENT" && (t.notes ?? "")}
                 </td>
                 <td
@@ -289,7 +341,7 @@ export function BillingView() {
                       </button>
                       <button
                         onClick={() => handleDeleteTx(t)}
-                        title="Supprimer"
+                        title={t.type === "FLIGHT_DEBIT" ? "Retirer la valeur (le vol reste au carnet)" : "Supprimer"}
                         className="text-navy-500 hover:text-red-600 hover:bg-red-100 rounded-lg p-1.5"
                       >
                         <Trash2 size={14} />
@@ -299,7 +351,7 @@ export function BillingView() {
                 )}
               </tr>
             ))}
-            {!loading && history.length === 0 && (
+            {!loading && filteredHistory.length === 0 && (
               <tr>
                 <td colSpan={canFinanceAdmin ? 7 : 6} className="px-5 py-8 text-center text-navy-600">
                   Aucun mouvement pour l&apos;instant.

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { PrintButton } from "@/components/PrintButton";
 import { canManageFinance } from "@/lib/permissions";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
@@ -143,7 +143,7 @@ export default async function BillingPrintPage({
                       <td className="px-3 py-1.5">{TYPE_LABEL[t.type] ?? t.type}</td>
                       <td className="px-3 py-1.5 text-navy-600">
                         {t.type === "FLIGHT_DEBIT" && t.flightLog
-                          ? `${t.flightLog.aircraft.registration} — ${t.flightLog.duration}h`
+                          ? `${t.flightLog.aircraft.registration} — ${formatHoursMinutes(t.flightLog.duration)}`
                           : (t.notes ?? "")}
                       </td>
                       <td

@@ -6,7 +6,7 @@ import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { isGerant, canManageFinance } from "@/lib/permissions";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { effectiveAircraftRateCents } from "@/lib/reservations";
-import { durationHours } from "@/lib/format";
+import { durationHours, formatHoursMinutes } from "@/lib/format";
 import { z } from "zod";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
@@ -242,6 +242,13 @@ export async function POST(req: Request) {
     });
 
     if (studentId) {
+      // Même format que la clôture normale (voir
+      // /api/reservations/[id]/complete) — un vol saisi ici doit être
+      // indiscernable d'un vol clôturé normalement dans l'historique du
+      // compte pilote.
+      const notesParts = [`Avion ${aircraft.registration} — ${formatHoursMinutes(duration)}`];
+      if (instructionCostCents > 0) notesParts.push(`Instruction — ${formatHoursMinutes(duration)}`);
+
       await db.accountTransaction.create({
         data: {
           studentId,
@@ -249,7 +256,7 @@ export async function POST(req: Request) {
           status: "CONFIRMED",
           amountCents: -amountCents,
           flightLogId: flight.id,
-          notes: `Vol antérieur saisi manuellement — Avion ${aircraft.registration} — ${duration}h`,
+          notes: notesParts.join(" + "),
           confirmedAt: new Date(),
           confirmedById: session.user.id,
         },
