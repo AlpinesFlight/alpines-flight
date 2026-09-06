@@ -9,6 +9,16 @@ export function formatHours(hours: number): string {
   return `${hours.toFixed(1)} h`;
 }
 
+// Durée en heures, arrondie à LA MINUTE près. À ne jamais recalculer par
+// Math.round((ms / 3_600_000) * 10) / 10 (arrondi à 0.1h = 6 minutes près :
+// un vol de 19h00 à 19h45, soit 45 min pile entre 42 et 48, se voyait
+// arrondi à 48 min) — utilisé aussi bien pour persister la durée d'un vol
+// que pour l'aperçu en direct côté formulaire, afin que les deux
+// concordent toujours exactement.
+export function durationHours(start: Date, end: Date): number {
+  return Math.round((end.getTime() - start.getTime()) / 60_000) / 60;
+}
+
 // Format "1h30" (heures et minutes) plutôt que décimal — pour la durée
 // d'UN vol donné (calculée depuis départ/arrivée à la clôture ou à la
 // correction), plus lisible que "1.5h" pour ce qu'on lit comme un chrono.

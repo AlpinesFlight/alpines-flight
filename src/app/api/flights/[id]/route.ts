@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
+import { durationHours } from "@/lib/format";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -71,7 +72,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const departureTime = parsed.data.departureTime ? new Date(parsed.data.departureTime) : existing.departureTime;
   const arrivalTime = parsed.data.arrivalTime ? new Date(parsed.data.arrivalTime) : existing.arrivalTime;
-  const duration = Math.round(((arrivalTime.getTime() - departureTime.getTime()) / 3_600_000) * 10) / 10;
+  const duration = durationHours(departureTime, arrivalTime);
   if (duration <= 0) {
     return NextResponse.json(
       { error: "L'heure d'arrivée doit être après l'heure de départ." },

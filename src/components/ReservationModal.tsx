@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { X, Trash2, PlaneTakeoff, PlaneLanding, Plus, Lock } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, Reservation, ReservationType, TrainingProgram, UserLite } from "@/types/models";
-import { formatMoney, formatHoursMinutes } from "@/lib/format";
+import { formatMoney, formatHoursMinutes, durationHours } from "@/lib/format";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
 
 // Types proposés à la création/édition depuis ce formulaire générique —
@@ -593,7 +593,7 @@ export function CompleteFlightPanel({
   const isBaptism = reservation.isBaptism;
 
   const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
-  const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
+  const duration = durationMs > 0 ? durationHours(new Date(departureTime), new Date(arrivalTime)) : 0;
   const aircraftCostCents = duration > 0 ? Math.round(duration * aircraftRateCents) : 0;
 
   const selectedInstructor = instructors.find((i) => i.id === instructorId);

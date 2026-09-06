@@ -6,6 +6,7 @@ import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { effectiveAircraftRateCents } from "@/lib/reservations";
+import { durationHours } from "@/lib/format";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -77,7 +78,7 @@ export async function POST(req: Request, { params }: Params) {
   } = parsed.data;
   const start = new Date(departureTime);
   const end = new Date(arrivalTime);
-  const duration = Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 10) / 10;
+  const duration = durationHours(start, end);
 
   if (duration <= 0) {
     return NextResponse.json(

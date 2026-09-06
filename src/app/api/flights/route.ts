@@ -6,6 +6,7 @@ import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { isGerant, canManageFinance } from "@/lib/permissions";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { effectiveAircraftRateCents } from "@/lib/reservations";
+import { durationHours } from "@/lib/format";
 import { z } from "zod";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
@@ -151,7 +152,7 @@ export async function POST(req: Request) {
 
   const start = new Date(departureTime);
   const end = new Date(arrivalTime);
-  const duration = Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 10) / 10;
+  const duration = durationHours(start, end);
   if (duration <= 0) {
     return NextResponse.json(
       { error: "L'heure d'arrivée doit être après l'heure de départ." },

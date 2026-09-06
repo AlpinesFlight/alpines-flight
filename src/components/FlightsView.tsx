@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, FlightLog, ReservationType, TrainingProgram, UserLite } from "@/types/models";
-import { formatDate, formatHours, formatHoursMinutes, formatMoney } from "@/lib/format";
+import { durationHours, formatDate, formatHours, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { Pencil, Plus, PlaneLanding, Trash2, X } from "lucide-react";
 
 function toIsoDate(date: Date): string {
@@ -381,7 +381,7 @@ function EditFlightModal({
   const [saving, setSaving] = useState(false);
 
   const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
-  const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
+  const duration = durationMs > 0 ? durationHours(new Date(departureTime), new Date(arrivalTime)) : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -694,7 +694,7 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   }, [aircraftId, studentId]);
 
   const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
-  const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
+  const duration = durationMs > 0 ? durationHours(new Date(departureTime), new Date(arrivalTime)) : 0;
   const aircraftCostCents =
     duration > 0 && aircraftRateCents != null ? Math.round(duration * aircraftRateCents) : 0;
 
