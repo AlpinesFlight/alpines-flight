@@ -17,7 +17,7 @@ const schema = z.object({
     .array(
       z.object({
         exerciseId: z.string(),
-        level: z.enum(["NON_VU", "VU", "ASSIMILE", "NIVEAU_CIBLE"]),
+        level: z.enum(["NON_VU", "VU", "ASSIMILE"]),
         notes: z.string().optional().nullable(),
       })
     )

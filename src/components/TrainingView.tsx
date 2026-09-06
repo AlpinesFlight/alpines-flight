@@ -14,7 +14,7 @@ import {
   TrainingSession,
   UserLite,
 } from "@/types/models";
-import { formatDate, formatDateTime, formatHours } from "@/lib/format";
+import { formatDate, formatDateTime, formatHoursMinutes } from "@/lib/format";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
 import {
   Plus,
@@ -47,13 +47,11 @@ const LEVEL_LABEL: Record<ProgressLevel, string> = {
   NON_VU: "Non vu",
   VU: "Vue",
   ASSIMILE: "Assimilée",
-  NIVEAU_CIBLE: "Niveau cible",
 };
 const LEVEL_STYLE: Record<ProgressLevel, string> = {
   NON_VU: "bg-navy-50 text-navy-400",
   VU: "bg-sunset-100 text-sunset-600",
   ASSIMILE: "bg-green-100 text-green-700",
-  NIVEAU_CIBLE: "bg-green-700 text-white",
 };
 
 // Déduit, pour chaque exercice, le niveau le plus récent à partir de
@@ -74,7 +72,7 @@ function computeSummary(program: TrainingProgram, progress: ExerciseProgress[]) 
   let todo = 0;
   for (const ex of allExercises) {
     const level = latest.get(ex.id)?.level ?? "NON_VU";
-    if (level === "ASSIMILE" || level === "NIVEAU_CIBLE") done++;
+    if (level === "ASSIMILE") done++;
     else if (level === "VU") inProgress++;
     else todo++;
   }
@@ -908,7 +906,7 @@ function EnrollmentDetailModal({
                           <span className="text-xs text-navy-600">
                             {s.instructor.firstName} {s.instructor.lastName}
                             {s.aircraft ? ` · ${s.aircraft.registration}` : ""}
-                            {s.flightLog ? ` · vol relié (${formatHours(s.flightLog.duration)})` : ""}
+                            {s.flightLog ? ` · vol relié (${formatHoursMinutes(s.flightLog.duration)})` : ""}
                           </span>
                           {canEditSession && (
                             <button
@@ -951,13 +949,13 @@ function EnrollmentDetailModal({
                     <span className="text-navy-700">
                       {p.code} · {p.title}
                     </span>
-                    <span className="font-medium text-navy-900">{formatHours(p.hours)}</span>
+                    <span className="font-medium text-navy-900">{formatHoursMinutes(p.hours)}</span>
                   </div>
                 ))}
                 {flightHours.perPhase.length > 0 && (
                   <div className="flex items-center justify-between text-sm font-semibold border-t border-navy-100 pt-2 mt-1 px-1">
                     <span className="text-navy-900">Total</span>
-                    <span className="text-navy-900">{formatHours(flightHours.total)}</span>
+                    <span className="text-navy-900">{formatHoursMinutes(flightHours.total)}</span>
                   </div>
                 )}
               </div>
@@ -1181,7 +1179,7 @@ function SessionFormModal({
               <option value="">—</option>
               {flightOptions.map((f) => (
                 <option key={f.id} value={f.id}>
-                  {formatDate(f.date)} · {f.aircraft.registration} · {formatHours(f.duration)}
+                  {formatDate(f.date)} · {f.aircraft.registration} · {formatHoursMinutes(f.duration)}
                 </option>
               ))}
             </select>

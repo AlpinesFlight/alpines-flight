@@ -378,7 +378,7 @@ export interface TrainingProgramLite {
 }
 
 export type EnrollmentStatus = "IN_PROGRESS" | "COMPLETED" | "ABANDONED" | "SUSPENDED";
-export type ProgressLevel = "NON_VU" | "VU" | "ASSIMILE" | "NIVEAU_CIBLE";
+export type ProgressLevel = "NON_VU" | "VU" | "ASSIMILE";
 
 export interface ExerciseProgress {
   id: string;

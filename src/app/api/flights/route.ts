@@ -10,7 +10,8 @@ import { z } from "zod";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
 // formulaire de séance (Formation → Nouvelle séance → Relier un vol, via
-// ?unlinked=true) et la page Vols (résumé, filtrable par période via
+// ?studentId=&unlinked=true — restreint aux vols de CET élève, pas tout le
+// carnet de l'école) et la page Vols (résumé, filtrable par période via
 // ?from=&to=, sur le champ date).
 export async function GET(req: Request) {
   const session = await auth();
@@ -18,9 +19,11 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const unlinkedOnly = searchParams.get("unlinked") === "true";
+  const studentId = searchParams.get("studentId");
   // Seul le Gérant voit le carnet de vol complet de l'école — tout autre
   // compte (y compris Admin et FI) ne voit que les vols où il apparaît,
-  // comme élève ou comme instructeur.
+  // comme élève ou comme instructeur. ?studentId ci-dessous ne remplace pas
+  // cette restriction, il s'y ajoute (voir plus bas).
   const ownFlightsOnly = !isGerant(session.user.role);
 
   const from = searchParams.get("from");
@@ -38,6 +41,11 @@ export async function GET(req: Request) {
       ...(ownFlightsOnly
         ? { OR: [{ studentId: session.user.id }, { instructorId: session.user.id }] }
         : {}),
+      // Ajouté (pas substitué) à la restriction ci-dessus : pour le Gérant,
+      // ça restreint au seul élève demandé (sinon tout le carnet de l'école
+      // apparaissait dans le sélecteur "Relier un vol" d'une séance) ; pour
+      // un FI/Admin, ça restreint en plus à ses propres vols avec cet élève.
+      ...(studentId ? { studentId } : {}),
       ...(unlinkedOnly ? { trainingSession: { is: null } } : {}),
       ...(dateFilter ? { date: dateFilter } : {}),
     },

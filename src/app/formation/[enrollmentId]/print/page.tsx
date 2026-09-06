@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { safeUserSelect } from "@/lib/selects";
-import { formatDate, formatHours } from "@/lib/format";
+import { formatDate, formatHoursMinutes } from "@/lib/format";
 import { PrintButton } from "@/components/PrintButton";
 import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
@@ -12,7 +12,6 @@ const LEVEL_LABEL: Record<string, string> = {
   NON_VU: "Non vu",
   VU: "Vue",
   ASSIMILE: "Assimilée",
-  NIVEAU_CIBLE: "Niveau cible",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -77,7 +76,7 @@ export default async function EnrollmentPrintPage({
   const allExercises = enrollment.program.phases.flatMap((ph) => ph.exercises);
   const doneCount = allExercises.filter((ex) => {
     const level = latest.get(ex.id)?.level;
-    return level === "ASSIMILE" || level === "NIVEAU_CIBLE";
+    return level === "ASSIMILE";
   }).length;
 
   return (
@@ -131,7 +130,7 @@ export default async function EnrollmentPrintPage({
             <strong>{doneCount}</strong> / {allExercises.length} exercices acquis
           </span>
           <span>
-            <strong>{formatHours(totalHours)}</strong> de vol au total
+            <strong>{formatHoursMinutes(totalHours)}</strong> de vol au total
           </span>
         </section>
 
@@ -145,12 +144,12 @@ export default async function EnrollmentPrintPage({
                 {Array.from(hoursByPhase.entries()).map(([code, hours]) => (
                   <tr key={code} className="border-b border-navy-100">
                     <td className="py-1.5">{code}</td>
-                    <td className="py-1.5 text-right font-medium">{formatHours(hours)}</td>
+                    <td className="py-1.5 text-right font-medium">{formatHoursMinutes(hours)}</td>
                   </tr>
                 ))}
                 <tr>
                   <td className="py-1.5 font-bold">Total</td>
-                  <td className="py-1.5 text-right font-bold">{formatHours(totalHours)}</td>
+                  <td className="py-1.5 text-right font-bold">{formatHoursMinutes(totalHours)}</td>
                 </tr>
               </tbody>
             </table>

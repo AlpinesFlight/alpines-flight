@@ -711,11 +711,13 @@ model TrainingSession {
   progress ExerciseProgress[]
 }
 
+// "Assimilée" est le niveau maximum — un "niveau cible" par exercice
+// n'existe pas dans les programmes de formation (retiré, aucune donnée
+// réelle ne l'utilisait — voir migration remove_niveau_cible_level).
 enum ProgressLevel {
   NON_VU
   VU
   ASSIMILE
-  NIVEAU_CIBLE
 }
 
 // Historique complet (une ligne par évaluation d'un exercice lors d'une
