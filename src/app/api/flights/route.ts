@@ -84,14 +84,17 @@ const createSchema = z
     departureAirfield: z.string().min(1, "Terrain de départ requis."),
     arrivalAirfield: z.string().min(1, "Terrain de destination requis."),
     remarks: z.string().nullable().optional(),
-    stops: z
-      .array(
-        z.object({
-          airfield: z.string().min(1),
-          touchAndGo: z.number().int().positive(),
-        })
-      )
-      .min(1, "Au moins un terrain doit être renseigné."),
+    // Pas de .min(1) ici, volontairement — contrairement à
+    // /api/reservations/[id]/complete : ce tableau ne sert qu'aux touchés
+    // intermédiaires (tours de piste...), pas à l'atterrissage final (déjà
+    // compté via le +1 plus bas), donc un vol simple d'un point A à B n'a
+    // légitimement rien à y mettre.
+    stops: z.array(
+      z.object({
+        airfield: z.string().min(1),
+        touchAndGo: z.number().int().positive(),
+      })
+    ),
     fuelRefillDone: z.boolean().optional().default(false),
     fuelCard: z.enum(["BP", "TOTAL", "BADGE_TALLARD"]).optional().nullable(),
     fuelLiters: z.number().positive().optional().nullable(),

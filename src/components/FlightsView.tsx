@@ -636,7 +636,12 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   // compte-rendu normal — la grande majorité des vols partent de la base.
   const [departureAirfield, setDepartureAirfield] = useState("LFNA");
   const [arrivalAirfield, setArrivalAirfield] = useState("");
-  const [stops, setStops] = useState<StopRow[]>([{ airfield: "", touchAndGo: "1" }]);
+  // Vide par défaut, contrairement à CompleteFlightPanel : ce champ ne sert
+  // qu'aux touchés intermédiaires (tours de piste...), pas à l'atterrissage
+  // final (déjà compté via le +1 côté serveur, voir POST /api/flights) — un
+  // vol simple d'un point A à B n'a donc légitimement rien à y mettre, et ne
+  // doit pas être bloqué faute de terrain "posé" à renseigner.
+  const [stops, setStops] = useState<StopRow[]>([]);
   const [remarks, setRemarks] = useState("");
   const [fuelRefillDone, setFuelRefillDone] = useState(false);
   const [fuelCard, setFuelCard] = useState("BP");
@@ -897,7 +902,7 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-medium text-navy-600">
-                  Terrains posés — code OACI &amp; nombre de touchés
+                  Terrains posés (optionnel — tours de piste/touchés en route)
                 </span>
                 <button
                   type="button"
@@ -907,11 +912,18 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                   <Plus size={12} /> Ajouter un terrain
                 </button>
               </div>
-              <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
-                <span className="text-[11px] text-navy-500">Code OACI</span>
-                <span className="text-[11px] text-navy-500">Touchés</span>
-                <span />
-              </div>
+              {stops.length === 0 && (
+                <p className="text-xs text-navy-500">
+                  Laisse vide pour un vol simple — seul l&apos;atterrissage à destination sera compté.
+                </p>
+              )}
+              {stops.length > 0 && (
+                <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
+                  <span className="text-[11px] text-navy-500">Code OACI</span>
+                  <span className="text-[11px] text-navy-500">Touchés</span>
+                  <span />
+                </div>
+              )}
               <div className="flex flex-col gap-2">
                 {stops.map((s, i) => (
                   <div key={i} className="grid grid-cols-[1fr_88px_auto] gap-2 items-center">
@@ -930,13 +942,9 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                       onChange={(e) => updateStop(i, { touchAndGo: e.target.value })}
                       className="input"
                     />
-                    {stops.length > 1 ? (
-                      <button type="button" onClick={() => removeStop(i)} className="text-navy-600 hover:text-red-600">
-                        <X size={16} />
-                      </button>
-                    ) : (
-                      <span />
-                    )}
+                    <button type="button" onClick={() => removeStop(i)} className="text-navy-600 hover:text-red-600">
+                      <X size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
