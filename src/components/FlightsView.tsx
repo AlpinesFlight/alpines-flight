@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { FlightLog } from "@/types/models";
+import { Aircraft, FlightLog, ReservationType, TrainingProgram, UserLite } from "@/types/models";
 import { formatDate, formatHours, formatHoursMinutes, formatMoney } from "@/lib/format";
-import { Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Plus, PlaneLanding, Trash2, X } from "lucide-react";
 
 function toIsoDate(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -60,6 +60,7 @@ export function FlightsView() {
   const [flights, setFlights] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [editFlight, setEditFlight] = useState<FlightLog | null>(null);
+  const [showAddFlight, setShowAddFlight] = useState(false);
 
   async function load(f: string, t: string) {
     setLoading(true);
@@ -164,6 +165,15 @@ export function FlightsView() {
         >
           Filtrer
         </button>
+        {canFinanceAdmin && (
+          <button
+            type="button"
+            onClick={() => setShowAddFlight(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-900 text-white text-sm font-semibold px-4 py-2 transition-colors ml-auto"
+          >
+            <Plus size={16} /> Ajouter un vol antérieur
+          </button>
+        )}
       </form>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
@@ -318,6 +328,16 @@ export function FlightsView() {
           onClose={() => setEditFlight(null)}
           onSaved={() => {
             setEditFlight(null);
+            load(from, to);
+          }}
+        />
+      )}
+
+      {showAddFlight && (
+        <AddFlightModal
+          onClose={() => setShowAddFlight(false)}
+          onSaved={() => {
+            setShowAddFlight(false);
             load(from, to);
           }}
         />
@@ -562,6 +582,473 @@ function EditFlightModal({
             {saving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+interface StopRow {
+  airfield: string;
+  touchAndGo: string;
+}
+
+// DISCOVERY volontairement absent — un vol découverte se saisit depuis sa
+// page dédiée (/decouverte), qui gère en plus le forfait client sans
+// compte ; même choix que le formulaire de réservation (ReservationModal).
+const FLIGHT_TYPE_OPTIONS: { value: ReservationType; label: string }[] = [
+  { value: "INSTRUCTION", label: "Instruction" },
+  { value: "SOLO", label: "Solo" },
+  { value: "LOCATION", label: "Location" },
+  { value: "MAINTENANCE", label: "Maintenance" },
+];
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-navy-600">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+// Saisie directe d'un vol déjà effectué (rattrapage), sans passer par une
+// réservation sur le planning — donc sans email envoyé (voir
+// notifyReservation, déclenché uniquement à la création/modification d'une
+// Reservation). Reprend les mêmes champs et le même calcul de coût que le
+// compte-rendu normal d'un vol réservé (CompleteFlightPanel dans
+// ReservationModal.tsx), avec en plus ce qu'une réservation aurait fourni
+// (avion, pilote, type) puisqu'il n'y en a pas ici. Voir POST /api/flights.
+function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [aircraftList, setAircraftList] = useState<Aircraft[]>([]);
+  const [instructors, setInstructors] = useState<UserLite[]>([]);
+  const [students, setStudents] = useState<UserLite[]>([]);
+  const [programs, setPrograms] = useState<TrainingProgram[]>([]);
+  const [loadingRefs, setLoadingRefs] = useState(true);
+
+  const [aircraftId, setAircraftId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [instructorId, setInstructorId] = useState("");
+  const [type, setType] = useState<ReservationType>("SOLO");
+  const [trainingProgramId, setTrainingProgramId] = useState("");
+  const [departureTime, setDepartureTime] = useState(toLocalInput(new Date()));
+  const [arrivalTime, setArrivalTime] = useState(toLocalInput(new Date()));
+  // LFNA (Gap-Tallard) pré-rempli par défaut au départ, comme sur le
+  // compte-rendu normal — la grande majorité des vols partent de la base.
+  const [departureAirfield, setDepartureAirfield] = useState("LFNA");
+  const [arrivalAirfield, setArrivalAirfield] = useState("");
+  const [stops, setStops] = useState<StopRow[]>([{ airfield: "", touchAndGo: "1" }]);
+  const [remarks, setRemarks] = useState("");
+  const [fuelRefillDone, setFuelRefillDone] = useState(false);
+  const [fuelCard, setFuelCard] = useState("BP");
+  const [fuelLiters, setFuelLiters] = useState("");
+  const [fuelType, setFuelType] = useState("AVGAS_100LL");
+  const [fuelAirfield, setFuelAirfield] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch<Aircraft[]>("/api/aircraft"),
+      apiFetch<UserLite[]>("/api/instructors"),
+      apiFetch<UserLite[]>("/api/students"),
+      apiFetch<TrainingProgram[]>("/api/training/programs"),
+    ])
+      .then(([ac, ins, stu, pr]) => {
+        setAircraftList(ac);
+        setInstructors(ins);
+        setStudents(stu);
+        setPrograms(pr);
+        if (ac[0]) setAircraftId(ac[0].id);
+      })
+      .finally(() => setLoadingRefs(false));
+  }, []);
+
+  const selectedAircraft = aircraftList.find((a) => a.id === aircraftId);
+  // Tarif avion réellement applicable — dérogation pilote éventuelle
+  // incluse (voir PilotAircraftRate) : affiché tout de suite avec le tarif
+  // standard de l'avion sélectionné, puis affiné dès la réponse du serveur.
+  // Le calcul déterminant se refait de toute façon côté serveur à
+  // l'enregistrement (jamais transmis dans le POST ci-dessous).
+  const [aircraftRateCents, setAircraftRateCents] = useState<number | null>(null);
+  useEffect(() => {
+    setAircraftRateCents(selectedAircraft?.hourlyRateCents ?? null);
+    if (!aircraftId) return;
+    let cancelled = false;
+    const qs = studentId ? `?studentId=${encodeURIComponent(studentId)}` : "";
+    apiFetch<{ rateCents: number }>(`/api/aircraft/${aircraftId}/effective-rate${qs}`)
+      .then((r) => {
+        if (!cancelled) setAircraftRateCents(r.rateCents);
+      })
+      .catch(() => {
+        // Best-effort : en cas d'échec, on garde le tarif standard déjà affiché.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aircraftId, studentId]);
+
+  const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
+  const duration = durationMs > 0 ? Math.round((durationMs / 3_600_000) * 10) / 10 : 0;
+  const aircraftCostCents =
+    duration > 0 && aircraftRateCents != null ? Math.round(duration * aircraftRateCents) : 0;
+
+  const selectedInstructor = instructors.find((i) => i.id === instructorId);
+  const selectedProgram = programs.find((p) => p.id === trainingProgramId);
+  const programRateCents = selectedProgram?.instructionRateCents ?? null;
+  const instructorRateCents = selectedInstructor?.instructorProfile?.hourlyRateCents ?? null;
+  const instructionRateCents = programRateCents ?? instructorRateCents;
+  // Un Solo/Location avec instructeur simplement rattaché (supervision) ne
+  // facture pas d'instruction — même règle qu'au compte-rendu normal.
+  const isInstructionFlight = type === "INSTRUCTION" && !!instructorId;
+  const instructionCostCents =
+    isInstructionFlight && instructionRateCents && duration > 0
+      ? Math.round(duration * instructionRateCents)
+      : 0;
+  const totalCostCents = aircraftCostCents + instructionCostCents;
+  const showsInstructor = type === "INSTRUCTION" || type === "SOLO";
+
+  function updateStop(index: number, patch: Partial<StopRow>) {
+    setStops((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  }
+  function addStop() {
+    setStops((prev) => [...prev, { airfield: "", touchAndGo: "1" }]);
+  }
+  function removeStop(index: number) {
+    setStops((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch("/api/flights", {
+        method: "POST",
+        body: JSON.stringify({
+          aircraftId,
+          studentId: studentId || null,
+          instructorId: showsInstructor ? instructorId || null : null,
+          type,
+          trainingProgramId: type === "INSTRUCTION" ? trainingProgramId || null : null,
+          departureTime: new Date(departureTime).toISOString(),
+          arrivalTime: new Date(arrivalTime).toISOString(),
+          departureAirfield: departureAirfield.trim().toUpperCase(),
+          arrivalAirfield: arrivalAirfield.trim().toUpperCase(),
+          remarks: remarks || null,
+          stops: stops
+            .filter((s) => s.airfield.trim())
+            .map((s) => ({ airfield: s.airfield.trim().toUpperCase(), touchAndGo: parseInt(s.touchAndGo, 10) || 1 })),
+          fuelRefillDone,
+          ...(fuelRefillDone
+            ? {
+                fuelCard,
+                fuelLiters: parseFloat(fuelLiters) || null,
+                fuelType,
+                fuelAirfield: fuelAirfield.trim().toUpperCase() || null,
+              }
+            : {}),
+        }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
+          <h2 className="font-semibold text-navy-900">Ajouter un vol antérieur</h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+
+        {loadingRefs ? (
+          <p className="p-5 text-sm text-navy-600">Chargement...</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+            <p className="text-xs text-navy-600 -mt-1">
+              Pour un vol déjà effectué (rattrapage) : ne crée aucun créneau sur le planning et
+              n&apos;envoie aucun email — tout est renseigné ici comme pour un retour de vol normal.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Avion">
+                <select
+                  required
+                  value={aircraftId}
+                  onChange={(e) => setAircraftId(e.target.value)}
+                  className="input"
+                >
+                  {aircraftList.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.registration}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Type de vol">
+                <select
+                  value={type}
+                  onChange={(e) => setType(e.target.value as ReservationType)}
+                  className="input"
+                >
+                  {FLIGHT_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <Field label="Pilote (compte débité)">
+              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
+                <option value="">— aucun (ex. vol maintenance) —</option>
+                {students.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.firstName} {s.lastName}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {showsInstructor && (
+              <Field label="Instructeur (si vol accompagné)">
+                <select value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input">
+                  <option value="">— vol seul —</option>
+                  {instructors.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.firstName} {i.lastName}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+
+            {type === "INSTRUCTION" && (
+              <Field label="Formation (détermine le tarif d'instruction)">
+                <select
+                  value={trainingProgramId}
+                  onChange={(e) => setTrainingProgramId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">— tarif par défaut de l&apos;instructeur —</option>
+                  {programs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                      {p.instructionRateCents ? ` — ${formatMoney(p.instructionRateCents)}/h` : ""}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Heure de départ">
+                <input
+                  type="datetime-local"
+                  required
+                  value={departureTime}
+                  onChange={(e) => setDepartureTime(e.target.value)}
+                  className="input"
+                />
+              </Field>
+              <Field label="Heure d'arrivée">
+                <input
+                  type="datetime-local"
+                  required
+                  value={arrivalTime}
+                  onChange={(e) => setArrivalTime(e.target.value)}
+                  className="input"
+                />
+              </Field>
+            </div>
+            <p className="text-xs text-navy-500 -mt-1.5">Durée : {formatHoursMinutes(duration)}</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Terrain de départ (OACI)">
+                <input
+                  required
+                  placeholder="ex : LFNA"
+                  value={departureAirfield}
+                  onChange={(e) => setDepartureAirfield(e.target.value.toUpperCase())}
+                  maxLength={12}
+                  className="input uppercase tracking-wide"
+                />
+              </Field>
+              <Field label="Terrain de destination (OACI)">
+                <input
+                  required
+                  placeholder="ex : LFNA"
+                  value={arrivalAirfield}
+                  onChange={(e) => setArrivalAirfield(e.target.value.toUpperCase())}
+                  maxLength={12}
+                  className="input uppercase tracking-wide"
+                />
+              </Field>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-navy-600">
+                  Terrains posés — code OACI &amp; nombre de touchés
+                </span>
+                <button
+                  type="button"
+                  onClick={addStop}
+                  className="flex items-center gap-1 text-xs text-sunset-600 hover:underline"
+                >
+                  <Plus size={12} /> Ajouter un terrain
+                </button>
+              </div>
+              <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
+                <span className="text-[11px] text-navy-500">Code OACI</span>
+                <span className="text-[11px] text-navy-500">Touchés</span>
+                <span />
+              </div>
+              <div className="flex flex-col gap-2">
+                {stops.map((s, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_88px_auto] gap-2 items-center">
+                    <input
+                      required
+                      placeholder="ex : LFNA"
+                      value={s.airfield}
+                      onChange={(e) => updateStop(i, { airfield: e.target.value.toUpperCase() })}
+                      maxLength={12}
+                      className="input uppercase tracking-wide"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={s.touchAndGo}
+                      onChange={(e) => updateStop(i, { touchAndGo: e.target.value })}
+                      className="input"
+                    />
+                    {stops.length > 1 ? (
+                      <button type="button" onClick={() => removeStop(i)} className="text-navy-600 hover:text-red-600">
+                        <X size={16} />
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Field label="Remarques (optionnel)">
+              <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} className="input min-h-16" />
+            </Field>
+
+            <div className="rounded-lg border border-navy-100">
+              <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fuelRefillDone}
+                  onChange={(e) => setFuelRefillDone(e.target.checked)}
+                />
+                <span className="text-sm font-medium text-navy-800">Plein de carburant effectué</span>
+              </label>
+              {fuelRefillDone && (
+                <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Carte utilisée">
+                      <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value)} className="input">
+                        {FUEL_CARD_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Type de carburant">
+                      <select value={fuelType} onChange={(e) => setFuelType(e.target.value)} className="input">
+                        {FUEL_TYPE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Litres">
+                      <input
+                        required={fuelRefillDone}
+                        type="number"
+                        step="0.1"
+                        min={0}
+                        value={fuelLiters}
+                        onChange={(e) => setFuelLiters(e.target.value)}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="Terrain (code OACI)">
+                      <input
+                        required={fuelRefillDone}
+                        placeholder="ex : LFNA"
+                        value={fuelAirfield}
+                        onChange={(e) => setFuelAirfield(e.target.value.toUpperCase())}
+                        maxLength={12}
+                        className="input uppercase tracking-wide"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {duration > 0 && (
+              <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-sm flex flex-col gap-1">
+                <div className="flex justify-between text-navy-700">
+                  <span>
+                    Avion — {formatHoursMinutes(duration)} × {aircraftRateCents != null ? formatMoney(aircraftRateCents) : "—"}/h
+                  </span>
+                  <span>{formatMoney(aircraftCostCents)}</span>
+                </div>
+                {isInstructionFlight && (
+                  <div className="flex justify-between text-navy-700">
+                    <span>
+                      Instruction
+                      {instructionRateCents
+                        ? ` (${programRateCents ? selectedProgram!.title : "tarif instructeur"}) — ${formatHoursMinutes(duration)} × ${formatMoney(instructionRateCents)}/h`
+                        : " (aucun tarif renseigné — ni formation, ni instructeur)"}
+                    </span>
+                    <span>{formatMoney(instructionCostCents)}</span>
+                  </div>
+                )}
+                {studentId ? (
+                  <div className="flex justify-between font-semibold text-red-600 border-t border-navy-100 pt-1 mt-0.5">
+                    <span>Total débité du compte pilote</span>
+                    <span>− {formatMoney(totalCostCents)}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between font-semibold text-navy-500 border-t border-navy-100 pt-1 mt-0.5">
+                    <span>Coût interne avion (indicatif, sans compte à débiter)</span>
+                    <span>{formatMoney(aircraftCostCents)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={saving || duration <= 0 || !aircraftId}
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-900 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
+            >
+              <PlaneLanding size={16} />
+              {saving ? "Enregistrement..." : studentId ? "Enregistrer et débiter le compte" : "Enregistrer le vol"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

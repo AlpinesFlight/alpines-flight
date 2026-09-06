@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
-import { isGerant } from "@/lib/permissions";
+import { isGerant, canManageFinance } from "@/lib/permissions";
+import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
+import { effectiveAircraftRateCents } from "@/lib/reservations";
+import { z } from "zod";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
 // formulaire de séance (Formation → Nouvelle séance → Relier un vol, via
@@ -55,4 +59,211 @@ export async function GET(req: Request) {
     ...(dateFilter ? {} : { take: 100 }),
   });
   return NextResponse.json(flights);
+}
+
+const createSchema = z
+  .object({
+    aircraftId: z.string().min(1, "Avion requis."),
+    studentId: z.string().nullable().optional(),
+    instructorId: z.string().nullable().optional(),
+    // Ne détermine que le calcul du coût d'instruction ci-dessous (voir
+    // isInstructionFlight) — jamais persisté sur FlightLog, qui n'a pas de
+    // champ type (voir /api/reservations/[id]/complete, même logique).
+    type: z.enum(["INSTRUCTION", "SOLO", "LOCATION", "MAINTENANCE"]),
+    trainingProgramId: z.string().nullable().optional(),
+    departureTime: z.string(),
+    arrivalTime: z.string(),
+    departureAirfield: z.string().min(1, "Terrain de départ requis."),
+    arrivalAirfield: z.string().min(1, "Terrain de destination requis."),
+    remarks: z.string().nullable().optional(),
+    stops: z
+      .array(
+        z.object({
+          airfield: z.string().min(1),
+          touchAndGo: z.number().int().positive(),
+        })
+      )
+      .min(1, "Au moins un terrain doit être renseigné."),
+    fuelRefillDone: z.boolean().optional().default(false),
+    fuelCard: z.enum(["BP", "TOTAL", "BADGE_TALLARD"]).optional().nullable(),
+    fuelLiters: z.number().positive().optional().nullable(),
+    fuelType: z.enum(["AVGAS_100LL", "SP98"]).optional().nullable(),
+    fuelAirfield: z.string().optional().nullable(),
+  })
+  .refine(
+    (d) => !d.fuelRefillDone || (d.fuelCard && d.fuelLiters && d.fuelType && d.fuelAirfield),
+    {
+      message:
+        "Si le plein a été fait, la carte, le nombre de litres, le type de carburant et le terrain sont requis.",
+      path: ["fuelRefillDone"],
+    }
+  );
+
+// Saisie directe d'un vol antérieur (rattrapage carnet de vol/comptabilité —
+// ex. vol réalisé avant la mise en place de l'appli, ou oublié), sans passer
+// par une Reservation : donc sans créneau sur le planning et surtout sans le
+// mail envoyé à la création/modification d'une réservation (voir
+// notifyReservation). Reprend exactement la même logique de calcul et de
+// débit que la clôture normale d'un vol réservé
+// (POST /api/reservations/[id]/complete) — seule différence, tout ce qu'une
+// Reservation aurait fourni (avion, pilote, type...) est saisi ici
+// directement. Gérant uniquement, comme le reste de ce qui touche
+// directement le solde des comptes pilotes (voir /api/flights/[id]).
+export async function POST(req: Request) {
+  const session = await auth();
+  if (!session || !canManageFinance(session.user.role))
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success)
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
+
+  const {
+    aircraftId,
+    studentId,
+    instructorId,
+    type,
+    trainingProgramId,
+    departureTime,
+    arrivalTime,
+    departureAirfield,
+    arrivalAirfield,
+    remarks,
+    stops,
+    fuelRefillDone,
+    fuelCard,
+    fuelLiters,
+    fuelType,
+    fuelAirfield,
+  } = parsed.data;
+
+  const start = new Date(departureTime);
+  const end = new Date(arrivalTime);
+  const duration = Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 10) / 10;
+  if (duration <= 0) {
+    return NextResponse.json(
+      { error: "L'heure d'arrivée doit être après l'heure de départ." },
+      { status: 400 }
+    );
+  }
+
+  const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId } });
+  if (!aircraft) return NextResponse.json({ error: "Avion introuvable." }, { status: 404 });
+
+  // +1 : l'atterrissage à destination compte par défaut, en plus des
+  // touchés éventuels aux terrains intermédiaires (stops) — même règle qu'à
+  // la clôture normale.
+  const totalLandings = stops.reduce((sum, s) => sum + s.touchAndGo, 0) + 1;
+
+  // Tarif avion : dérogation Gérant (PilotAircraftRate) si elle existe pour
+  // ce pilote sur cet avion précis, sinon le tarif standard de l'avion.
+  const effectiveRateCents = await effectiveAircraftRateCents(
+    studentId ?? null,
+    aircraftId,
+    aircraft.hourlyRateCents
+  );
+  const aircraftCostCents = Math.round(duration * effectiveRateCents);
+
+  // Tarif d'instruction : même logique qu'à la clôture normale — priorité
+  // au tarif de la formation visée, sinon tarif horaire par défaut de
+  // l'instructeur. Un vol Solo/Location avec un instructeur simplement
+  // rattaché (supervision) ne facture pas d'instruction, comme sur le
+  // planning.
+  let instructionCostCents = 0;
+  const isInstructionFlight = type === "INSTRUCTION" && !!instructorId;
+  if (isInstructionFlight && instructorId) {
+    let rateCents: number | null = null;
+    if (trainingProgramId) {
+      const program = await prisma.trainingProgram.findUnique({
+        where: { id: trainingProgramId },
+        select: { instructionRateCents: true },
+      });
+      rateCents = program?.instructionRateCents ?? null;
+    }
+    if (!rateCents) {
+      const instructorProfile = await prisma.instructorProfile.findUnique({
+        where: { userId: instructorId },
+      });
+      rateCents = instructorProfile?.hourlyRateCents ?? null;
+    }
+    if (rateCents) {
+      instructionCostCents = Math.round(duration * rateCents);
+    }
+  }
+  const amountCents = aircraftCostCents + instructionCostCents;
+
+  const result = await prisma.$transaction(async (db) => {
+    const flight = await db.flightLog.create({
+      data: {
+        aircraftId,
+        studentId: studentId || null,
+        // L'instructeur reste enregistré même hors vol d'instruction (ex.
+        // supervision d'un Solo) — seul le coût d'instruction et la
+        // formation facturée dépendent d'isInstructionFlight.
+        instructorId: instructorId || null,
+        trainingProgramId: isInstructionFlight ? trainingProgramId || null : null,
+        date: start,
+        departureTime: start,
+        arrivalTime: end,
+        departureAirfield: departureAirfield.trim().toUpperCase(),
+        arrivalAirfield: arrivalAirfield.trim().toUpperCase(),
+        duration,
+        totalLandings,
+        aircraftCostCents,
+        instructionCostCents,
+        remarks,
+        stops: { create: stops },
+        fuelRefillDone,
+        fuelCard: fuelRefillDone ? fuelCard : null,
+        fuelLiters: fuelRefillDone ? fuelLiters : null,
+        fuelType: fuelRefillDone ? fuelType : null,
+        fuelAirfield: fuelRefillDone ? fuelAirfield : null,
+      },
+      include: {
+        stops: true,
+        aircraft: { select: safeAircraftSelect },
+        student: { select: safeUserSelect },
+        instructor: { select: safeUserSelect },
+        trainingProgram: { select: { id: true, code: true, title: true, instructionRateCents: true } },
+      },
+    });
+
+    if (studentId) {
+      await db.accountTransaction.create({
+        data: {
+          studentId,
+          type: "FLIGHT_DEBIT",
+          status: "CONFIRMED",
+          amountCents: -amountCents,
+          flightLogId: flight.id,
+          notes: `Vol antérieur saisi manuellement — Avion ${aircraft.registration} — ${duration}h`,
+          confirmedAt: new Date(),
+          confirmedById: session.user.id,
+        },
+      });
+
+      await db.studentProfile.update({
+        where: { userId: studentId },
+        data: {
+          totalHours: { increment: duration },
+          balanceCents: { decrement: amountCents },
+        },
+      });
+    }
+
+    await db.aircraft.update({
+      where: { id: aircraftId },
+      data: {
+        totalHours: { increment: duration },
+        totalCycles: { increment: totalLandings },
+      },
+    });
+
+    await recalcAircraftMaintenanceStatuses(db, aircraftId);
+
+    return flight;
+  });
+
+  return NextResponse.json(result, { status: 201 });
 }
