@@ -13,7 +13,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { fr } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { apiFetch } from "@/lib/api";
-import { InstructorAvailability } from "@/types/models";
+import { InstructorAvailability, UserLite } from "@/types/models";
 import { isGerant, canSeeInstructorAvailability } from "@/lib/permissions";
 import { Plus, X, Trash2, ShieldAlert } from "lucide-react";
 
@@ -72,7 +72,12 @@ function toLocalInput(date: Date) {
 
 export function InstructorAvailabilityView() {
   const { data: session } = useSession();
+  const isGerantAccount = isGerant(session?.user?.role);
   const [availability, setAvailability] = useState<InstructorAvailability[]>([]);
+  // Uniquement pour le Gérant, qui seul peut choisir un autre FI à la
+  // création d'une dispo (voir AvailabilityModal) — inutile de charger le
+  // trombinoscope FI pour un simple compte FI, qui ne crée que pour lui-même.
+  const [instructors, setInstructors] = useState<UserLite[]>([]);
   const [view, setView] = useState<View>(Views.WEEK);
   const [date, setDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -103,6 +108,11 @@ export function InstructorAvailabilityView() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!isGerantAccount) return;
+    apiFetch<UserLite[]>("/api/instructors").then(setInstructors).catch(() => {});
+  }, [isGerantAccount]);
 
   const events: CalEvent[] = useMemo(
     () =>
@@ -268,7 +278,8 @@ export function InstructorAvailabilityView() {
           initialEnd={modalState.mode === "create" ? modalState.end : new Date(modalState.entry.endTime)}
           existing={modalState.mode === "edit" ? modalState.entry : null}
           currentUserId={session?.user?.id}
-          canManageAny={isGerant(session?.user?.role)}
+          canManageAny={isGerantAccount}
+          instructors={instructors}
           onClose={closeModal}
           onSaved={handleSaved}
         />
@@ -283,6 +294,7 @@ function AvailabilityModal({
   existing,
   currentUserId,
   canManageAny,
+  instructors,
   onClose,
   onSaved,
 }: {
@@ -291,18 +303,27 @@ function AvailabilityModal({
   existing: InstructorAvailability | null;
   currentUserId: string | undefined;
   canManageAny: boolean;
+  instructors: UserLite[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [start, setStart] = useState(toLocalInput(initialStart));
   const [end, setEnd] = useState(toLocalInput(initialEnd));
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  // Seul le Gérant peut choisir un autre FI, et seulement à la création
+  // (voir POST /api/instructor-availability) — par défaut son propre
+  // compte s'il apparaît dans la liste (ex. Tom GREL, FI lui-même), sinon
+  // le premier FI de la liste.
+  const [instructorId, setInstructorId] = useState(
+    () => instructors.find((i) => i.id === currentUserId)?.id ?? instructors[0]?.id ?? ""
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Lecture seule si c'est le créneau de quelqu'un d'autre et qu'on n'est
   // pas Gérant — on peut le voir (vue partagée) mais pas le modifier.
   const canEdit = !existing || existing.instructorId === currentUserId || canManageAny;
+  const showInstructorPicker = !existing && canManageAny && instructors.length > 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -313,6 +334,7 @@ function AvailabilityModal({
         startTime: new Date(start).toISOString(),
         endTime: new Date(end).toISOString(),
         notes: notes || null,
+        ...(showInstructorPicker ? { instructorId } : {}),
       };
       if (existing) {
         await apiFetch(`/api/instructor-availability/${existing.id}`, {
@@ -364,6 +386,22 @@ function AvailabilityModal({
 
         {canEdit ? (
           <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+            {showInstructorPicker && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-navy-600">Instructeur</span>
+                <select
+                  value={instructorId}
+                  onChange={(e) => setInstructorId(e.target.value)}
+                  className="input"
+                >
+                  {instructors.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.firstName} {i.lastName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-navy-600">Début</span>

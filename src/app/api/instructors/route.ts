@@ -6,6 +6,7 @@ import { safeUserSelect } from "@/lib/selects";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { canManageSchool } from "@/lib/permissions";
+import { sendWelcomeEmail } from "@/lib/welcome-email";
 
 export async function GET() {
   const session = await auth();
@@ -66,6 +67,8 @@ export async function POST(req: Request) {
     },
     select: { ...safeUserSelect, instructorProfile: true },
   });
+
+  await sendWelcomeEmail(user.firstName, user.email, password ?? tempPassword!, "INSTRUCTOR");
 
   return NextResponse.json({ user, tempPassword }, { status: 201 });
 }

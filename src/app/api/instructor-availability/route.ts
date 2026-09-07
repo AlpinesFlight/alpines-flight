@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeAvailabilityInstructorSelect } from "@/lib/selects";
 import { zodErrorMessage } from "@/lib/api-errors";
-import { canSeeInstructorAvailability } from "@/lib/permissions";
+import { canSeeInstructorAvailability, isGerant } from "@/lib/permissions";
 import { z } from "zod";
 
 // Réservé aux FI (qui les saisissent) et au Gérant (qui les consulte pour
@@ -32,12 +32,16 @@ const createSchema = z.object({
   startTime: z.string(),
   endTime: z.string(),
   notes: z.string().optional().nullable(),
+  // Optionnel — un FI ne crée que pour lui-même (ignoré s'il le transmet
+  // quand même), seul le Gérant peut saisir une dispo pour un autre FI
+  // (ex. le FI lui-même ne l'a pas encore fait, ou n'a pas de compte).
+  instructorId: z.string().optional().nullable(),
 });
 
-// Chacun ne crée que pour lui-même — pas de champ instructorId dans le
-// payload, toujours pris de la session (voir aussi le Gérant lui-même,
-// qui peut être FI en même temps, ex. Tom GREL FI(A)/FE(A) — pas
-// restreint à role === "INSTRUCTOR" strictement pour cette raison).
+// Chacun ne crée que pour lui-même par défaut — sauf le Gérant, qui peut
+// choisir n'importe quel instructeur via instructorId (voir aussi le
+// Gérant lui-même, qui peut être FI en même temps, ex. Tom GREL FI(A)/FE(A)
+// — pas restreint à role === "INSTRUCTOR" strictement pour cette raison).
 export async function POST(req: Request) {
   const session = await auth();
   if (!session || !canSeeInstructorAvailability(session.user.role))
@@ -57,9 +61,24 @@ export async function POST(req: Request) {
     );
   }
 
+  let instructorId = session.user.id;
+  if (parsed.data.instructorId && parsed.data.instructorId !== session.user.id) {
+    if (!isGerant(session.user.role)) {
+      return NextResponse.json(
+        { error: "Seul le Gérant peut saisir une disponibilité pour un autre instructeur." },
+        { status: 401 }
+      );
+    }
+    const target = await prisma.instructorProfile.findUnique({
+      where: { userId: parsed.data.instructorId },
+    });
+    if (!target) return NextResponse.json({ error: "Instructeur introuvable." }, { status: 404 });
+    instructorId = parsed.data.instructorId;
+  }
+
   const created = await prisma.instructorAvailability.create({
     data: {
-      instructorId: session.user.id,
+      instructorId,
       startTime: start,
       endTime: end,
       notes: parsed.data.notes || null,
