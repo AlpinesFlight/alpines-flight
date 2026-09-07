@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAnnouncementAttachmentSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 Mo par fichier
+// Vercel plafonne le corps d'une requête à 4,5 Mo, tous fichiers confondus
+// pour cette route (plusieurs pièces jointes possibles) — au-delà, la
+// plateforme rejette la requête avant même qu'elle n'atteigne ce code (413
+// générique, sans le message clair ci-dessous). Limite fixe, non
+// contournable ni en config ni en code. 4 Mo de marge de sécurité.
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 const MAX_FILES = 5;
 const ALLOWED_MIME = new Set([
   "application/pdf",
@@ -62,13 +67,14 @@ export async function POST(req: Request) {
   if (files.length > MAX_FILES) {
     return NextResponse.json({ error: `5 documents maximum par actualité.` }, { status: 400 });
   }
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    return NextResponse.json(
+      { error: "Les pièces jointes dépassent 4 Mo au total (limite technique, toutes pièces jointes confondues)." },
+      { status: 400 }
+    );
+  }
   for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json(
-        { error: `« ${file.name} » dépasse 10 Mo.` },
-        { status: 400 }
-      );
-    }
     if (file.type && !ALLOWED_MIME.has(file.type)) {
       return NextResponse.json(
         { error: `« ${file.name} » : format non accepté (PDF, image, Word ou Excel uniquement).` },

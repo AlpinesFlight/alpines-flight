@@ -179,7 +179,7 @@ function ComposeAnnouncementModal({
 
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-navy-600">
-              Documents joints (optionnel, 5 max, PDF/image/Word/Excel — 10 Mo max chacun)
+              Documents joints (optionnel, 5 max, PDF/image/Word/Excel — 4 Mo au total)
             </span>
             <input
               type="file"

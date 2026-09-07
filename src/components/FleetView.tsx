@@ -668,6 +668,7 @@ function AircraftPhotoUpload({
             className="hidden"
           />
         </label>
+        <p className="text-[11px] text-navy-400">JPEG, PNG ou WebP — 4 Mo max</p>
         {aircraft.photoMimeType && (
           <button
             type="button"

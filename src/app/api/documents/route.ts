@@ -5,7 +5,13 @@ import { safeSchoolDocumentSelect } from "@/lib/selects";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
 import { notifyNewDocument } from "@/lib/document-emails";
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 Mo — manuels/procédures, potentiellement volumineux
+// Vercel plafonne le corps d'une requête à 4,5 Mo — limite fixe de la
+// plateforme, non contournable ni en config ni en code (au-delà, la
+// requête est rejetée avant même d'atteindre ce code, avec un 413 générique
+// au lieu du message clair ci-dessous). Un manuel/procédure plus volumineux
+// ne peut donc pas passer par cette route quel que soit ce réglage — 4 Mo
+// de marge de sécurité ici.
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
   "application/pdf",
   "image/jpeg",
@@ -87,7 +93,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Fichier manquant." }, { status: 400 });
   }
   if (file.size > MAX_FILE_BYTES) {
-    return NextResponse.json({ error: "Fichier trop volumineux (20 Mo max)." }, { status: 400 });
+    return NextResponse.json({ error: "Fichier trop volumineux (4 Mo max)." }, { status: 400 });
   }
   if (file.type && !ALLOWED_MIME.has(file.type)) {
     return NextResponse.json(

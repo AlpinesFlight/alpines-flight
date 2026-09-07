@@ -365,7 +365,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-navy-600">
-              Fichier (PDF, image, Word ou Excel — 20 Mo max)
+              Fichier (PDF, image, Word ou Excel — 4 Mo max)
             </span>
             <input
               type="file"

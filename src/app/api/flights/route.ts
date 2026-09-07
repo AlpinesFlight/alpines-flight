@@ -52,7 +52,7 @@ export async function GET(req: Request) {
     },
     include: {
       // aircraft: true (avant) incluait aussi photoData — la photo complète
-      // de l'avion (jusqu'à 8 Mo, voir /api/aircraft/[id]/photo), répétée à
+      // de l'avion (jusqu'à 4 Mo, voir /api/aircraft/[id]/photo), répétée à
       // chaque vol. Sur une période large, ça faisait grimper la réponse à
       // plusieurs dizaines de Mo pour une poignée de vols. Le binaire ne
       // doit transiter que par la route de streaming dédiée.

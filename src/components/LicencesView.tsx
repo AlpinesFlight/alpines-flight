@@ -919,7 +919,7 @@ function UploadDocumentModal({
           </div>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Fichier (PDF, JPEG, PNG — 10 Mo max)</span>
+            <span className="text-xs font-medium text-navy-600">Fichier (PDF, JPEG, PNG — 4 Mo max)</span>
             <input
               type="file"
               required

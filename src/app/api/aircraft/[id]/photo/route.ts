@@ -6,7 +6,14 @@ import { canManageSchool } from "@/lib/permissions";
 
 type Params = { params: Promise<{ id: string }> };
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 Mo — photos de téléphone
+// Vercel plafonne le corps d'une requête à 4,5 Mo — limite fixe de la
+// plateforme, non contournable ni en config ni en code : au-delà, la
+// requête est rejetée AVANT d'atteindre ce code (413 générique
+// FUNCTION_PAYLOAD_TOO_LARGE, pas le message clair ci-dessous) — c'est
+// exactement ce qui se produisait avec l'ancienne limite à 8 Mo, jamais
+// vraiment atteignable pour une photo de téléphone un peu grande. 4 Mo de
+// marge de sécurité ici.
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 // Formats affichables directement en <img> — pas de PDF/HEIC ici (contrairement
 // aux documents de licences, cette photo s'affiche en ligne sur la carte avion.
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -35,7 +42,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Fichier manquant." }, { status: 400 });
   }
   if (file.size > MAX_FILE_BYTES) {
-    return NextResponse.json({ error: "Fichier trop volumineux (8 Mo max)." }, { status: 400 });
+    return NextResponse.json({ error: "Fichier trop volumineux (4 Mo max)." }, { status: 400 });
   }
   if (file.type && !ALLOWED_MIME.has(file.type)) {
     return NextResponse.json(
