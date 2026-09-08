@@ -6,8 +6,9 @@ import { apiFetch } from "@/lib/api";
 import { Aircraft, KardexCategory, KardexEntry, MaintenanceRecord, MaintenanceStatus, MaintenanceType } from "@/types/models";
 import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { isInstructorOrAbove } from "@/lib/permissions";
-import { Plus, X, Plane, Pencil, Trash2, Wrench, BookOpen, Check, ShieldAlert } from "lucide-react";
+import { Plus, X, Plane, Pencil, Trash2, Wrench, BookOpen, Check, ShieldAlert, FileUp } from "lucide-react";
 import { clsx } from "clsx";
+import { KardexImportModal } from "@/components/KardexImportModal";
 
 const STATUS_STYLE: Record<MaintenanceStatus, string> = {
   UPCOMING: "bg-navy-100 text-navy-800",
@@ -349,6 +350,7 @@ function AircraftDetailModal({
   const [tab, setTab] = useState<"info" | "maintenance" | "kardex">("info");
   const [showMaintForm, setShowMaintForm] = useState<MaintenanceRecord | null | "new">(null);
   const [showKardexForm, setShowKardexForm] = useState(false);
+  const [showKardexImport, setShowKardexImport] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function load() {
@@ -522,7 +524,13 @@ function AircraftDetailModal({
 
             {tab === "kardex" && (
               <div className="p-5 flex flex-col gap-3">
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-4">
+                  <button
+                    onClick={() => setShowKardexImport(true)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-navy-700 hover:underline"
+                  >
+                    <FileUp size={14} /> Importer depuis Excel
+                  </button>
                   <button
                     onClick={() => setShowKardexForm(true)}
                     className="flex items-center gap-1.5 text-xs font-semibold text-sunset-600 hover:underline"
@@ -588,6 +596,18 @@ function AircraftDetailModal({
           onClose={() => setShowKardexForm(false)}
           onSaved={() => {
             setShowKardexForm(false);
+            refreshAll();
+          }}
+        />
+      )}
+
+      {showKardexImport && data && (
+        <KardexImportModal
+          aircraftId={data.id}
+          aircraftRegistration={data.registration}
+          onClose={() => setShowKardexImport(false)}
+          onImported={() => {
+            setShowKardexImport(false);
             refreshAll();
           }}
         />
