@@ -5,7 +5,13 @@ import { NextResponse } from "next/server";
 // lui-même, les pages légales doivent rester accessibles à quiconque (RGPD :
 // l'information des personnes concernées ne peut pas être conditionnée à la
 // création d'un compte).
-const PUBLIC_PATHS = new Set(["/login", "/confidentialite", "/mentions-legales"]);
+const PUBLIC_PATHS = new Set([
+  "/login",
+  "/confidentialite",
+  "/mentions-legales",
+  "/mot-de-passe-oublie",
+  "/reinitialiser-mot-de-passe",
+]);
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;

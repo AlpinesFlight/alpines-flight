@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, KardexCategory, KardexEntry, MaintenanceRecord, MaintenanceStatus, MaintenanceType } from "@/types/models";
-import { formatDate, formatHours, formatMoney } from "@/lib/format";
+import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { Plus, X, Plane, Pencil, Trash2, Wrench, BookOpen, Check, ShieldAlert } from "lucide-react";
 import { clsx } from "clsx";
@@ -146,7 +146,7 @@ export function FleetView() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-navy-600">Heures cellule</span>
-                <span className="font-medium text-navy-900">{formatHours(a.totalHours)}</span>
+                <span className="font-medium text-navy-900">{formatHoursMinutes(a.totalHours)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-navy-600">Cycles (atterrissages)</span>
@@ -477,7 +477,7 @@ function AircraftDetailModal({
                     <div>
                       <p className="text-sm font-medium text-navy-900">{m.label}</p>
                       <p className="text-xs text-navy-600">
-                        {m.type === "HOURLY" && `Échéance à ${m.dueAtHours}h`}
+                        {m.type === "HOURLY" && m.dueAtHours != null && `Échéance à ${formatHoursMinutes(m.dueAtHours)}`}
                         {m.type === "CYCLES" && `Échéance à ${m.dueAtCycles} cycles`}
                         {m.type === "CALENDAR" && m.dueAtDate && `Échéance le ${formatDate(m.dueAtDate)}`}
                       </p>
@@ -540,7 +540,7 @@ function AircraftDetailModal({
                         <p className="text-sm font-medium text-navy-900">{k.title}</p>
                         <p className="text-xs text-navy-600">
                           {formatDate(k.date)} · {KARDEX_CATEGORY_LABEL[k.category]}
-                          {k.hoursAt != null ? ` · ${formatHours(k.hoursAt)}` : ""}
+                          {k.hoursAt != null ? ` · ${formatHoursMinutes(k.hoursAt)}` : ""}
                           {k.cyclesAt != null ? ` · ${k.cyclesAt} cycles` : ""}
                         </p>
                         {k.description && (

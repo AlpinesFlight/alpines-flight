@@ -79,6 +79,7 @@ model User {
   announcementsCreated  Announcement[]
   schoolDocumentsUploaded SchoolDocument[]
   documentNotifications DocumentNotification[]
+  passwordResetTokens   PasswordResetToken[]
 }
 
 model StudentProfile {
@@ -839,4 +840,24 @@ model DocumentNotification {
   acknowledgedAt DateTime?
 
   @@unique([documentId, userId])
+}
+
+// ---------- Mot de passe oublié ----------
+//
+// Jeton à usage unique envoyé par email depuis /mot-de-passe-oublie. Seul
+// le HASH du jeton est stocké ici (même logique que User.passwordHash) —
+// le jeton en clair ne transite que dans le lien envoyé par email, jamais
+// en base : un accès à la base seule ne permet donc pas de réinitialiser
+// un compte. Court délai d'expiration (1h, voir la route) et usedAt
+// empêche de le rejouer une fois utilisé.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
