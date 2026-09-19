@@ -3,7 +3,7 @@ import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
-import { canManageSchool } from "@/lib/permissions";
+import { isInstructorOrAbove } from "@/lib/permissions";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string; sessionId: string }> };
@@ -24,8 +24,9 @@ const schema = z.object({
     .optional(),
 });
 
-// Modifier une séance déjà validée : réservé à l'admin, ou au FI qui l'a
-// lui-même saisie (pas un autre instructeur, pas l'élève).
+// Modifier une séance déjà saisie : tout FI (pas seulement celui qui l'a
+// enregistrée — un autre FI peut avoir besoin de corriger une erreur de
+// saisie d'un collègue) ou le Gérant/Admin. Jamais l'élève.
 export async function PATCH(req: Request, { params }: Params) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -36,8 +37,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  const isOwner = session.user.role === "INSTRUCTOR" && existing.instructorId === session.user.id;
-  if (!canManageSchool(session.user.role) && !isOwner) {
+  if (!isInstructorOrAbove(session.user.role)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

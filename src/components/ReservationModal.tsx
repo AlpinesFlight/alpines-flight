@@ -291,11 +291,24 @@ export function ReservationModal({
             <Field label={type === "LOCATION" ? "Pilote" : "Élève"}>
               <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
                 <option value="">—</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.firstName} {s.lastName}
-                  </option>
-                ))}
+                <optgroup label="Élèves">
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.firstName} {s.lastName}
+                    </option>
+                  ))}
+                </optgroup>
+                {/* Un FI peut lui-même être le pilote débité (ex. deux FI qui
+                    volent ensemble, l'un en instruction/contrôle de l'autre) —
+                    voir StudentProfile créé à la volée pour lui dans ce cas,
+                    /api/reservations/[id]/complete. */}
+                <optgroup label="Instructeurs">
+                  {instructors.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.firstName} {i.lastName}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </Field>
           )}

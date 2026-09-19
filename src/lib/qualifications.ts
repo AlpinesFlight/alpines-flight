@@ -51,7 +51,7 @@ export function composeReminderEmail(q: {
 }) {
   const expiresAt = q.currentDocument?.expiresAt ?? null;
   const dateStr = expiresAt
-    ? expiresAt.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
+    ? expiresAt.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "long", year: "numeric" })
     : "date inconnue";
   const isPast = expiresAt ? expiresAt.getTime() < Date.now() : false;
 

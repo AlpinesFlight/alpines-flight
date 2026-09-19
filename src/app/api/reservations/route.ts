@@ -95,6 +95,16 @@ export async function POST(req: Request) {
     );
   }
 
+  // Deux FI peuvent voler ensemble (l'un en instruction/contrôle de
+  // l'autre), donc studentId peut être un instructeur — mais jamais le
+  // même que instructorId.
+  if (studentId && instructorId && studentId === instructorId) {
+    return NextResponse.json(
+      { error: "Le pilote et l'instructeur ne peuvent pas être la même personne." },
+      { status: 400 }
+    );
+  }
+
   const nightError = nightViolationMessage(parsed.data.type, start, end);
   if (nightError) return NextResponse.json({ error: nightError }, { status: 400 });
 

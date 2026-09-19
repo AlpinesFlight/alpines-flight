@@ -641,8 +641,6 @@ function EnrollmentDetailModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { data: session } = useSession();
-  const canManage = canManageSchool(session?.user?.role);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [showSession, setShowSession] = useState(false);
   const [editSession, setEditSession] = useState<TrainingSession | null>(null);
@@ -897,7 +895,10 @@ function EnrollmentDetailModal({
                   <p className="text-sm text-navy-600">Aucune séance enregistrée.</p>
                 )}
                 {(enrollment.sessions ?? []).map((s) => {
-                  const canEditSession = canManage || (session?.user?.id && s.instructorId === session.user.id);
+                  // N'importe quel FI peut corriger une séance, pas
+                  // seulement celui qui l'a saisie — voir PATCH
+                  // /api/enrollments/[id]/sessions/[sessionId].
+                  const canEditSession = isStaff;
                   return (
                     <div key={s.id} className="rounded-xl border border-navy-100 px-4 py-3">
                       <div className="flex items-center justify-between gap-2">

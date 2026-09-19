@@ -815,11 +815,22 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
             <Field label="Pilote (compte débité)">
               <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
                 <option value="">— aucun (ex. vol maintenance) —</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.firstName} {s.lastName}
-                  </option>
-                ))}
+                <optgroup label="Élèves">
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.firstName} {s.lastName}
+                    </option>
+                  ))}
+                </optgroup>
+                {/* Un FI peut lui-même être le pilote débité (deux FI qui
+                    volent ensemble) — voir POST /api/flights. */}
+                <optgroup label="Instructeurs">
+                  {instructors.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.firstName} {i.lastName}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </Field>
 

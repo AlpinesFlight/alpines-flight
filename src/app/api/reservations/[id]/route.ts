@@ -77,6 +77,15 @@ export async function PATCH(req: Request, { params }: Params) {
   const effectiveStart = startTime ? new Date(startTime) : existing.startTime;
   const effectiveEnd = endTime ? new Date(endTime) : existing.endTime;
 
+  // Deux FI peuvent voler ensemble, donc effectiveStudentId peut être un
+  // instructeur — mais jamais le même que effectiveInstructorId.
+  if (effectiveStudentId && effectiveInstructorId && effectiveStudentId === effectiveInstructorId) {
+    return NextResponse.json(
+      { error: "Le pilote et l'instructeur ne peuvent pas être la même personne." },
+      { status: 400 }
+    );
+  }
+
   // Si le client redemande le baptême (ou change l'élève/pilote), revérifie
   // contre l'autorisation réelle plutôt que de recopier tel quel — un
   // false explicite n'a lui pas besoin d'être revérifié (retirer le

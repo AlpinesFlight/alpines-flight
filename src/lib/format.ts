@@ -31,9 +31,17 @@ export function formatHoursMinutes(hours: number): string {
   return `${h}h${String(m).padStart(2, "0")}`;
 }
 
+// timeZone: "Europe/Paris" explicite partout ci-dessous — sans ça,
+// toLocale*() prend le fuseau du runtime qui l'exécute : correct dans un
+// navigateur en France, mais les fonctions serveur Vercel tournent en UTC
+// quelle que soit la région de déploiement, ce qui décalait d'1h ou 2h
+// toutes les heures affichées dans les mails (résa, rappels...).
+const PARIS_TZ = "Europe/Paris";
+
 export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("fr-FR", {
+    timeZone: PARIS_TZ,
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -43,6 +51,7 @@ export function formatDate(date: Date | string): string {
 export function formatDateTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleString("fr-FR", {
+    timeZone: PARIS_TZ,
     day: "2-digit",
     month: "short",
     hour: "2-digit",

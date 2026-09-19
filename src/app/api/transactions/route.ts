@@ -93,9 +93,13 @@ export async function POST(req: Request) {
         },
         include: { student: { select: safeUserSelect } },
       });
-      await db.studentProfile.update({
+      // upsert : le compte peut être celui d'un instructeur qui n'a encore
+      // jamais volé comme pilote débité (pas de StudentProfile existant),
+      // ex. le Gérant crédite son compte par anticipation.
+      await db.studentProfile.upsert({
         where: { userId: parsed.data.studentId },
-        data: { balanceCents: { increment: parsed.data.amountCents } },
+        create: { userId: parsed.data.studentId, balanceCents: parsed.data.amountCents },
+        update: { balanceCents: { increment: parsed.data.amountCents } },
       });
       return created;
     });

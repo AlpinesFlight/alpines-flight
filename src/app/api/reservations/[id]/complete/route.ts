@@ -108,6 +108,16 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Deux FI peuvent voler ensemble (l'un en instruction/contrôle de
+  // l'autre) : le pilote débité (studentId) peut donc être un instructeur.
+  // Reste absurde que ce soit le MÊME que l'instructeur du vol.
+  if (instructorId && instructorId === reservation.studentId) {
+    return NextResponse.json(
+      { error: "Le pilote et l'instructeur ne peuvent pas être la même personne." },
+      { status: 400 }
+    );
+  }
+
   if (reservation.status !== "CONFIRMED" && reservation.status !== "IN_FLIGHT") {
     return NextResponse.json(
       { error: "Ce vol a déjà été clôturé ou annulé." },
@@ -220,11 +230,19 @@ export async function POST(req: Request, { params }: Params) {
 
     // Les heures volées comptent pour le pilote qu'il ait payé ou non ce
     // vol précis (carnet de vol réel) — seul le débit est conditionnel,
-    // voir juste au-dessus.
+    // voir juste au-dessus. upsert (pas update) : un instructeur qui vole
+    // comme pilote débité (deux FI ensemble) n'a pas forcément de
+    // StudentProfile existant — le "compte pilote" est créé à la volée à
+    // cette occasion, comme pour n'importe quel nouveau compte.
     if (reservation.studentId) {
-      await db.studentProfile.update({
+      await db.studentProfile.upsert({
         where: { userId: reservation.studentId },
-        data: {
+        create: {
+          userId: reservation.studentId,
+          totalHours: duration,
+          balanceCents: isBaptism ? 0 : -amountCents,
+        },
+        update: {
           totalHours: { increment: duration },
           ...(isBaptism ? {} : { balanceCents: { decrement: amountCents } }),
         },

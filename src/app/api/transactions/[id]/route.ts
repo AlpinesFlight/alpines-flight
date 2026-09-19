@@ -56,9 +56,13 @@ export async function PATCH(req: Request, { params }: Params) {
         include: { student: { select: safeUserSelect } },
       });
       if (newStatus === "CONFIRMED") {
-        await db.studentProfile.update({
+        // upsert : un DEPOSIT peut être le tout premier mouvement du
+        // compte d'un instructeur (pas encore de StudentProfile) — voir
+        // même logique dans /api/transactions (ADJUSTMENT).
+        await db.studentProfile.upsert({
           where: { userId: existing.studentId },
-          data: { balanceCents: { increment: existing.amountCents } },
+          create: { userId: existing.studentId, balanceCents: existing.amountCents },
+          update: { balanceCents: { increment: existing.amountCents } },
         });
       }
       return updated;

@@ -160,6 +160,15 @@ export async function POST(req: Request) {
     );
   }
 
+  // Deux FI peuvent voler ensemble : studentId (compte débité) peut donc
+  // être un instructeur — mais jamais le même que l'instructeur du vol.
+  if (studentId && instructorId && studentId === instructorId) {
+    return NextResponse.json(
+      { error: "Le pilote et l'instructeur ne peuvent pas être la même personne." },
+      { status: 400 }
+    );
+  }
+
   const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId } });
   if (!aircraft) return NextResponse.json({ error: "Avion introuvable." }, { status: 404 });
 
@@ -262,9 +271,17 @@ export async function POST(req: Request) {
         },
       });
 
-      await db.studentProfile.update({
+      // upsert : un instructeur qui vole comme pilote débité (deux FI
+      // ensemble) n'a pas forcément de StudentProfile existant — voir même
+      // logique dans /api/reservations/[id]/complete.
+      await db.studentProfile.upsert({
         where: { userId: studentId },
-        data: {
+        create: {
+          userId: studentId,
+          totalHours: duration,
+          balanceCents: -amountCents,
+        },
+        update: {
           totalHours: { increment: duration },
           balanceCents: { decrement: amountCents },
         },

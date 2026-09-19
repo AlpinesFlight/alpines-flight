@@ -693,7 +693,8 @@ model Enrollment {
 
 // Une séance de formation : le FI y renseigne la progression d'un ou
 // plusieurs exercices en une fois (cf. ExerciseProgress). Modifiable après
-// coup, mais seulement par le FI qui l'a saisie (ou un admin).
+// coup par n'importe quel FI (pas seulement celui qui l'a saisie) ou le
+// Gérant/Admin — jamais l'élève.
 model TrainingSession {
   id           String     @id @default(cuid())
   enrollmentId String
