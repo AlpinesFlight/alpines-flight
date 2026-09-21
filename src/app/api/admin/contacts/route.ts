@@ -6,27 +6,26 @@ import { safeUserSelect } from "@/lib/selects";
 import { isGerant } from "@/lib/permissions";
 import { z } from "zod";
 
-// Check-list de tâches internes (page /gestion) — réservée au Gérant.
-// Toujours tout renvoyé (le volume attendu reste faible, pas de pagination) ;
-// le tri (à faire d'abord, échéance/priorité) se fait côté client selon la
-// vue choisie.
+// Annuaire (CRM léger) des contacts externes de la société — comptable,
+// banque, assurance, fournisseurs... (page /gestion, réservé au Gérant).
 export async function GET() {
   const session = await auth();
   if (!session || !isGerant(session.user.role))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const tasks = await prisma.adminTask.findMany({
+  const contacts = await prisma.adminContact.findMany({
     include: { createdBy: { select: safeUserSelect } },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ category: "asc" }, { name: "asc" }],
   });
-  return NextResponse.json(tasks);
+  return NextResponse.json(contacts);
 }
 
 const createSchema = z.object({
-  title: z.string().min(1, "Le titre est requis."),
-  description: z.string().optional().nullable(),
-  dueDate: z.string().optional().nullable(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional().default("MEDIUM"),
+  name: z.string().min(1, "Le nom est requis."),
+  category: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -39,16 +38,17 @@ export async function POST(req: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
-  const { title, description, dueDate, priority } = parsed.data;
-  const task = await prisma.adminTask.create({
+  const { name, category, phone, email, notes } = parsed.data;
+  const contact = await prisma.adminContact.create({
     data: {
-      title,
-      description: description || null,
-      dueDate: dueDate ? new Date(dueDate) : null,
-      priority,
+      name,
+      category: category || null,
+      phone: phone || null,
+      email: email || null,
+      notes: notes || null,
       createdById: session.user.id,
     },
     include: { createdBy: { select: safeUserSelect } },
   });
-  return NextResponse.json(task, { status: 201 });
+  return NextResponse.json(contact, { status: 201 });
 }

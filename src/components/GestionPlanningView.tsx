@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { AdminEvent } from "@/types/models";
 import { formatDate } from "@/lib/format";
-import { Plus, X, Trash2, MapPin, ShieldAlert, Clock } from "lucide-react";
+import { GestionPageHeader } from "@/components/GestionShell";
+import { Plus, X, Trash2, MapPin, Clock } from "lucide-react";
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -26,8 +26,6 @@ function timeLabel(iso: string): string {
 }
 
 export function GestionPlanningView() {
-  const { data: session, status: sessionStatus } = useSession();
-  const isGerant = session?.user?.role === "GERANT";
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPast, setShowPast] = useState(false);
@@ -44,10 +42,8 @@ export function GestionPlanningView() {
   }
 
   useEffect(() => {
-    if (sessionStatus === "loading" || !isGerant) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionStatus, isGerant]);
+  }, []);
 
   async function handleDelete(event: AdminEvent) {
     if (!window.confirm(`Supprimer « ${event.title} » de l'agenda ?`)) return;
@@ -75,36 +71,29 @@ export function GestionPlanningView() {
 
   const pastCount = events.length - events.filter((e) => new Date(e.startTime).getTime() >= startOfToday).length;
 
-  if (sessionStatus !== "loading" && !isGerant) {
-    return (
-      <div className="p-4 md:p-8">
-        <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
-          <ShieldAlert size={28} className="text-navy-400" />
-          <p className="font-semibold text-navy-900">Accès réservé au Gérant</p>
-          <p className="text-sm text-navy-600">La plateforme de gestion n&apos;est visible que du compte Gérant.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-4 md:p-8">
-      <div className="flex items-center flex-wrap gap-3 mb-5">
-        {pastCount > 0 && (
+    <div>
+      <GestionPageHeader
+        title="Agenda"
+        subtitle="Banque, DGAC, échéances — distinct du planning des vols"
+        action={
           <button
-            onClick={() => setShowPast((s) => !s)}
-            className="text-xs font-semibold text-navy-600 hover:text-navy-900 bg-navy-50 hover:bg-navy-100 px-3 py-1.5 rounded-full transition-colors"
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
           >
-            {showPast ? "Masquer les événements passés" : `Afficher les événements passés (${pastCount})`}
+            <Plus size={16} /> Ajouter un événement
           </button>
-        )}
+        }
+      />
+      <div className="px-4 md:px-10 pb-10">
+      {pastCount > 0 && (
         <button
-          onClick={() => setShowAdd(true)}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
+          onClick={() => setShowPast((s) => !s)}
+          className="text-xs font-semibold text-navy-600 hover:text-navy-900 bg-navy-50 hover:bg-navy-100 px-3 py-1.5 rounded-full transition-colors mb-4"
         >
-          <Plus size={16} /> Ajouter un événement
+          {showPast ? "Masquer les événements passés" : `Afficher les événements passés (${pastCount})`}
         </button>
-      </div>
+      )}
 
       {!loading && grouped.length === 0 && (
         <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
@@ -157,6 +146,7 @@ export function GestionPlanningView() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

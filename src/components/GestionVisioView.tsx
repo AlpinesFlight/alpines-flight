@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSession } from "next-auth/react";
-import { Video, Copy, Check, ExternalLink, RefreshCw, ShieldAlert, X } from "lucide-react";
+import { GestionPageHeader } from "@/components/GestionShell";
+import { Video, Copy, Check, ExternalLink, RefreshCw, X } from "lucide-react";
 
 // Salle fixe et mémorisable, toujours la même — pratique pour un appel
 // récurrent (ex. le père de Tom, un instructeur...) sans avoir à repartager
@@ -18,8 +18,6 @@ function roomUrl(room: string) {
 }
 
 export function GestionVisioView() {
-  const { data: session, status: sessionStatus } = useSession();
-  const isGerant = session?.user?.role === "GERANT";
   const [privateRoom, setPrivateRoom] = useState(() => randomRoom());
   const [embedded, setEmbedded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -36,20 +34,10 @@ export function GestionVisioView() {
     }
   }
 
-  if (sessionStatus !== "loading" && !isGerant) {
-    return (
-      <div className="p-4 md:p-8">
-        <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
-          <ShieldAlert size={28} className="text-navy-400" />
-          <p className="font-semibold text-navy-900">Accès réservé au Gérant</p>
-          <p className="text-sm text-navy-600">La plateforme de gestion n&apos;est visible que du compte Gérant.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-4 md:p-8 flex flex-col gap-5">
+    <div>
+      <GestionPageHeader title="Visio" subtitle="Appel vidéo intégré, sans compte ni logiciel à installer" />
+      <div className="px-4 md:px-10 pb-10 flex flex-col gap-5">
       {embedded ? (
         <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-navy-100">
@@ -94,6 +82,7 @@ export function GestionVisioView() {
           </p>
         </>
       )}
+      </div>
     </div>
   );
 }

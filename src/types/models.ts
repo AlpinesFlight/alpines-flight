@@ -446,6 +446,7 @@ export interface AdminDocument {
 }
 
 export type AdminTaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type AdminTaskStatus = "TODO" | "DOING" | "DONE";
 
 export interface AdminTask {
   id: string;
@@ -453,7 +454,7 @@ export interface AdminTask {
   description: string | null;
   dueDate: string | null;
   priority: AdminTaskPriority;
-  done: boolean;
+  status: AdminTaskStatus;
   completedAt: string | null;
   createdAt: string;
   createdById: string;
@@ -469,6 +470,30 @@ export interface AdminEvent {
   location: string | null;
   notes: string | null;
   createdAt: string;
+  createdById: string;
+  createdBy: UserLite;
+}
+
+export interface AdminNote {
+  id: string;
+  title: string;
+  content: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  createdBy: UserLite;
+}
+
+export interface AdminContact {
+  id: string;
+  name: string;
+  category: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
   createdById: string;
   createdBy: UserLite;
 }

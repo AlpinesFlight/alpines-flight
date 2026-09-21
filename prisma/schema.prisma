@@ -86,6 +86,8 @@ model User {
   adminDocumentsUploaded AdminDocument[] @relation("AdminDocumentUploadedBy")
   adminTasksCreated      AdminTask[]     @relation("AdminTaskCreatedBy")
   adminEventsCreated     AdminEvent[]    @relation("AdminEventCreatedBy")
+  adminNotesCreated      AdminNote[]     @relation("AdminNoteCreatedBy")
+  adminContactsCreated   AdminContact[]  @relation("AdminContactCreatedBy")
 }
 
 model StudentProfile {
@@ -908,19 +910,28 @@ enum AdminTaskPriority {
   URGENT
 }
 
+// 3 colonnes du tableau Kanban (GestionTasksView) — TODO/DOING/DONE plutôt
+// qu'un simple booléen "done", pour pouvoir distinguer "pas commencé" de
+// "en cours" comme sur un board Trello/ClickUp.
+enum AdminTaskStatus {
+  TODO
+  DOING
+  DONE
+}
+
 model AdminTask {
   id          String            @id @default(cuid())
   title       String
   description String?
   dueDate     DateTime?
   priority    AdminTaskPriority @default(MEDIUM)
-  done        Boolean           @default(false)
+  status      AdminTaskStatus   @default(TODO)
   completedAt DateTime?
   createdAt   DateTime          @default(now())
   createdById String
   createdBy   User              @relation("AdminTaskCreatedBy", fields: [createdById], references: [id])
 
-  @@index([done, dueDate])
+  @@index([status, dueDate])
 }
 
 model AdminEvent {
@@ -936,4 +947,40 @@ model AdminEvent {
   createdBy   User      @relation("AdminEventCreatedBy", fields: [createdById], references: [id])
 
   @@index([startTime])
+}
+
+// Pense-bête/wiki interne (procédures, mémos, mots de passe non-sensibles,
+// tout ce qui ne rentre ni dans un document ni dans une tâche). Texte libre
+// volontairement (pas d'éditeur par blocs à la Notion — hors de portée ici),
+// une note "épinglée" remonte en tête de liste.
+model AdminNote {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  createdBy   User     @relation("AdminNoteCreatedBy", fields: [createdById], references: [id])
+
+  @@index([pinned, updatedAt])
+}
+
+// Annuaire (CRM léger) des contacts de la société — comptable (le père de
+// Tom), banque, assurance, fournisseurs, DGAC, mécanicien... Distinct du
+// trombinoscope élèves/instructeurs (User) : ce sont des tiers externes,
+// sans compte dans l'appli.
+model AdminContact {
+  id          String   @id @default(cuid())
+  name        String
+  category    String? // ex: "Comptable", "Banque", "Assurance", "Fournisseur", "DGAC", "Maintenance"
+  phone       String?
+  email       String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String
+  createdBy   User     @relation("AdminContactCreatedBy", fields: [createdById], references: [id])
+
+  @@index([category, name])
 }

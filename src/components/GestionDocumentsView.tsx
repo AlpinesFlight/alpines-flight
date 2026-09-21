@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { AdminDocument } from "@/types/models";
 import { formatDateTime } from "@/lib/format";
+import { GestionPageHeader } from "@/components/GestionShell";
 import {
   FileText,
   Image as ImageIcon,
@@ -15,7 +15,6 @@ import {
   RotateCcw,
   Camera,
   Upload,
-  ShieldAlert,
 } from "lucide-react";
 
 function formatSize(bytes: number): string {
@@ -54,8 +53,6 @@ async function compressIfImage(file: File): Promise<File> {
 }
 
 export function GestionDocumentsView() {
-  const { data: session, status: sessionStatus } = useSession();
-  const isGerant = session?.user?.role === "GERANT";
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -72,10 +69,8 @@ export function GestionDocumentsView() {
   }
 
   useEffect(() => {
-    if (sessionStatus === "loading" || !isGerant) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionStatus, isGerant]);
+  }, []);
 
   async function toggleStatus(doc: AdminDocument) {
     await apiFetch(`/api/admin/documents/${doc.id}`, {
@@ -91,36 +86,27 @@ export function GestionDocumentsView() {
     load();
   }
 
-  if (sessionStatus !== "loading" && !isGerant) {
-    return (
-      <div className="p-4 md:p-8">
-        <div className="bg-white rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md mx-auto mt-8">
-          <ShieldAlert size={28} className="text-navy-400" />
-          <p className="font-semibold text-navy-900">Accès réservé au Gérant</p>
-          <p className="text-sm text-navy-600">La plateforme de gestion n&apos;est visible que du compte Gérant.</p>
-        </div>
-      </div>
-    );
-  }
-
   const pending = documents.filter((d) => d.status === "PENDING");
   const processed = documents.filter((d) => d.status === "PROCESSED");
 
   return (
-    <div className="p-4 md:p-8">
-      <div className="flex items-center flex-wrap gap-3 mb-5">
-        <div>
-          <p className="text-sm text-navy-600">
-            <span className="font-semibold text-navy-900">{pending.length}</span> document{pending.length !== 1 ? "s" : ""} à traiter
-          </p>
-        </div>
-        <button
-          onClick={() => setShowUpload(true)}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
-        >
-          <Plus size={16} /> Ajouter un document
-        </button>
-      </div>
+    <div>
+      <GestionPageHeader
+        title="Documents"
+        subtitle="Factures, relevés et notes de frais à transmettre au comptable"
+        action={
+          <button
+            onClick={() => setShowUpload(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
+          >
+            <Plus size={16} /> Ajouter un document
+          </button>
+        }
+      />
+      <div className="px-4 md:px-10 pb-10">
+      <p className="text-sm text-navy-600 mb-4">
+        <span className="font-semibold text-navy-900">{pending.length}</span> document{pending.length !== 1 ? "s" : ""} à traiter
+      </p>
 
       {!loading && documents.length === 0 && (
         <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
@@ -169,6 +155,7 @@ export function GestionDocumentsView() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

@@ -9,11 +9,11 @@ import { z } from "zod";
 type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
-  title: z.string().min(1).optional(),
-  description: z.string().nullable().optional(),
-  dueDate: z.string().nullable().optional(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
-  status: z.enum(["TODO", "DOING", "DONE"]).optional(),
+  name: z.string().min(1).optional(),
+  category: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -27,20 +27,15 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!parsed.success)
     return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
-  const existing = await prisma.adminTask.findUnique({ where: { id } });
+  const existing = await prisma.adminContact.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const { dueDate, status, ...rest } = parsed.data;
-  const task = await prisma.adminTask.update({
+  const contact = await prisma.adminContact.update({
     where: { id },
-    data: {
-      ...rest,
-      ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}),
-      ...(status !== undefined ? { status, completedAt: status === "DONE" ? new Date() : null } : {}),
-    },
+    data: parsed.data,
     include: { createdBy: { select: safeUserSelect } },
   });
-  return NextResponse.json(task);
+  return NextResponse.json(contact);
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
@@ -49,9 +44,9 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.adminTask.findUnique({ where: { id } });
+  const existing = await prisma.adminContact.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  await prisma.adminTask.delete({ where: { id } });
+  await prisma.adminContact.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
