@@ -14,13 +14,13 @@ const PRIORITY_LABEL: Record<AdminTaskPriority, string> = {
   HIGH: "Haute",
   URGENT: "Urgente",
 };
-// Même langage de couleur que MaintenanceStatus (FleetView) : navy = neutre,
-// sunset = attention, rouge = critique.
+// Même langage de couleur que MaintenanceStatus (FleetView), adapté au fond
+// sombre de /gestion : navy = neutre, sunset = attention, rouge = critique.
 const PRIORITY_STYLE: Record<AdminTaskPriority, string> = {
-  LOW: "bg-navy-50 text-navy-500",
-  MEDIUM: "bg-navy-100 text-navy-800",
-  HIGH: "bg-sunset-100 text-sunset-600",
-  URGENT: "bg-red-100 text-red-600",
+  LOW: "bg-navy-800 text-navy-100/50",
+  MEDIUM: "bg-navy-700 text-navy-100/80",
+  HIGH: "bg-sunset-500/15 text-sunset-500",
+  URGENT: "bg-red-500/15 text-red-400",
 };
 const PRIORITY_ORDER: Record<AdminTaskPriority, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
@@ -108,12 +108,12 @@ export function GestionTasksView() {
         subtitle="Check-list interne — priorités et échéances"
         action={
           <div className="flex items-center gap-2">
-            <div className="flex items-center bg-navy-50 rounded-lg p-1 gap-1">
+            <div className="flex items-center bg-navy-900 border border-navy-700 rounded-lg p-1 gap-1">
               <button
                 onClick={() => setView("board")}
                 className={clsx(
                   "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  view === "board" ? "bg-white text-navy-900 shadow-sm" : "text-navy-600 hover:text-navy-900"
+                  view === "board" ? "bg-navy-700 text-cream-50" : "text-navy-100/60 hover:text-cream-50"
                 )}
               >
                 <LayoutGrid size={13} /> Tableau
@@ -122,7 +122,7 @@ export function GestionTasksView() {
                 onClick={() => setView("list")}
                 className={clsx(
                   "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  view === "list" ? "bg-white text-navy-900 shadow-sm" : "text-navy-600 hover:text-navy-900"
+                  view === "list" ? "bg-navy-700 text-cream-50" : "text-navy-100/60 hover:text-cream-50"
                 )}
               >
                 <List size={13} /> Liste
@@ -132,21 +132,21 @@ export function GestionTasksView() {
         }
       />
       <div className="px-4 md:px-10 pb-10">
-        <form onSubmit={handleAdd} className="bg-white rounded-2xl border border-navy-100 p-3 flex flex-wrap items-center gap-2 mb-5">
+        <form onSubmit={handleAdd} className="bg-navy-900 rounded-2xl border border-navy-700 p-3 flex flex-wrap items-center gap-2 mb-5">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Nouvelle tâche..."
-            className="input flex-1 min-w-[180px]"
+            className="input-dark flex-1 min-w-[180px]"
           />
-          <select value={priority} onChange={(e) => setPriority(e.target.value as AdminTaskPriority)} className="input w-auto">
+          <select value={priority} onChange={(e) => setPriority(e.target.value as AdminTaskPriority)} className="input-dark w-auto">
             {(Object.keys(PRIORITY_LABEL) as AdminTaskPriority[]).map((p) => (
               <option key={p} value={p}>
                 {PRIORITY_LABEL[p]}
               </option>
             ))}
           </select>
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input w-auto" />
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input-dark w-auto" />
           <button
             type="submit"
             disabled={adding || !title.trim()}
@@ -157,13 +157,13 @@ export function GestionTasksView() {
         </form>
 
         {!loading && tasks.length === 0 && (
-          <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
+          <div className="bg-navy-900 rounded-2xl border border-navy-700 p-8 text-center text-sm text-navy-100/50">
             Aucune tâche pour l&apos;instant.
           </div>
         )}
 
         {overdueCount > 0 && (
-          <p className="text-xs font-semibold text-red-600 mb-3">
+          <p className="text-xs font-semibold text-red-400 mb-3">
             {overdueCount} tâche{overdueCount !== 1 ? "s" : ""} en retard
           </p>
         )}
@@ -213,12 +213,12 @@ function BoardView({
             onDrop={(e) => handleDrop(e, col.key)}
             className={clsx(
               "rounded-2xl border p-2.5 min-h-[200px] transition-colors",
-              dragOverCol === col.key ? "border-sunset-400 bg-sunset-50" : "border-navy-100 bg-navy-50/40"
+              dragOverCol === col.key ? "border-sunset-500 bg-sunset-500/10" : "border-navy-800 bg-navy-900/60"
             )}
           >
             <div className="flex items-center justify-between px-1.5 py-1 mb-1.5">
-              <h2 className="text-xs font-bold uppercase tracking-wide text-navy-600">{col.label}</h2>
-              <span className="text-[11px] font-semibold text-navy-400">{colTasks.length}</span>
+              <h2 className="text-xs font-bold uppercase tracking-wide text-navy-100/50">{col.label}</h2>
+              <span className="text-[11px] font-semibold text-navy-100/40">{colTasks.length}</span>
             </div>
             <div className="flex flex-col gap-2">
               {colTasks.map((t) => (
@@ -246,14 +246,14 @@ function TaskCard({
     <div
       draggable
       onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
-      className="bg-white rounded-xl border border-navy-100 p-3 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow group"
+      className="bg-navy-800 rounded-xl border border-navy-700 p-3 cursor-grab active:cursor-grabbing hover:border-navy-600 transition-colors group"
     >
       <div className="flex items-start gap-1.5">
-        <GripVertical size={13} className="text-navy-300 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <p className={clsx("text-sm font-medium flex-1 min-w-0", task.status === "DONE" ? "text-navy-400 line-through" : "text-navy-900")}>
+        <GripVertical size={13} className="text-navy-100/30 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <p className={clsx("text-sm font-medium flex-1 min-w-0", task.status === "DONE" ? "text-navy-100/35 line-through" : "text-cream-50")}>
           {task.title}
         </p>
-        <button onClick={() => onDelete(task)} title="Supprimer" className="text-navy-300 hover:text-red-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={() => onDelete(task)} title="Supprimer" className="text-navy-100/30 hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
           <Trash2 size={13} />
         </button>
       </div>
@@ -262,7 +262,7 @@ function TaskCard({
           {PRIORITY_LABEL[task.priority]}
         </span>
         {task.dueDate && (
-          <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", overdue ? "bg-red-100 text-red-600" : "bg-navy-100 text-navy-500")}>
+          <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", overdue ? "bg-red-500/15 text-red-400" : "bg-navy-700 text-navy-100/60")}>
             {formatDate(task.dueDate)}
           </span>
         )}
@@ -274,7 +274,7 @@ function TaskCard({
           <button
             key={c.key}
             onClick={() => onSetStatus(task, c.key)}
-            className="text-[10px] text-navy-400 hover:text-sunset-600 hover:underline"
+            className="text-[10px] text-navy-100/40 hover:text-sunset-500 hover:underline"
           >
             → {c.label}
           </button>
@@ -306,20 +306,20 @@ function ListView({
   return (
     <div>
       {overdue.length > 0 && (
-        <TaskGroup title={`En retard (${overdue.length})`} titleClassName="text-red-600" tasks={overdue} onSetStatus={onSetStatus} onDelete={onDelete} />
+        <TaskGroup title={`En retard (${overdue.length})`} titleClassName="text-red-400" tasks={overdue} onSetStatus={onSetStatus} onDelete={onDelete} />
       )}
       {todo.length > 0 && <TaskGroup title="À faire / en cours" tasks={todo} onSetStatus={onSetStatus} onDelete={onDelete} />}
 
       {done.length > 0 && (
-        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mt-5">
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden mt-5">
           <button onClick={() => setShowDone(!showDone)} className="w-full flex items-center justify-between gap-2 px-5 py-3 text-left">
-            <h2 className="font-semibold text-navy-900 flex items-center gap-1.5">
+            <h2 className="font-semibold text-cream-50 flex items-center gap-1.5">
               {showDone ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               Terminées ({done.length})
             </h2>
           </button>
           {showDone && (
-            <div className="divide-y divide-navy-100 border-t border-navy-100">
+            <div className="divide-y divide-navy-800 border-t border-navy-700">
               {done.map((t) => (
                 <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} />
               ))}
@@ -345,11 +345,11 @@ function TaskGroup({
   onDelete: (t: AdminTask) => void;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-5">
-      <div className="px-5 py-3 border-b border-navy-100">
-        <h2 className={clsx("font-semibold", titleClassName ?? "text-navy-900")}>{title}</h2>
+    <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden mb-5">
+      <div className="px-5 py-3 border-b border-navy-700">
+        <h2 className={clsx("font-semibold", titleClassName ?? "text-cream-50")}>{title}</h2>
       </div>
-      <div className="divide-y divide-navy-100">
+      <div className="divide-y divide-navy-800">
         {tasks.map((t) => (
           <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} />
         ))}
@@ -378,21 +378,21 @@ function TaskRow({
           className="shrink-0 w-4 h-4 accent-sunset-500"
         />
         <div className="min-w-0">
-          <p className={clsx("text-sm font-medium truncate", task.status === "DONE" ? "text-navy-400 line-through" : "text-navy-900")}>
+          <p className={clsx("text-sm font-medium truncate", task.status === "DONE" ? "text-navy-100/35 line-through" : "text-cream-50")}>
             {task.title}
           </p>
-          {task.description && <p className="text-xs text-navy-500 truncate">{task.description}</p>}
+          {task.description && <p className="text-xs text-navy-100/45 truncate">{task.description}</p>}
         </div>
       </label>
       <div className="flex items-center gap-2 shrink-0">
         {task.status === "DOING" && (
-          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-sunset-100 text-sunset-600 whitespace-nowrap">En cours</span>
+          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-sunset-500/15 text-sunset-500 whitespace-nowrap">En cours</span>
         )}
         {task.dueDate && (
           <span
             className={clsx(
               "text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap",
-              overdue ? "bg-red-100 text-red-600" : "bg-navy-50 text-navy-500"
+              overdue ? "bg-red-500/15 text-red-400" : "bg-navy-800 text-navy-100/50"
             )}
           >
             {formatDate(task.dueDate)}
@@ -403,7 +403,7 @@ function TaskRow({
             {PRIORITY_LABEL[task.priority]}
           </span>
         )}
-        <button onClick={onDelete} title="Supprimer" className="text-navy-400 hover:text-red-600">
+        <button onClick={onDelete} title="Supprimer" className="text-navy-100/40 hover:text-red-400">
           <Trash2 size={15} />
         </button>
       </div>

@@ -69,6 +69,15 @@ body {
   .input {
     @apply w-full rounded-lg border border-navy-100 px-3 py-2 text-sm text-navy-900 focus:outline-none focus:ring-2 focus:ring-sunset-500;
   }
+
+  /* Variante sombre de .input — page /gestion uniquement (voir
+     GestionShell.tsx et alentours). Séparée plutôt que surchargée en
+     utilitaires Tailwind sur .input : .input est une classe @apply, pas un
+     simple utilitaire, l'ordre de spécificité CSS ne garantirait pas que
+     des couleurs ajoutées après dans le className gagnent. */
+  .input-dark {
+    @apply w-full rounded-lg border border-navy-700 bg-navy-900 px-3 py-2 text-sm text-cream-50 placeholder-navy-100/40 focus:outline-none focus:ring-2 focus:ring-sunset-500;
+  }
 }
 
 /* Overrides pour react-big-calendar, pour matcher la charte */
@@ -119,4 +128,74 @@ body {
 }
 .rbc-time-view .rbc-event-content {
   padding-top: 1px;
+}
+
+/* Variante sombre — Agenda de la page /gestion uniquement (voir
+   GestionPlanningView.tsx), scopée sous .gestion-calendar pour ne jamais
+   affecter le Planning avions (PlanningView.tsx), resté clair. */
+.gestion-calendar .rbc-off-range-bg {
+  background: var(--color-navy-900);
+}
+.gestion-calendar .rbc-off-range {
+  color: color-mix(in srgb, var(--color-cream-50) 30%, transparent);
+}
+.gestion-calendar .rbc-toolbar button {
+  color: var(--color-cream-50);
+  border-color: var(--color-navy-700);
+}
+.gestion-calendar .rbc-toolbar button:hover {
+  background: var(--color-navy-800);
+}
+.gestion-calendar .rbc-toolbar button.rbc-active {
+  background: var(--color-sunset-500);
+  color: white;
+  border-color: var(--color-sunset-500);
+}
+.gestion-calendar .rbc-toolbar-label {
+  color: var(--color-cream-50);
+  font-weight: 600;
+}
+.gestion-calendar .rbc-today {
+  background-color: color-mix(in srgb, var(--color-sunset-500) 18%, transparent);
+}
+.gestion-calendar .rbc-event {
+  border: none !important;
+}
+.gestion-calendar .rbc-time-view,
+.gestion-calendar .rbc-month-view {
+  border-color: var(--color-navy-700) !important;
+}
+.gestion-calendar .rbc-time-header-content,
+.gestion-calendar .rbc-time-content > * + * > *,
+.gestion-calendar .rbc-month-row + .rbc-month-row,
+.gestion-calendar .rbc-day-bg + .rbc-day-bg,
+.gestion-calendar .rbc-header + .rbc-header {
+  border-color: var(--color-navy-700) !important;
+}
+.gestion-calendar .rbc-header {
+  border-color: var(--color-navy-700) !important;
+  color: var(--color-cream-50);
+  font-weight: 600;
+  padding: 8px 0;
+}
+.gestion-calendar .rbc-date-cell {
+  color: var(--color-navy-100);
+}
+.gestion-calendar .rbc-date-cell.rbc-now {
+  color: var(--color-sunset-500);
+  font-weight: 700;
+}
+.gestion-calendar .rbc-agenda-view table.rbc-agenda-table {
+  color: var(--color-cream-50);
+}
+.gestion-calendar .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  color: var(--color-navy-100);
+  border-bottom: 1px solid var(--color-navy-700);
+}
+.gestion-calendar .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  border-color: var(--color-navy-700);
+}
+.gestion-calendar .rbc-show-more {
+  color: var(--color-sunset-500);
+  background: transparent;
 }

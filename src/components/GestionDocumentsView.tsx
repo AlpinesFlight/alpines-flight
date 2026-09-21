@@ -104,22 +104,22 @@ export function GestionDocumentsView() {
         }
       />
       <div className="px-4 md:px-10 pb-10">
-      <p className="text-sm text-navy-600 mb-4">
-        <span className="font-semibold text-navy-900">{pending.length}</span> document{pending.length !== 1 ? "s" : ""} à traiter
+      <p className="text-sm text-navy-100/60 mb-4">
+        <span className="font-semibold text-cream-50">{pending.length}</span> document{pending.length !== 1 ? "s" : ""} à traiter
       </p>
 
       {!loading && documents.length === 0 && (
-        <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 p-8 text-center text-sm text-navy-100/50">
           Aucun document pour l&apos;instant. Ajoute une facture, un relevé ou une note de frais en PDF ou en photo.
         </div>
       )}
 
       {pending.length > 0 && (
-        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-5">
-          <div className="flex items-center gap-2 px-5 py-3 border-b border-navy-100">
-            <h2 className="font-semibold text-navy-900">À traiter</h2>
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden mb-5">
+          <div className="flex items-center gap-2 px-5 py-3 border-b border-navy-700">
+            <h2 className="font-semibold text-cream-50">À traiter</h2>
           </div>
-          <div className="divide-y divide-navy-100">
+          <div className="divide-y divide-navy-800">
             {pending.map((d) => (
               <DocRow key={d.id} doc={d} onToggle={() => toggleStatus(d)} onDelete={() => handleDelete(d)} />
             ))}
@@ -128,16 +128,16 @@ export function GestionDocumentsView() {
       )}
 
       {processed.length > 0 && (
-        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden">
           <button
             onClick={() => setShowProcessed((s) => !s)}
-            className="w-full flex items-center justify-between gap-2 px-5 py-3 border-b border-navy-100 text-left"
+            className="w-full flex items-center justify-between gap-2 px-5 py-3 border-b border-navy-700 text-left"
           >
-            <h2 className="font-semibold text-navy-900">Traités ({processed.length})</h2>
-            <span className="text-xs text-navy-500">{showProcessed ? "Masquer" : "Afficher"}</span>
+            <h2 className="font-semibold text-cream-50">Traités ({processed.length})</h2>
+            <span className="text-xs text-navy-100/40">{showProcessed ? "Masquer" : "Afficher"}</span>
           </button>
           {showProcessed && (
-            <div className="divide-y divide-navy-100">
+            <div className="divide-y divide-navy-800">
               {processed.map((d) => (
                 <DocRow key={d.id} doc={d} onToggle={() => toggleStatus(d)} onDelete={() => handleDelete(d)} />
               ))}
@@ -170,10 +170,10 @@ function DocRow({ doc, onToggle, onDelete }: { doc: AdminDocument; onToggle: () 
         rel="noopener noreferrer"
         className="flex items-center gap-3 min-w-0 group"
       >
-        <Icon size={18} className="text-navy-400 shrink-0" />
+        <Icon size={18} className="text-navy-100/40 shrink-0" />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-navy-900 truncate group-hover:underline">{doc.title}</p>
-          <p className="text-xs text-navy-500">
+          <p className="text-sm font-medium text-cream-50 truncate group-hover:underline">{doc.title}</p>
+          <p className="text-xs text-navy-100/45">
             {doc.category ? `${doc.category} · ` : ""}
             {formatSize(doc.fileSize)} · importé le {formatDateTime(doc.uploadedAt)} par {doc.uploadedBy.firstName}
           </p>
@@ -183,7 +183,7 @@ function DocRow({ doc, onToggle, onDelete }: { doc: AdminDocument; onToggle: () 
         {doc.status === "PENDING" ? (
           <button
             onClick={onToggle}
-            className="flex items-center gap-1 text-[11px] font-semibold text-navy-600 hover:text-green-700 bg-navy-50 hover:bg-green-100 px-2 py-1 rounded-full transition-colors"
+            className="flex items-center gap-1 text-[11px] font-semibold text-navy-100/70 hover:text-green-400 bg-navy-800 hover:bg-green-500/15 px-2 py-1 rounded-full transition-colors"
           >
             <CheckCircle2 size={12} /> Marquer traité
           </button>
@@ -191,12 +191,12 @@ function DocRow({ doc, onToggle, onDelete }: { doc: AdminDocument; onToggle: () 
           <button
             onClick={onToggle}
             title="Remettre à traiter"
-            className="flex items-center gap-1 text-[11px] font-semibold text-green-700 bg-green-100 hover:bg-navy-100 hover:text-navy-600 px-2 py-1 rounded-full transition-colors"
+            className="flex items-center gap-1 text-[11px] font-semibold text-green-400 bg-green-500/15 hover:bg-navy-800 hover:text-navy-100/70 px-2 py-1 rounded-full transition-colors"
           >
             <RotateCcw size={12} /> Traité
           </button>
         )}
-        <button onClick={onDelete} title="Supprimer définitivement" className="text-navy-400 hover:text-red-600">
+        <button onClick={onDelete} title="Supprimer définitivement" className="text-navy-100/40 hover:text-red-400">
           <Trash2 size={15} />
         </button>
       </div>
@@ -257,11 +257,11 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
-          <h2 className="font-semibold text-navy-900">Ajouter un document</h2>
-          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-navy-900 border border-navy-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700 sticky top-0 bg-navy-900">
+          <h2 className="font-semibold text-cream-50">Ajouter un document</h2>
+          <button onClick={onClose} className="text-navy-100/50 hover:text-cream-50">
             <X size={20} />
           </button>
         </div>
@@ -270,7 +270,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             <button
               type="button"
               onClick={() => pdfInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-navy-200 hover:border-sunset-400 hover:bg-sunset-50 py-4 text-navy-700 transition-colors"
+              className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-navy-700 hover:border-sunset-500 hover:bg-sunset-500/10 py-4 text-navy-100/70 transition-colors"
             >
               <Upload size={20} />
               <span className="text-xs font-semibold">Importer un fichier</span>
@@ -278,7 +278,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-navy-200 hover:border-sunset-400 hover:bg-sunset-50 py-4 text-navy-700 transition-colors"
+              className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-navy-700 hover:border-sunset-500 hover:bg-sunset-500/10 py-4 text-navy-100/70 transition-colors"
             >
               <Camera size={20} />
               <span className="text-xs font-semibold">Prendre une photo</span>
@@ -303,23 +303,23 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             onChange={(e) => handlePick(e.target.files?.[0])}
           />
 
-          {compressing && <p className="text-xs text-navy-500">Compression de la photo...</p>}
+          {compressing && <p className="text-xs text-navy-100/50">Compression de la photo...</p>}
           {file && !compressing && (
-            <p className="text-xs text-navy-600 bg-navy-50 rounded-lg px-3 py-2">
+            <p className="text-xs text-navy-100/70 bg-navy-800 rounded-lg px-3 py-2">
               {file.name} · {formatSize(file.size)}
             </p>
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Titre</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input" required />
+            <span className="text-xs font-medium text-navy-100/60">Titre</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input-dark" required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Catégorie (optionnel)</span>
+            <span className="text-xs font-medium text-navy-100/60">Catégorie (optionnel)</span>
             <input
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="input"
+              className="input-dark"
               list="admin-doc-categories"
               placeholder="Facture fournisseur..."
             />
@@ -330,7 +330,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             </datalist>
           </label>
 
-          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-red-400 text-sm bg-red-500/15 rounded-lg px-3 py-2">{error}</p>}
           <button
             type="submit"
             disabled={saving || compressing}

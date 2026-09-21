@@ -1,148 +1,162 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { GestionPageHeader } from "@/components/GestionShell";
-import { Video, Copy, Check, ExternalLink, RefreshCw, X } from "lucide-react";
+import { Video, Copy, Check, ExternalLink, Pencil, Info } from "lucide-react";
 
-// Salle fixe et mémorisable, toujours la même — pratique pour un appel
-// récurrent (ex. le père de Tom, un instructeur...) sans avoir à repartager
-// un lien à chaque fois.
-const FIXED_ROOM = "AlpinesFlight-BureauGerant";
-
-function randomRoom() {
-  return `AlpinesFlight-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function roomUrl(room: string) {
-  return `https://meet.jit.si/${room}`;
-}
+const NEW_MEETING_URL = "https://meet.google.com/new";
 
 export function GestionVisioView() {
-  const [privateRoom, setPrivateRoom] = useState(() => randomRoom());
-  const [embedded, setEmbedded] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [meetLink, setMeetLink] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  async function copyLink(room: string) {
+  useEffect(() => {
+    apiFetch<{ googleMeetLink: string | null }>("/api/admin/settings")
+      .then((s) => setMeetLink(s.googleMeetLink))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    setSaving(true);
     try {
-      await navigator.clipboard.writeText(roomUrl(room));
-      setCopied(room);
-      setTimeout(() => setCopied(null), 2000);
+      const trimmed = draft.trim();
+      const s = await apiFetch<{ googleMeetLink: string | null }>("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ googleMeetLink: trimmed || null }),
+      });
+      setMeetLink(s.googleMeetLink);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!meetLink) return;
+    try {
+      await navigator.clipboard.writeText(meetLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Best-effort : si le presse-papiers est refusé (permission, contexte
-      // non sécurisé...), le lien reste consultable directement dans le
-      // champ affiché — rien de plus à faire côté code.
+      // Best-effort : si le presse-papiers est refusé, le lien reste
+      // consultable/copiable manuellement dans le champ affiché.
     }
   }
 
   return (
     <div>
-      <GestionPageHeader title="Visio" subtitle="Appel vidéo intégré, sans compte ni logiciel à installer" />
+      <GestionPageHeader title="Visio" subtitle="Réunions Google Meet" />
       <div className="px-4 md:px-10 pb-10 flex flex-col gap-5">
-      {embedded ? (
-        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-navy-100">
-            <p className="text-sm font-medium text-navy-900 flex items-center gap-2">
-              <Video size={16} className="text-sunset-600" /> {embedded}
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 p-5 flex flex-col gap-3">
+          <div>
+            <h2 className="font-semibold text-cream-50">Nouvelle réunion</h2>
+            <p className="text-sm text-navy-100/50 mt-0.5">
+              Crée une réunion Google Meet instantanée et partage le lien aux participants.
             </p>
-            <button onClick={() => setEmbedded(null)} className="text-navy-600 hover:text-navy-900">
-              <X size={18} />
-            </button>
           </div>
-          {/* Jitsi Meet s'intègre sans SDK ni compte : l'URL publique
-              meet.jit.si fonctionne directement en iframe. */}
-          <iframe
-            src={roomUrl(embedded)}
-            allow="camera; microphone; fullscreen; display-capture; autoplay"
-            className="w-full h-[70vh] border-0"
-          />
-        </div>
-      ) : (
-        <>
-          <RoomCard
-            title="Salle habituelle"
-            description="Toujours la même adresse — pratique pour un appel récurrent, partage le lien une fois pour toutes."
-            room={FIXED_ROOM}
-            onStart={() => setEmbedded(FIXED_ROOM)}
-            onCopy={() => copyLink(FIXED_ROOM)}
-            copied={copied === FIXED_ROOM}
-          />
-          <RoomCard
-            title="Nouvelle salle privée"
-            description="Une adresse unique à usage ponctuel, pour un appel confidentiel."
-            room={privateRoom}
-            onStart={() => setEmbedded(privateRoom)}
-            onCopy={() => copyLink(privateRoom)}
-            copied={copied === privateRoom}
-            onRegenerate={() => setPrivateRoom(randomRoom())}
-          />
-          <p className="text-xs text-navy-500 max-w-xl">
-            Visio via Jitsi Meet — gratuit, sans compte, fonctionne directement dans le navigateur (chaque
-            participant ouvre simplement le lien). Une intégration Zoom, Google Meet ou Teams est possible si tu as
-            déjà un compte/abonnement sur l&apos;un de ces outils — dis-le-moi.
-          </p>
-        </>
-      )}
-      </div>
-    </div>
-  );
-}
-
-function RoomCard({
-  title,
-  description,
-  room,
-  onStart,
-  onCopy,
-  copied,
-  onRegenerate,
-}: {
-  title: string;
-  description: string;
-  room: string;
-  onStart: () => void;
-  onCopy: () => void;
-  copied: boolean;
-  onRegenerate?: () => void;
-}) {
-  const url = useMemo(() => roomUrl(room), [room]);
-  return (
-    <div className="bg-white rounded-2xl border border-navy-100 p-5 flex flex-col gap-3">
-      <div>
-        <h2 className="font-semibold text-navy-900">{title}</h2>
-        <p className="text-sm text-navy-600 mt-0.5">{description}</p>
-      </div>
-      <p className="text-xs text-navy-500 bg-navy-50 rounded-lg px-3 py-2 truncate font-mono">{url}</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={onStart}
-          className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
-        >
-          <Video size={16} /> Démarrer ici
-        </button>
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 rounded-lg bg-navy-50 hover:bg-navy-100 text-navy-700 text-sm font-semibold px-3.5 py-2 transition-colors"
-        >
-          <ExternalLink size={15} /> Nouvel onglet
-        </a>
-        <button
-          onClick={onCopy}
-          className="flex items-center gap-1.5 rounded-lg bg-navy-50 hover:bg-navy-100 text-navy-700 text-sm font-semibold px-3.5 py-2 transition-colors"
-        >
-          {copied ? <Check size={15} className="text-green-600" /> : <Copy size={15} />}
-          {copied ? "Copié" : "Copier le lien"}
-        </button>
-        {onRegenerate && (
-          <button
-            onClick={onRegenerate}
-            title="Générer une nouvelle salle"
-            className="flex items-center gap-1.5 rounded-lg text-navy-500 hover:text-navy-900 text-sm px-2 py-2 transition-colors"
+          <a
+            href={NEW_MEETING_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="self-start flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
           >
-            <RefreshCw size={14} />
-          </button>
-        )}
+            <Video size={16} /> Démarrer sur Google Meet
+          </a>
+        </div>
+
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 p-5 flex flex-col gap-3">
+          <div>
+            <h2 className="font-semibold text-cream-50">Salle habituelle</h2>
+            <p className="text-sm text-navy-100/50 mt-0.5">
+              Un lien Meet fixe (ex. ta salle personnelle Google Calendar), pour un appel récurrent sans avoir à le
+              repartager à chaque fois.
+            </p>
+          </div>
+
+          {!loading && !editing && (
+            meetLink ? (
+              <>
+                <p className="text-xs text-navy-100/70 bg-navy-950 border border-navy-800 rounded-lg px-3 py-2 truncate font-mono">
+                  {meetLink}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={meetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-navy-100 text-sm font-semibold px-3.5 py-2 transition-colors"
+                  >
+                    <ExternalLink size={15} /> Ouvrir
+                  </a>
+                  <button
+                    onClick={copyLink}
+                    className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-navy-100 text-sm font-semibold px-3.5 py-2 transition-colors"
+                  >
+                    {copied ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
+                    {copied ? "Copié" : "Copier le lien"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDraft(meetLink);
+                      setEditing(true);
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg text-navy-100/50 hover:text-cream-50 text-sm px-2 py-2 transition-colors"
+                  >
+                    <Pencil size={14} /> Modifier
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => {
+                  setDraft("");
+                  setEditing(true);
+                }}
+                className="self-start text-sm text-sunset-500 hover:underline"
+              >
+                + Enregistrer un lien fixe
+              </button>
+            )
+          )}
+
+          {editing && (
+            <div className="flex flex-col gap-2">
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                className="input-dark"
+                autoFocus
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={save}
+                  disabled={saving}
+                  className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors disabled:opacity-60"
+                >
+                  {saving ? "Enregistrement..." : "Enregistrer"}
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="rounded-lg text-navy-100/50 hover:text-cream-50 text-sm px-3.5 py-2 transition-colors"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <p className="flex items-start gap-1.5 text-xs text-navy-100/40 max-w-xl">
+          <Info size={13} className="shrink-0 mt-0.5" />
+          Google bloque l&apos;intégration de Meet dans une page tierce (contrairement à Jitsi utilisé avant) — les
+          liens s&apos;ouvrent toujours dans un nouvel onglet.
+        </p>
       </div>
     </div>
   );

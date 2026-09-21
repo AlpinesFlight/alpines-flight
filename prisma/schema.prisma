@@ -88,6 +88,7 @@ model User {
   adminEventsCreated     AdminEvent[]    @relation("AdminEventCreatedBy")
   adminNotesCreated      AdminNote[]     @relation("AdminNoteCreatedBy")
   adminContactsCreated   AdminContact[]  @relation("AdminContactCreatedBy")
+  adminSettingsUpdated   AdminSettings[]
 }
 
 model StudentProfile {
@@ -983,4 +984,19 @@ model AdminContact {
   createdBy   User     @relation("AdminContactCreatedBy", fields: [createdById], references: [id])
 
   @@index([category, name])
+}
+
+// Réglages de la plateforme de gestion — une seule ligne, comme
+// SchoolSettings mais volontairement séparée : ceci reste Gérant uniquement
+// (voir /api/admin/settings), alors que SchoolSettings est lisible de tout
+// compte connecté. Pour l'instant, seulement le lien de "salle habituelle"
+// Google Meet (voir GestionVisioView.tsx) — meet.google.com ne peut pas
+// être intégré en iframe (bloqué par Google), donc ce lien s'ouvre toujours
+// dans un nouvel onglet.
+model AdminSettings {
+  id             String   @id @default("singleton")
+  googleMeetLink String?
+  updatedAt      DateTime @updatedAt
+  updatedById    String?
+  updatedBy      User?    @relation(fields: [updatedById], references: [id])
 }

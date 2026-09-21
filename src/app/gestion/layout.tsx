@@ -15,12 +15,12 @@ export default async function GestionLayout({ children }: { children: React.Reac
 
   if (!session || !isGerant(session.user.role)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white p-4">
-        <div className="bg-cream-50 rounded-2xl border border-navy-100 p-8 flex flex-col items-center text-center gap-2 max-w-md">
-          <ShieldAlert size={28} className="text-navy-400" />
-          <p className="font-semibold text-navy-900">Accès réservé au Gérant</p>
-          <p className="text-sm text-navy-600">La plateforme de gestion n&apos;est visible que du compte Gérant.</p>
-          <Link href="/" className="text-sm text-sunset-600 hover:underline mt-2">
+      <div className="min-h-screen flex items-center justify-center bg-navy-950 p-4">
+        <div className="bg-navy-900 border border-navy-700 rounded-2xl p-8 flex flex-col items-center text-center gap-2 max-w-md">
+          <ShieldAlert size={28} className="text-navy-100/40" />
+          <p className="font-semibold text-cream-50">Accès réservé au Gérant</p>
+          <p className="text-sm text-navy-100/60">La plateforme de gestion n&apos;est visible que du compte Gérant.</p>
+          <Link href="/" className="text-sm text-sunset-500 hover:underline mt-2">
             Retour à l&apos;application
           </Link>
         </div>

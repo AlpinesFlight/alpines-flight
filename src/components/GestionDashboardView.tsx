@@ -55,8 +55,8 @@ export function GestionDashboardView() {
           <Panel title="Documents à traiter" href="/gestion/documents" empty="Rien à traiter — tout est à jour." loading={loading} isEmpty={pendingDocs.length === 0}>
             {pendingDocs.slice(0, 5).map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
-                <p className="text-sm text-navy-800 truncate">{d.title}</p>
-                <p className="text-xs text-navy-400 shrink-0">{formatDate(d.uploadedAt)}</p>
+                <p className="text-sm text-cream-50 truncate">{d.title}</p>
+                <p className="text-xs text-navy-100/40 shrink-0">{formatDate(d.uploadedAt)}</p>
               </div>
             ))}
           </Panel>
@@ -64,9 +64,9 @@ export function GestionDashboardView() {
           <Panel title="Tâches prioritaires" href="/gestion/taches" empty="Aucune tâche urgente." loading={loading} isEmpty={activeTasks.length === 0}>
             {[...overdueTasks, ...activeTasks.filter((t) => !isOverdue(t, now))].slice(0, 5).map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
-                <p className="text-sm text-navy-800 truncate">{t.title}</p>
+                <p className="text-sm text-cream-50 truncate">{t.title}</p>
                 {t.dueDate && (
-                  <p className={clsx("text-xs shrink-0", isOverdue(t, now) ? "text-red-600 font-semibold" : "text-navy-400")}>
+                  <p className={clsx("text-xs shrink-0", isOverdue(t, now) ? "text-red-400 font-semibold" : "text-navy-100/40")}>
                     {formatDate(t.dueDate)}
                   </p>
                 )}
@@ -79,10 +79,10 @@ export function GestionDashboardView() {
           {nextEvents.map((e) => (
             <div key={e.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
               <div className="min-w-0">
-                <p className="text-sm text-navy-800 truncate">{e.title}</p>
-                {e.category && <p className="text-xs text-navy-400">{e.category}</p>}
+                <p className="text-sm text-cream-50 truncate">{e.title}</p>
+                {e.category && <p className="text-xs text-navy-100/40">{e.category}</p>}
               </div>
-              <p className="text-xs text-navy-400 shrink-0">{formatDateTime(e.startTime)}</p>
+              <p className="text-xs text-navy-100/40 shrink-0">{formatDateTime(e.startTime)}</p>
             </div>
           ))}
         </Panel>
@@ -101,11 +101,11 @@ export function GestionDashboardView() {
 }
 
 function StatCard({ value, label, href, tone }: { value: number; label: string; href: string; tone: "navy" | "sunset" | "red" }) {
-  const toneClass = { navy: "text-navy-900", sunset: "text-sunset-600", red: "text-red-600" }[tone];
+  const toneClass = { navy: "text-cream-50", sunset: "text-sunset-500", red: "text-red-400" }[tone];
   return (
-    <Link href={href} className="bg-white rounded-2xl border border-navy-100 p-4 hover:border-sunset-300 hover:shadow-sm transition-all">
+    <Link href={href} className="bg-navy-900 rounded-2xl border border-navy-700 p-4 hover:border-sunset-500/50 transition-colors">
       <p className={clsx("text-2xl font-bold", toneClass)}>{value}</p>
-      <p className="text-xs text-navy-500 mt-0.5">{label}</p>
+      <p className="text-xs text-navy-100/50 mt-0.5">{label}</p>
     </Link>
   );
 }
@@ -126,15 +126,15 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-navy-100">
-        <h2 className="font-semibold text-navy-900 text-sm">{title}</h2>
-        <Link href={href} className="flex items-center gap-1 text-xs text-sunset-600 hover:underline">
+    <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-navy-700">
+        <h2 className="font-semibold text-cream-50 text-sm">{title}</h2>
+        <Link href={href} className="flex items-center gap-1 text-xs text-sunset-500 hover:underline">
           Voir tout <ArrowRight size={12} />
         </Link>
       </div>
-      {!loading && isEmpty && <p className="px-5 py-4 text-xs text-navy-500">{empty}</p>}
-      <div className="divide-y divide-navy-100">{children}</div>
+      {!loading && isEmpty && <p className="px-5 py-4 text-xs text-navy-100/50">{empty}</p>}
+      <div className="divide-y divide-navy-800">{children}</div>
     </div>
   );
 }
@@ -143,10 +143,10 @@ function QuickLink({ href, icon: Icon, label }: { href: string; icon: React.Elem
   return (
     <Link
       href={href}
-      className="bg-white rounded-2xl border border-navy-100 p-4 flex flex-col items-center gap-2 text-center hover:border-sunset-300 hover:shadow-sm transition-all"
+      className="bg-navy-900 rounded-2xl border border-navy-700 p-4 flex flex-col items-center gap-2 text-center hover:border-sunset-500/50 transition-colors"
     >
-      <Icon size={20} className="text-sunset-600" />
-      <span className="text-xs font-medium text-navy-700">{label}</span>
+      <Icon size={20} className="text-sunset-500" />
+      <span className="text-xs font-medium text-navy-100/70">{label}</span>
     </Link>
   );
 }

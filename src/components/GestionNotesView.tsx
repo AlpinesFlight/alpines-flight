@@ -55,7 +55,7 @@ export function GestionNotesView() {
       />
       <div className="px-4 md:px-10 pb-10">
         {!loading && notes.length === 0 && (
-          <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
+          <div className="bg-navy-900 rounded-2xl border border-navy-700 p-8 text-center text-sm text-navy-100/50">
             Aucune note pour l&apos;instant.
           </div>
         )}
@@ -65,10 +65,10 @@ export function GestionNotesView() {
             <div
               key={n.id}
               onClick={() => setEditing(n)}
-              className="bg-white rounded-2xl border border-navy-100 p-4 cursor-pointer hover:border-sunset-300 hover:shadow-sm transition-all flex flex-col gap-2"
+              className="bg-navy-900 rounded-2xl border border-navy-700 p-4 cursor-pointer hover:border-sunset-500/50 transition-colors flex flex-col gap-2"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold text-navy-900 truncate flex-1">{n.title}</p>
+                <p className="text-sm font-semibold text-cream-50 truncate flex-1">{n.title}</p>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={(e) => {
@@ -76,7 +76,7 @@ export function GestionNotesView() {
                       togglePin(n);
                     }}
                     title={n.pinned ? "Désépingler" : "Épingler"}
-                    className={clsx("hover:text-sunset-600", n.pinned ? "text-sunset-500" : "text-navy-300")}
+                    className={clsx("hover:text-sunset-500", n.pinned ? "text-sunset-500" : "text-navy-100/30")}
                   >
                     {n.pinned ? <Pin size={14} /> : <PinOff size={14} />}
                   </button>
@@ -86,16 +86,16 @@ export function GestionNotesView() {
                       handleDelete(n);
                     }}
                     title="Supprimer"
-                    className="text-navy-300 hover:text-red-600"
+                    className="text-navy-100/30 hover:text-red-400"
                   >
                     <Trash2 size={14} />
                   </button>
                 </div>
               </div>
-              <p className="text-xs text-navy-500 whitespace-pre-line line-clamp-4 flex-1">
-                {n.content || <span className="italic text-navy-300">Note vide</span>}
+              <p className="text-xs text-navy-100/50 whitespace-pre-line line-clamp-4 flex-1">
+                {n.content || <span className="italic text-navy-100/30">Note vide</span>}
               </p>
-              <p className="text-[10px] text-navy-400">Modifié le {formatDateTime(n.updatedAt)}</p>
+              <p className="text-[10px] text-navy-100/35">Modifié le {formatDateTime(n.updatedAt)}</p>
             </div>
           ))}
         </div>
@@ -166,13 +166,13 @@ function NoteModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
-          <h2 className="font-semibold text-navy-900 flex items-center gap-2">
-            <StickyNote size={16} className="text-sunset-600" /> {existing ? "Modifier la note" : "Nouvelle note"}
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-navy-900 border border-navy-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700 sticky top-0 bg-navy-900">
+          <h2 className="font-semibold text-cream-50 flex items-center gap-2">
+            <StickyNote size={16} className="text-sunset-500" /> {existing ? "Modifier la note" : "Nouvelle note"}
           </h2>
-          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+          <button onClick={onClose} className="text-navy-100/50 hover:text-cream-50">
             <X size={20} />
           </button>
         </div>
@@ -181,20 +181,20 @@ function NoteModal({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Titre"
-            className="input font-semibold"
+            className="input-dark font-semibold"
             required
           />
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Écris ta note ici..."
-            className="input min-h-48"
+            className="input-dark min-h-48"
           />
-          <label className="flex items-center gap-2 text-sm text-navy-700">
+          <label className="flex items-center gap-2 text-sm text-navy-100/70">
             <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} className="w-4 h-4 accent-sunset-500" />
             Épingler en tête de liste
           </label>
-          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-red-400 text-sm bg-red-500/15 rounded-lg px-3 py-2">{error}</p>}
           <div className="flex items-center gap-2">
             <button
               type="submit"
@@ -208,7 +208,7 @@ function NoteModal({
                 type="button"
                 onClick={handleDelete}
                 title="Supprimer"
-                className="rounded-lg border border-navy-100 text-navy-500 hover:text-red-600 hover:border-red-200 px-3 py-2"
+                className="rounded-lg border border-navy-700 text-navy-100/60 hover:text-red-400 hover:border-red-500/40 px-3 py-2"
               >
                 <Trash2 size={16} />
               </button>

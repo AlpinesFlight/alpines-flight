@@ -40,13 +40,12 @@ type SearchResults = {
 
 const EMPTY_RESULTS: SearchResults = { documents: [], tasks: [], notes: [], contacts: [], events: [] };
 
-// Coquille "workspace" de la plateforme de gestion — délibérément distincte
-// du reste de l'appli (sidebar claire façon Notion, pas la sidebar navy de
-// l'exploitation de l'école) : monter dans /gestion doit se sentir comme
-// changer d'espace de travail, pas comme un onglet de plus. Le contrôle
-// d'accès (Gérant uniquement) est fait en amont, côté serveur, par
-// src/app/gestion/layout.tsx — cette coquille n'est jamais montée pour qui
-// n'y a pas droit.
+// Coquille "workspace" de la plateforme de gestion — fond sombre
+// délibérément distinct du reste de l'appli (claire) : monter dans
+// /gestion doit se sentir comme changer d'espace de travail, pas comme un
+// onglet de plus. Le contrôle d'accès (Gérant uniquement) est fait en
+// amont, côté serveur, par src/app/gestion/layout.tsx — cette coquille
+// n'est jamais montée pour qui n'y a pas droit.
 export function GestionShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -94,22 +93,22 @@ export function GestionShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-white">
-      <div className="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 bg-white border-b border-navy-100">
-        <button onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu" className="p-1 -ml-1 text-navy-700">
+    <div className="flex flex-col md:flex-row min-h-screen bg-navy-950">
+      <div className="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 bg-navy-900 border-b border-navy-800">
+        <button onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu" className="p-1 -ml-1 text-cream-50">
           <Menu size={22} />
         </button>
-        <span className="font-[family-name:var(--font-display)] font-bold text-base text-navy-900">Gestion</span>
+        <span className="font-[family-name:var(--font-display)] font-bold text-base text-cream-50">Gestion</span>
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 bg-navy-950/40 z-40" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+        <div className="md:hidden fixed inset-0 bg-black/50 z-40" onClick={() => setMobileOpen(false)} aria-hidden="true" />
       )}
 
       <aside
         className={clsx(
           "fixed md:relative inset-y-0 left-0 z-50 md:z-auto",
-          "w-64 shrink-0 bg-cream-50 border-r border-navy-100 flex flex-col min-h-screen overflow-y-auto",
+          "w-64 shrink-0 bg-navy-900 border-r border-navy-800 flex flex-col min-h-screen overflow-y-auto",
           "transition-transform duration-200 ease-in-out md:[transform:translateX(0)]",
           mobileOpen ? "[transform:translateX(0)]" : "[transform:translateX(-100%)]"
         )}
@@ -117,30 +116,30 @@ export function GestionShell({ children }: { children: React.ReactNode }) {
         <div className="px-4 pt-5 pb-3">
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs font-medium text-navy-500 hover:text-navy-800 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-medium text-navy-100/60 hover:text-cream-50 transition-colors"
           >
             <ArrowLeft size={13} /> Alpines Flight
           </Link>
-          <p className="font-[family-name:var(--font-display)] font-bold text-lg text-navy-900 mt-2">Gestion</p>
-          <p className="text-[11px] text-navy-500">Plateforme administrative</p>
+          <p className="font-[family-name:var(--font-display)] font-bold text-lg text-cream-50 mt-2">Gestion</p>
+          <p className="text-[11px] text-navy-100/50">Plateforme administrative</p>
         </div>
 
         <div className="px-3 pb-2 relative" ref={searchBoxRef}>
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-400" />
-            {searching && <Loader2 size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-navy-400 animate-spin" />}
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-100/40" />
+            {searching && <Loader2 size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-navy-100/40 animate-spin" />}
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setShowResults(true)}
               placeholder="Rechercher..."
-              className="w-full text-sm rounded-lg border border-navy-100 bg-white pl-8 pr-7 py-1.5 text-navy-800 placeholder:text-navy-400 focus:outline-none focus:ring-2 focus:ring-sunset-300"
+              className="w-full text-sm rounded-lg border border-navy-700 bg-navy-950 pl-8 pr-7 py-1.5 text-cream-50 placeholder-navy-100/35 focus:outline-none focus:ring-2 focus:ring-sunset-500"
             />
           </div>
           {showResults && query.trim().length >= 2 && (
-            <div className="absolute left-3 right-3 mt-1 bg-white rounded-xl border border-navy-100 shadow-lg z-10 max-h-96 overflow-y-auto py-1.5">
+            <div className="absolute left-3 right-3 mt-1 bg-navy-800 rounded-xl border border-navy-700 shadow-2xl z-10 max-h-96 overflow-y-auto py-1.5">
               {totalResults === 0 && !searching && (
-                <p className="px-3 py-2 text-xs text-navy-500">Aucun résultat pour « {query.trim()} ».</p>
+                <p className="px-3 py-2 text-xs text-navy-100/50">Aucun résultat pour « {query.trim()} ».</p>
               )}
               <SearchGroup label="Documents" onSeeAll={() => goTo("/gestion/documents")}>
                 {results.documents.map((d) => (
@@ -182,20 +181,20 @@ export function GestionShell({ children }: { children: React.ReactNode }) {
                 prefetch={false}
                 className={clsx(
                   "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm transition-colors",
-                  active ? "bg-white shadow-sm text-navy-900 font-medium" : "text-navy-600 hover:bg-navy-100/60"
+                  active ? "bg-navy-800 text-cream-50 font-medium" : "text-navy-100/60 hover:bg-navy-800/60 hover:text-cream-50"
                 )}
               >
-                <Icon size={16} className={active ? "text-sunset-600" : "text-navy-400"} />
+                <Icon size={16} className={active ? "text-sunset-500" : "text-navy-100/40"} />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="px-4 py-4 text-[11px] text-navy-400">Visible uniquement du compte Gérant.</div>
+        <div className="px-4 py-4 text-[11px] text-navy-100/35">Visible uniquement du compte Gérant.</div>
       </aside>
 
-      <main className="flex-1 min-w-0 bg-white">{children}</main>
+      <main className="flex-1 min-w-0 bg-navy-950">{children}</main>
     </div>
   );
 }
@@ -207,8 +206,8 @@ function SearchGroup({ label, onSeeAll, children }: { label: string; onSeeAll: (
   return (
     <div className="px-1.5">
       <div className="flex items-center justify-between px-1.5 pt-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-navy-400">{label}</span>
-        <button onClick={onSeeAll} className="text-[10px] text-sunset-600 hover:underline">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-navy-100/40">{label}</span>
+        <button onClick={onSeeAll} className="text-[10px] text-sunset-500 hover:underline">
           Tout voir
         </button>
       </div>
@@ -221,12 +220,12 @@ function SearchRow({ label, sub, onClick }: { label: string; sub?: string | null
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-md text-left hover:bg-navy-50 transition-colors"
+      className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded-md text-left hover:bg-navy-700/60 transition-colors"
     >
-      <FileText size={13} className="text-navy-400 shrink-0" />
+      <FileText size={13} className="text-navy-100/40 shrink-0" />
       <span className="min-w-0">
-        <span className="block text-xs text-navy-800 truncate">{label}</span>
-        {sub && <span className="block text-[10px] text-navy-400 truncate">{sub}</span>}
+        <span className="block text-xs text-cream-50 truncate">{label}</span>
+        {sub && <span className="block text-[10px] text-navy-100/40 truncate">{sub}</span>}
       </span>
     </button>
   );
@@ -236,8 +235,8 @@ export function GestionPageHeader({ title, subtitle, action }: { title: string; 
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 md:px-10 pt-8 pb-4">
       <div>
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-navy-900">{title}</h1>
-        {subtitle && <p className="text-navy-500 text-sm mt-1">{subtitle}</p>}
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-cream-50">{title}</h1>
+        {subtitle && <p className="text-navy-100/50 text-sm mt-1">{subtitle}</p>}
       </div>
       {action}
     </div>

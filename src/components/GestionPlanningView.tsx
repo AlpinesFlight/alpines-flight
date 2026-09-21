@@ -1,37 +1,78 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Calendar, dateFnsLocalizer, View, Views, SlotInfo } from "react-big-calendar";
+import { format, parse, startOfWeek, getDay } from "date-fns";
+import { fr } from "date-fns/locale";
+import "react-big-calendar/lib/css/react-big-calendar.css";
 import { apiFetch } from "@/lib/api";
 import { AdminEvent } from "@/types/models";
-import { formatDate } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
-import { Plus, X, Trash2, MapPin, Clock } from "lucide-react";
+import { Plus, X, Trash2 } from "lucide-react";
 
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+const locales = { fr };
+const localizer = dateFnsLocalizer({
+  format,
+  parse,
+  startOfWeek: () => startOfWeek(new Date(), { weekStartsOn: 1 }),
+  getDay,
+  locales,
+});
+
+const MESSAGES = {
+  today: "Aujourd'hui",
+  previous: "Précédent",
+  next: "Suivant",
+  month: "Mois",
+  week: "Semaine",
+  day: "Jour",
+  agenda: "Agenda",
+  date: "Date",
+  time: "Heure",
+  event: "Événement",
+  noEventsInRange: "Aucun événement sur cette période.",
+  showMore: (total: number) => `+ ${total} de plus`,
+};
+
+// Couleur déterministe par catégorie (pas de champ couleur dédié sur
+// AdminEvent, contrairement à Aircraft.color pour le planning des vols) —
+// une même catégorie garde toujours la même couleur d'une session à
+// l'autre, simplement dérivée de son nom.
+const CATEGORY_COLORS = ["#f04818", "#2c8fd6", "#8b5cf6", "#22b07a", "#d33d10", "#e0a418"];
+function categoryColor(category: string | null): string {
+  if (!category) return "#2c4d74"; // navy-600 — sans catégorie
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) hash = (hash * 31 + category.charCodeAt(i)) >>> 0;
+  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
 }
 
-function dayLabel(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const tomorrow = new Date(today.getTime() + 86_400_000);
-  if (dayKey(iso) === dayKey(today.toISOString())) return "Aujourd'hui";
-  if (dayKey(iso) === dayKey(tomorrow.toISOString())) return "Demain";
-  return formatDate(d);
-}
-
-function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" });
+interface CalEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  resource: AdminEvent;
 }
 
 export function GestionPlanningView() {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showPast, setShowPast] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
+  const [view, setView] = useState<View>(Views.MONTH);
+  const [date, setDate] = useState(new Date());
+  const [narrowScreen, setNarrowScreen] = useState(false);
 
-  async function load() {
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      setView(Views.DAY);
+      setNarrowScreen(true);
+    }
+  }, []);
+
+  const [modalState, setModalState] = useState<
+    { mode: "create"; start: Date; end: Date } | { mode: "edit"; event: AdminEvent } | null
+  >(null);
+
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiFetch<AdminEvent[]>("/api/admin/events");
@@ -39,37 +80,51 @@ export function GestionPlanningView() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  const calEvents: CalEvent[] = useMemo(
+    () =>
+      events.map((e) => ({
+        id: e.id,
+        title: e.category ? `${e.category} — ${e.title}` : e.title,
+        start: new Date(e.startTime),
+        end: e.endTime ? new Date(e.endTime) : new Date(new Date(e.startTime).getTime() + 3600_000),
+        resource: e,
+      })),
+    [events]
+  );
+
+  const handleSelectSlot = useCallback((slotInfo: SlotInfo) => {
+    setModalState({ mode: "create", start: slotInfo.start, end: slotInfo.end });
   }, []);
 
-  async function handleDelete(event: AdminEvent) {
-    if (!window.confirm(`Supprimer « ${event.title} » de l'agenda ?`)) return;
-    await apiFetch(`/api/admin/events/${event.id}`, { method: "DELETE" });
+  const handleSelectEvent = useCallback((event: CalEvent) => {
+    setModalState({ mode: "edit", event: event.resource });
+  }, []);
+
+  function closeModal() {
+    setModalState(null);
+  }
+
+  function handleSaved() {
+    closeModal();
     load();
   }
 
-  const startOfToday = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
+  const eventPropGetter = useCallback((event: CalEvent) => {
+    return {
+      style: {
+        backgroundColor: categoryColor(event.resource.category),
+        color: "white",
+        borderRadius: "6px",
+        border: "none",
+      },
+    };
   }, []);
-
-  const grouped = useMemo(() => {
-    const visible = events.filter((e) => showPast || new Date(e.startTime).getTime() >= startOfToday);
-    const map = new Map<string, AdminEvent[]>();
-    for (const e of visible) {
-      const key = dayKey(e.startTime);
-      const arr = map.get(key) ?? [];
-      arr.push(e);
-      map.set(key, arr);
-    }
-    return Array.from(map.entries()).sort(([, a], [, b]) => a[0].startTime.localeCompare(b[0].startTime));
-  }, [events, showPast, startOfToday]);
-
-  const pastCount = events.length - events.filter((e) => new Date(e.startTime).getTime() >= startOfToday).length;
 
   return (
     <div>
@@ -78,7 +133,9 @@ export function GestionPlanningView() {
         subtitle="Banque, DGAC, échéances — distinct du planning des vols"
         action={
           <button
-            onClick={() => setShowAdd(true)}
+            onClick={() =>
+              setModalState({ mode: "create", start: new Date(), end: new Date(Date.now() + 3600_000) })
+            }
             className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
           >
             <Plus size={16} /> Ajouter un événement
@@ -86,67 +143,39 @@ export function GestionPlanningView() {
         }
       />
       <div className="px-4 md:px-10 pb-10">
-      {pastCount > 0 && (
-        <button
-          onClick={() => setShowPast((s) => !s)}
-          className="text-xs font-semibold text-navy-600 hover:text-navy-900 bg-navy-50 hover:bg-navy-100 px-3 py-1.5 rounded-full transition-colors mb-4"
-        >
-          {showPast ? "Masquer les événements passés" : `Afficher les événements passés (${pastCount})`}
-        </button>
-      )}
-
-      {!loading && grouped.length === 0 && (
-        <div className="bg-white rounded-2xl border border-navy-100 p-8 text-center text-sm text-navy-600">
-          Aucun événement à venir. Ajoute un rendez-vous, une échéance ou une visite.
+        <div className="gestion-calendar bg-navy-900 rounded-2xl border border-navy-700 p-1.5 md:p-4 h-[70vh] min-h-[500px]">
+          <Calendar
+            localizer={localizer}
+            events={calEvents}
+            startAccessor="start"
+            endAccessor="end"
+            view={view}
+            onView={setView}
+            date={date}
+            onNavigate={setDate}
+            views={narrowScreen ? [Views.MONTH, Views.DAY, Views.AGENDA] : [Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
+            selectable
+            onSelectSlot={handleSelectSlot}
+            onSelectEvent={handleSelectEvent}
+            eventPropGetter={eventPropGetter}
+            messages={MESSAGES}
+            culture="fr"
+            dayLayoutAlgorithm="no-overlap"
+            style={{ height: "100%" }}
+          />
         </div>
-      )}
+        {loading && <p className="text-xs text-navy-100/40 mt-3">Chargement de l&apos;agenda…</p>}
+      </div>
 
-      {grouped.map(([key, dayEvents]) => (
-        <div key={key} className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-5">
-          <div className="px-5 py-3 border-b border-navy-100">
-            <h2 className="font-semibold text-navy-900">{dayLabel(dayEvents[0].startTime)}</h2>
-          </div>
-          <div className="divide-y divide-navy-100">
-            {dayEvents.map((e) => (
-              <div key={e.id} className="flex items-start justify-between gap-3 px-5 py-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  <span className="flex items-center gap-1 text-xs font-semibold text-navy-500 shrink-0 mt-0.5 w-12">
-                    <Clock size={12} /> {timeLabel(e.startTime)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-navy-900 truncate">{e.title}</p>
-                    <p className="text-xs text-navy-500 flex flex-wrap items-center gap-x-2">
-                      {e.category && (
-                        <span className="bg-navy-100 text-navy-700 px-1.5 py-0.5 rounded-full font-semibold">{e.category}</span>
-                      )}
-                      {e.location && (
-                        <span className="flex items-center gap-1">
-                          <MapPin size={11} /> {e.location}
-                        </span>
-                      )}
-                    </p>
-                    {e.notes && <p className="text-xs text-navy-500 mt-0.5">{e.notes}</p>}
-                  </div>
-                </div>
-                <button onClick={() => handleDelete(e)} title="Supprimer" className="text-navy-400 hover:text-red-600 shrink-0">
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {showAdd && (
-        <AddEventModal
-          onClose={() => setShowAdd(false)}
-          onSaved={() => {
-            setShowAdd(false);
-            load();
-          }}
+      {modalState && (
+        <EventModal
+          initialStart={modalState.mode === "create" ? modalState.start : new Date(modalState.event.startTime)}
+          initialEnd={modalState.mode === "create" ? modalState.end : undefined}
+          existing={modalState.mode === "edit" ? modalState.event : null}
+          onClose={closeModal}
+          onSaved={handleSaved}
         />
       )}
-      </div>
     </div>
   );
 }
@@ -158,13 +187,27 @@ function toLocalInput(date: Date) {
 
 const CATEGORY_SUGGESTIONS = ["Banque", "DGAC", "Échéance fiscale", "RDV", "Assurance", "Autre"];
 
-function AddEventModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("");
-  const [startTime, setStartTime] = useState(toLocalInput(new Date()));
-  const [endTime, setEndTime] = useState("");
-  const [location, setLocation] = useState("");
-  const [notes, setNotes] = useState("");
+function EventModal({
+  initialStart,
+  initialEnd,
+  existing,
+  onClose,
+  onSaved,
+}: {
+  initialStart: Date;
+  initialEnd?: Date;
+  existing: AdminEvent | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(existing?.title ?? "");
+  const [category, setCategory] = useState(existing?.category ?? "");
+  const [startTime, setStartTime] = useState(toLocalInput(existing ? new Date(existing.startTime) : initialStart));
+  const [endTime, setEndTime] = useState(
+    existing?.endTime ? toLocalInput(new Date(existing.endTime)) : initialEnd ? toLocalInput(initialEnd) : ""
+  );
+  const [location, setLocation] = useState(existing?.location ?? "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -173,17 +216,19 @@ function AddEventModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     setSaving(true);
     setError(null);
     try {
-      await apiFetch("/api/admin/events", {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          category: category || null,
-          startTime: new Date(startTime).toISOString(),
-          endTime: endTime ? new Date(endTime).toISOString() : null,
-          location: location || null,
-          notes: notes || null,
-        }),
-      });
+      const payload = {
+        title,
+        category: category || null,
+        startTime: new Date(startTime).toISOString(),
+        endTime: endTime ? new Date(endTime).toISOString() : null,
+        location: location || null,
+        notes: notes || null,
+      };
+      if (existing) {
+        await apiFetch(`/api/admin/events/${existing.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        await apiFetch("/api/admin/events", { method: "POST", body: JSON.stringify(payload) });
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
@@ -192,36 +237,43 @@ function AddEventModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     }
   }
 
+  async function handleDelete() {
+    if (!existing) return;
+    if (!window.confirm(`Supprimer « ${existing.title} » de l'agenda ?`)) return;
+    await apiFetch(`/api/admin/events/${existing.id}`, { method: "DELETE" });
+    onSaved();
+  }
+
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
-          <h2 className="font-semibold text-navy-900">Ajouter un événement</h2>
-          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-navy-900 border border-navy-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700 sticky top-0 bg-navy-900">
+          <h2 className="font-semibold text-cream-50">{existing ? "Modifier l'événement" : "Ajouter un événement"}</h2>
+          <button onClick={onClose} className="text-navy-100/50 hover:text-cream-50">
             <X size={20} />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Titre</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input" required />
+            <span className="text-xs font-medium text-navy-100/60">Titre</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input-dark" required />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Début</span>
-              <input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="input" required />
+              <span className="text-xs font-medium text-navy-100/60">Début</span>
+              <input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="input-dark" required />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Fin (optionnel)</span>
-              <input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="input" />
+              <span className="text-xs font-medium text-navy-100/60">Fin (optionnel)</span>
+              <input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="input-dark" />
             </label>
           </div>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Catégorie (optionnel)</span>
+            <span className="text-xs font-medium text-navy-100/60">Catégorie (optionnel)</span>
             <input
-              value={category}
+              value={category ?? ""}
               onChange={(e) => setCategory(e.target.value)}
-              className="input"
+              className="input-dark"
               list="admin-event-categories"
               placeholder="Banque, DGAC..."
             />
@@ -232,21 +284,33 @@ function AddEventModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             </datalist>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Lieu (optionnel)</span>
-            <input value={location} onChange={(e) => setLocation(e.target.value)} className="input" />
+            <span className="text-xs font-medium text-navy-100/60">Lieu (optionnel)</span>
+            <input value={location ?? ""} onChange={(e) => setLocation(e.target.value)} className="input-dark" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Notes (optionnel)</span>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input min-h-16" />
+            <span className="text-xs font-medium text-navy-100/60">Notes (optionnel)</span>
+            <textarea value={notes ?? ""} onChange={(e) => setNotes(e.target.value)} className="input-dark min-h-16" />
           </label>
-          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
-          >
-            {saving ? "Enregistrement..." : "Ajouter"}
-          </button>
+          {error && <p className="text-red-400 text-sm bg-red-500/15 rounded-lg px-3 py-2">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+            >
+              {saving ? "Enregistrement..." : existing ? "Enregistrer" : "Ajouter"}
+            </button>
+            {existing && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                title="Supprimer"
+                className="rounded-lg border border-navy-700 text-navy-100/60 hover:text-red-400 hover:border-red-500/40 px-3 py-2"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </div>
