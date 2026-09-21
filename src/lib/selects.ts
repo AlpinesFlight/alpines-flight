@@ -107,3 +107,21 @@ export const safeSchoolDocumentSelect = {
   uploadedById: true,
   uploadedBy: { select: safeUserSelect },
 } as const;
+
+// Champs d'un AdminDocument (page /gestion) à renvoyer au client — exclut
+// systématiquement fileData, même logique que safeSchoolDocumentSelect. Le
+// fichier ne transite que par /api/admin/documents/[id]/file.
+export const safeAdminDocumentSelect = {
+  id: true,
+  title: true,
+  category: true,
+  status: true,
+  processedAt: true,
+  fileName: true,
+  fileMimeType: true,
+  fileSize: true,
+  notes: true,
+  uploadedAt: true,
+  uploadedById: true,
+  uploadedBy: { select: safeUserSelect },
+} as const;

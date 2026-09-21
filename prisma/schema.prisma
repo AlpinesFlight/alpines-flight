@@ -80,6 +80,12 @@ model User {
   schoolDocumentsUploaded SchoolDocument[]
   documentNotifications DocumentNotification[]
   passwordResetTokens   PasswordResetToken[]
+
+  // Plateforme de gestion administrative (page /gestion) — Gérant
+  // uniquement, voir isGerant dans src/lib/permissions.ts.
+  adminDocumentsUploaded AdminDocument[] @relation("AdminDocumentUploadedBy")
+  adminTasksCreated      AdminTask[]     @relation("AdminTaskCreatedBy")
+  adminEventsCreated     AdminEvent[]    @relation("AdminEventCreatedBy")
 }
 
 model StudentProfile {
@@ -861,4 +867,73 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+// ---------- Gestion (plateforme administrative interne, page /gestion) ----------
+//
+// Réservée au Gérant (isGerant) — distincte de tout ce qui précède, qui
+// concerne l'exploitation de l'école (élèves, vols, formation...). Ici :
+// documents à transmettre au comptable, tâches internes, agenda
+// administratif (banque, DGAC, échéances...) et visio.
+
+enum AdminDocumentStatus {
+  PENDING // à traiter (ex: pas encore récupéré/saisi côté comptable)
+  PROCESSED
+}
+
+model AdminDocument {
+  id           String              @id @default(cuid())
+  title        String
+  category     String? // ex: "Facture fournisseur", "Relevé bancaire", "Note de frais"
+  status       AdminDocumentStatus @default(PENDING)
+  processedAt  DateTime?
+  fileName     String
+  fileMimeType String
+  fileSize     Int
+  // Jamais renvoyé en JSON — streaming uniquement via
+  // /api/admin/documents/[id]/file, même logique que SchoolDocument.fileData.
+  fileData     Bytes
+  notes        String?
+  uploadedAt   DateTime            @default(now())
+  uploadedById String
+  uploadedBy   User                @relation("AdminDocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([status, uploadedAt])
+}
+
+enum AdminTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model AdminTask {
+  id          String            @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  priority    AdminTaskPriority @default(MEDIUM)
+  done        Boolean           @default(false)
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  createdById String
+  createdBy   User              @relation("AdminTaskCreatedBy", fields: [createdById], references: [id])
+
+  @@index([done, dueDate])
+}
+
+model AdminEvent {
+  id          String    @id @default(cuid())
+  title       String
+  category    String? // ex: "Banque", "DGAC", "Échéance fiscale", "RDV"
+  startTime   DateTime
+  endTime     DateTime?
+  location    String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  createdById String
+  createdBy   User      @relation("AdminEventCreatedBy", fields: [createdById], references: [id])
+
+  @@index([startTime])
 }

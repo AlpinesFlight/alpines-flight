@@ -425,3 +425,50 @@ export interface Enrollment {
   progress: ExerciseProgress[];
   sessions?: TrainingSession[];
 }
+
+// ---------- Gestion (plateforme administrative, page /gestion) ----------
+
+export type AdminDocumentStatus = "PENDING" | "PROCESSED";
+
+export interface AdminDocument {
+  id: string;
+  title: string;
+  category: string | null;
+  status: AdminDocumentStatus;
+  processedAt: string | null;
+  fileName: string;
+  fileMimeType: string;
+  fileSize: number;
+  notes: string | null;
+  uploadedAt: string;
+  uploadedById: string;
+  uploadedBy: UserLite;
+}
+
+export type AdminTaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+
+export interface AdminTask {
+  id: string;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  priority: AdminTaskPriority;
+  done: boolean;
+  completedAt: string | null;
+  createdAt: string;
+  createdById: string;
+  createdBy: UserLite;
+}
+
+export interface AdminEvent {
+  id: string;
+  title: string;
+  category: string | null;
+  startTime: string;
+  endTime: string | null;
+  location: string | null;
+  notes: string | null;
+  createdAt: string;
+  createdById: string;
+  createdBy: UserLite;
+}

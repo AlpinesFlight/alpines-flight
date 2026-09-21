@@ -23,6 +23,7 @@ import {
   X,
   Settings,
   Menu,
+  Briefcase,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { clsx } from "clsx";
@@ -30,6 +31,11 @@ import { apiFetch } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
+  // Plateforme de gestion administrative de la société (documents pour le
+  // comptable, tâches, agenda, visio) — distincte de l'exploitation de
+  // l'école ci-dessous, réservée au Gérant comme "Comptes & droits" plus
+  // bas (voir le filtre juste après ce tableau).
+  { href: "/gestion", label: "Gestion", icon: Briefcase, gerantOnly: true },
   { href: "/planning", label: "Planning", icon: CalendarDays },
   // Gestion interne des vols découverte/baptême — pas de réservation
   // publique (voir la page), donc réservé au staff pédagogique comme le
