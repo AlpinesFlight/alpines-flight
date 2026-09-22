@@ -6,7 +6,9 @@ import { apiFetch } from "@/lib/api";
 import { AdminProjectLite, AdminTask, AdminTaskPriority, AdminTaskStatus } from "@/types/models";
 import { formatDate } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
-import { Plus, Trash2, ChevronDown, ChevronRight, LayoutGrid, List, GripVertical } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, LayoutGrid, List, GripVertical, X } from "lucide-react";
+
+const STATUS_LABEL: Record<AdminTaskStatus, string> = { TODO: "À faire", DOING: "En cours", DONE: "Terminé" };
 
 const PRIORITY_LABEL: Record<AdminTaskPriority, string> = {
   LOW: "Basse",
@@ -67,6 +69,7 @@ export function GestionTasksView({
   const [view, setView] = useState<"board" | "list">("board");
   const [showDone, setShowDone] = useState(false);
   const [projectFilter, setProjectFilter] = useState<string>("ALL");
+  const [editingTask, setEditingTask] = useState<AdminTask | null>(null);
 
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<AdminTaskPriority>("MEDIUM");
@@ -206,7 +209,7 @@ export function GestionTasksView({
 
       {tasks.length > 0 &&
         (view === "board" ? (
-          <BoardView tasks={tasks} onSetStatus={setStatus} onDelete={handleDelete} showProjectBadge={showProjectBadge} />
+          <BoardView tasks={tasks} onSetStatus={setStatus} onDelete={handleDelete} onEdit={setEditingTask} showProjectBadge={showProjectBadge} />
         ) : (
           <ListView
             tasks={tasks}
@@ -214,9 +217,28 @@ export function GestionTasksView({
             setShowDone={setShowDone}
             onSetStatus={setStatus}
             onDelete={handleDelete}
+            onEdit={setEditingTask}
             showProjectBadge={showProjectBadge}
           />
         ))}
+
+      {editingTask && (
+        <EditTaskModal
+          task={editingTask}
+          projects={projects}
+          onClose={() => setEditingTask(null)}
+          onSaved={() => {
+            setEditingTask(null);
+            load();
+            onTasksChanged?.();
+          }}
+          onDeleted={() => {
+            setEditingTask(null);
+            load();
+            onTasksChanged?.();
+          }}
+        />
+      )}
     </div>
   );
 
@@ -275,11 +297,13 @@ function BoardView({
   tasks,
   onSetStatus,
   onDelete,
+  onEdit,
   showProjectBadge,
 }: {
   tasks: AdminTask[];
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  onEdit: (t: AdminTask) => void;
   showProjectBadge: boolean;
 }) {
   const [dragOverCol, setDragOverCol] = useState<AdminTaskStatus | null>(null);
@@ -316,7 +340,7 @@ function BoardView({
             </div>
             <div className="flex flex-col gap-2">
               {colTasks.map((t) => (
-                <TaskCard key={t.id} task={t} onSetStatus={onSetStatus} onDelete={onDelete} showProjectBadge={showProjectBadge} />
+                <TaskCard key={t.id} task={t} onSetStatus={onSetStatus} onDelete={onDelete} onEdit={onEdit} showProjectBadge={showProjectBadge} />
               ))}
             </div>
           </div>
@@ -330,11 +354,13 @@ function TaskCard({
   task,
   onSetStatus,
   onDelete,
+  onEdit,
   showProjectBadge,
 }: {
   task: AdminTask;
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  onEdit: (t: AdminTask) => void;
   showProjectBadge: boolean;
 }) {
   const overdue = isOverdue(task);
@@ -342,14 +368,23 @@ function TaskCard({
     <div
       draggable
       onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
-      className="bg-navy-800 rounded-xl border border-navy-700 p-3 cursor-grab active:cursor-grabbing hover:border-navy-600 transition-colors group"
+      onClick={() => onEdit(task)}
+      title="Cliquer pour modifier"
+      className="bg-navy-800 rounded-xl border border-navy-700 p-3 cursor-pointer hover:border-navy-600 transition-colors group"
     >
       <div className="flex items-start gap-1.5">
         <GripVertical size={13} className="text-navy-100/30 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
         <p className={clsx("text-sm font-medium flex-1 min-w-0", task.status === "DONE" ? "text-navy-100/35 line-through" : "text-cream-50")}>
           {task.title}
         </p>
-        <button onClick={() => onDelete(task)} title="Supprimer" className="text-navy-100/30 hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(task);
+          }}
+          title="Supprimer"
+          className="text-navy-100/30 hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
           <Trash2 size={13} />
         </button>
       </div>
@@ -370,7 +405,10 @@ function TaskCard({
         {COLUMNS.filter((c) => c.key !== task.status).map((c) => (
           <button
             key={c.key}
-            onClick={() => onSetStatus(task, c.key)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetStatus(task, c.key);
+            }}
             className="text-[10px] text-navy-100/40 hover:text-sunset-500 hover:underline"
           >
             → {c.label}
@@ -387,6 +425,7 @@ function ListView({
   setShowDone,
   onSetStatus,
   onDelete,
+  onEdit,
   showProjectBadge,
 }: {
   tasks: AdminTask[];
@@ -394,6 +433,7 @@ function ListView({
   setShowDone: (v: boolean) => void;
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  onEdit: (t: AdminTask) => void;
   showProjectBadge: boolean;
 }) {
   const overdue = tasks.filter((t) => isOverdue(t)).sort(sortTasks);
@@ -405,10 +445,10 @@ function ListView({
   return (
     <div>
       {overdue.length > 0 && (
-        <TaskGroup title={`En retard (${overdue.length})`} titleClassName="text-red-400" tasks={overdue} onSetStatus={onSetStatus} onDelete={onDelete} showProjectBadge={showProjectBadge} />
+        <TaskGroup title={`En retard (${overdue.length})`} titleClassName="text-red-400" tasks={overdue} onSetStatus={onSetStatus} onDelete={onDelete} onEdit={onEdit} showProjectBadge={showProjectBadge} />
       )}
       {todo.length > 0 && (
-        <TaskGroup title="À faire / en cours" tasks={todo} onSetStatus={onSetStatus} onDelete={onDelete} showProjectBadge={showProjectBadge} />
+        <TaskGroup title="À faire / en cours" tasks={todo} onSetStatus={onSetStatus} onDelete={onDelete} onEdit={onEdit} showProjectBadge={showProjectBadge} />
       )}
 
       {done.length > 0 && (
@@ -422,7 +462,7 @@ function ListView({
           {showDone && (
             <div className="divide-y divide-navy-800 border-t border-navy-700">
               {done.map((t) => (
-                <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} showProjectBadge={showProjectBadge} />
+                <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} onEdit={onEdit} showProjectBadge={showProjectBadge} />
               ))}
             </div>
           )}
@@ -438,6 +478,7 @@ function TaskGroup({
   tasks,
   onSetStatus,
   onDelete,
+  onEdit,
   showProjectBadge,
 }: {
   title: string;
@@ -445,6 +486,7 @@ function TaskGroup({
   tasks: AdminTask[];
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  onEdit: (t: AdminTask) => void;
   showProjectBadge: boolean;
 }) {
   return (
@@ -454,7 +496,7 @@ function TaskGroup({
       </div>
       <div className="divide-y divide-navy-800">
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} showProjectBadge={showProjectBadge} />
+          <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} onEdit={onEdit} showProjectBadge={showProjectBadge} />
         ))}
       </div>
     </div>
@@ -465,22 +507,29 @@ function TaskRow({
   task,
   onSetStatus,
   onDelete,
+  onEdit,
   showProjectBadge,
 }: {
   task: AdminTask;
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: () => void;
+  onEdit: (t: AdminTask) => void;
   showProjectBadge: boolean;
 }) {
   const overdue = isOverdue(task);
   return (
-    <div className="flex items-center justify-between gap-3 px-5 py-3">
-      <label className="flex items-center gap-3 min-w-0 cursor-pointer">
+    <div
+      onClick={() => onEdit(task)}
+      title="Cliquer pour modifier"
+      className="flex items-center justify-between gap-3 px-5 py-3 cursor-pointer hover:bg-navy-800/40 transition-colors"
+    >
+      <div className="flex items-center gap-3 min-w-0">
         <input
           type="checkbox"
           checked={task.status === "DONE"}
+          onClick={(e) => e.stopPropagation()}
           onChange={() => onSetStatus(task, task.status === "DONE" ? "TODO" : "DONE")}
-          className="shrink-0 w-4 h-4 accent-sunset-500"
+          className="shrink-0 w-4 h-4 accent-sunset-500 cursor-pointer"
         />
         <div className="min-w-0">
           <p className={clsx("text-sm font-medium truncate", task.status === "DONE" ? "text-navy-100/35 line-through" : "text-cream-50")}>
@@ -488,7 +537,7 @@ function TaskRow({
           </p>
           {task.description && <p className="text-xs text-navy-100/45 truncate">{task.description}</p>}
         </div>
-      </label>
+      </div>
       <div className="flex items-center gap-2 shrink-0">
         {showProjectBadge && task.project && <ProjectBadge project={task.project} />}
         {task.status === "DOING" && (
@@ -509,9 +558,149 @@ function TaskRow({
             {PRIORITY_LABEL[task.priority]}
           </span>
         )}
-        <button onClick={onDelete} title="Supprimer" className="text-navy-100/40 hover:text-red-400">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          title="Supprimer"
+          className="text-navy-100/40 hover:text-red-400"
+        >
           <Trash2 size={15} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function EditTaskModal({
+  task,
+  projects,
+  onClose,
+  onSaved,
+  onDeleted,
+}: {
+  task: AdminTask;
+  projects: AdminProjectLite[];
+  onClose: () => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+}) {
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description ?? "");
+  const [priority, setPriority] = useState<AdminTaskPriority>(task.priority);
+  const [status, setStatus] = useState<AdminTaskStatus>(task.status);
+  const [dueDate, setDueDate] = useState(task.dueDate ? task.dueDate.slice(0, 10) : "");
+  const [taskProjectId, setTaskProjectId] = useState(task.projectId ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/admin/tasks/${task.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title,
+          description: description || null,
+          priority,
+          status,
+          dueDate: dueDate || null,
+          ...(projects.length > 0 ? { projectId: taskProjectId || null } : {}),
+        }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Supprimer la tâche « ${task.title} » ?`)) return;
+    await apiFetch(`/api/admin/tasks/${task.id}`, { method: "DELETE" });
+    onDeleted();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-navy-900 border border-navy-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700 sticky top-0 bg-navy-900">
+          <h2 className="font-semibold text-cream-50">Modifier la tâche</h2>
+          <button onClick={onClose} className="text-navy-100/50 hover:text-cream-50">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-100/60">Titre</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input-dark" required autoFocus />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-100/60">Description (optionnel)</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="input-dark min-h-20" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-100/60">Priorité</span>
+              <select value={priority} onChange={(e) => setPriority(e.target.value as AdminTaskPriority)} className="input-dark">
+                {(Object.keys(PRIORITY_LABEL) as AdminTaskPriority[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-100/60">Statut</span>
+              <select value={status} onChange={(e) => setStatus(e.target.value as AdminTaskStatus)} className="input-dark">
+                {(Object.keys(STATUS_LABEL) as AdminTaskStatus[]).map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-100/60">Échéance (optionnel)</span>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input-dark" />
+          </label>
+          {projects.length > 0 && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-100/60">Projet</span>
+              <select value={taskProjectId} onChange={(e) => setTaskProjectId(e.target.value)} className="input-dark">
+                <option value="">— Aucun projet —</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {error && <p className="text-red-400 text-sm bg-red-500/15 rounded-lg px-3 py-2">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving || !title.trim()}
+              className="flex-1 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+            >
+              {saving ? "Enregistrement..." : "Enregistrer"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              title="Supprimer"
+              className="rounded-lg border border-navy-700 text-navy-100/60 hover:text-red-400 hover:border-red-500/40 px-3 py-2"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
