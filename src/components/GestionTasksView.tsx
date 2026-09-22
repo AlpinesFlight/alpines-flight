@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { apiFetch } from "@/lib/api";
-import { AdminTask, AdminTaskPriority, AdminTaskStatus } from "@/types/models";
+import { AdminProjectLite, AdminTask, AdminTaskPriority, AdminTaskStatus } from "@/types/models";
 import { formatDate } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
 import { Plus, Trash2, ChevronDown, ChevronRight, LayoutGrid, List, GripVertical } from "lucide-react";
@@ -44,21 +44,43 @@ function sortTasks(a: AdminTask, b: AdminTask) {
   return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
 }
 
-export function GestionTasksView() {
+// Réutilisé tel quel (même tableau Kanban, même filtre) par la page Tâches
+// globale (pas de projectId) et par le détail d'un projet (projectId fixé,
+// header masqué — le détail projet a le sien, plus riche, avec sa propre
+// barre de progression : onTasksChanged la prévient de rafraîchir après
+// tout ajout/déplacement/suppression ici, sinon elle resterait figée sur
+// le taskCount/doneCount lus une seule fois à l'ouverture de la page). Le
+// filtre par projet, lui, n'a de sens que côté global : dans un projet on
+// est déjà implicitement filtré.
+export function GestionTasksView({
+  projectId,
+  hideHeader,
+  onTasksChanged,
+}: {
+  projectId?: string;
+  hideHeader?: boolean;
+  onTasksChanged?: () => void;
+}) {
   const [tasks, setTasks] = useState<AdminTask[]>([]);
+  const [projects, setProjects] = useState<AdminProjectLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"board" | "list">("board");
   const [showDone, setShowDone] = useState(false);
+  const [projectFilter, setProjectFilter] = useState<string>("ALL");
 
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<AdminTaskPriority>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
+  const [newTaskProject, setNewTaskProject] = useState("");
   const [adding, setAdding] = useState(false);
+
+  const effectiveProjectFilter = projectId ?? (projectFilter === "ALL" ? undefined : projectFilter);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await apiFetch<AdminTask[]>("/api/admin/tasks");
+      const qs = effectiveProjectFilter ? `?projectId=${encodeURIComponent(effectiveProjectFilter)}` : "";
+      const data = await apiFetch<AdminTask[]>(`/api/admin/tasks${qs}`);
       setTasks(data);
     } finally {
       setLoading(false);
@@ -67,7 +89,15 @@ export function GestionTasksView() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveProjectFilter]);
+
+  useEffect(() => {
+    if (projectId) return; // page détail projet : pas besoin de la liste des projets
+    apiFetch<AdminProjectLite[]>("/api/admin/projects")
+      .then((data) => setProjects(data.map((p) => ({ id: p.id, name: p.name, color: p.color }))))
+      .catch(() => {});
+  }, [projectId]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -76,12 +106,19 @@ export function GestionTasksView() {
     try {
       await apiFetch("/api/admin/tasks", {
         method: "POST",
-        body: JSON.stringify({ title: title.trim(), priority, dueDate: dueDate || null }),
+        body: JSON.stringify({
+          title: title.trim(),
+          priority,
+          dueDate: dueDate || null,
+          projectId: projectId || newTaskProject || null,
+        }),
       });
       setTitle("");
       setPriority("MEDIUM");
       setDueDate("");
+      setNewTaskProject("");
       load();
+      onTasksChanged?.();
     } finally {
       setAdding(false);
     }
@@ -91,91 +128,146 @@ export function GestionTasksView() {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status } : t)));
     await apiFetch(`/api/admin/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
     load();
+    onTasksChanged?.();
   }
 
   async function handleDelete(task: AdminTask) {
     if (!window.confirm(`Supprimer la tâche « ${task.title} » ?`)) return;
     await apiFetch(`/api/admin/tasks/${task.id}`, { method: "DELETE" });
     load();
+    onTasksChanged?.();
   }
 
   const overdueCount = useMemo(() => tasks.filter(isOverdue).length, [tasks]);
+  const showProjectBadge = !projectId;
 
-  return (
-    <div>
-      <GestionPageHeader
-        title="Tâches"
-        subtitle="Check-list interne — priorités et échéances"
-        action={
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-navy-900 border border-navy-700 rounded-lg p-1 gap-1">
-              <button
-                onClick={() => setView("board")}
-                className={clsx(
-                  "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  view === "board" ? "bg-navy-700 text-cream-50" : "text-navy-100/60 hover:text-cream-50"
-                )}
-              >
-                <LayoutGrid size={13} /> Tableau
-              </button>
-              <button
-                onClick={() => setView("list")}
-                className={clsx(
-                  "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  view === "list" ? "bg-navy-700 text-cream-50" : "text-navy-100/60 hover:text-cream-50"
-                )}
-              >
-                <List size={13} /> Liste
-              </button>
-            </div>
-          </div>
-        }
-      />
-      <div className="px-4 md:px-10 pb-10">
-        <form onSubmit={handleAdd} className="bg-navy-900 rounded-2xl border border-navy-700 p-3 flex flex-wrap items-center gap-2 mb-5">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Nouvelle tâche..."
-            className="input-dark flex-1 min-w-[180px]"
-          />
-          <select value={priority} onChange={(e) => setPriority(e.target.value as AdminTaskPriority)} className="input-dark w-auto">
-            {(Object.keys(PRIORITY_LABEL) as AdminTaskPriority[]).map((p) => (
-              <option key={p} value={p}>
-                {PRIORITY_LABEL[p]}
+  const content = (
+    <div className={hideHeader ? "" : "px-4 md:px-10 pb-10"}>
+      <form onSubmit={handleAdd} className="bg-navy-900 rounded-2xl border border-navy-700 p-3 flex flex-wrap items-center gap-2 mb-5">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Nouvelle tâche..."
+          className="input-dark flex-1 min-w-[180px]"
+        />
+        <select value={priority} onChange={(e) => setPriority(e.target.value as AdminTaskPriority)} className="input-dark w-auto">
+          {(Object.keys(PRIORITY_LABEL) as AdminTaskPriority[]).map((p) => (
+            <option key={p} value={p}>
+              {PRIORITY_LABEL[p]}
+            </option>
+          ))}
+        </select>
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input-dark w-auto" />
+        {!projectId && projects.length > 0 && (
+          <select value={newTaskProject} onChange={(e) => setNewTaskProject(e.target.value)} className="input-dark w-auto">
+            <option value="">— Aucun projet —</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
             ))}
           </select>
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input-dark w-auto" />
-          <button
-            type="submit"
-            disabled={adding || !title.trim()}
-            className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors disabled:opacity-60"
-          >
-            <Plus size={16} /> Ajouter
-          </button>
-        </form>
-
-        {!loading && tasks.length === 0 && (
-          <div className="bg-navy-900 rounded-2xl border border-navy-700 p-8 text-center text-sm text-navy-100/50">
-            Aucune tâche pour l&apos;instant.
-          </div>
         )}
+        <button
+          type="submit"
+          disabled={adding || !title.trim()}
+          className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors disabled:opacity-60"
+        >
+          <Plus size={16} /> Ajouter
+        </button>
+      </form>
 
-        {overdueCount > 0 && (
-          <p className="text-xs font-semibold text-red-400 mb-3">
-            {overdueCount} tâche{overdueCount !== 1 ? "s" : ""} en retard
-          </p>
-        )}
+      {!projectId && projects.length > 0 && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-navy-100/50">Projet :</span>
+          <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="input-dark w-auto text-xs py-1.5">
+            <option value="ALL">Tous</option>
+            <option value="none">Sans projet</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-        {tasks.length > 0 &&
-          (view === "board" ? (
-            <BoardView tasks={tasks} onSetStatus={setStatus} onDelete={handleDelete} />
-          ) : (
-            <ListView tasks={tasks} showDone={showDone} setShowDone={setShowDone} onSetStatus={setStatus} onDelete={handleDelete} />
-          ))}
-      </div>
+      {!loading && tasks.length === 0 && (
+        <div className="bg-navy-900 rounded-2xl border border-navy-700 p-8 text-center text-sm text-navy-100/50">
+          Aucune tâche pour l&apos;instant.
+        </div>
+      )}
+
+      {overdueCount > 0 && (
+        <p className="text-xs font-semibold text-red-400 mb-3">
+          {overdueCount} tâche{overdueCount !== 1 ? "s" : ""} en retard
+        </p>
+      )}
+
+      {tasks.length > 0 &&
+        (view === "board" ? (
+          <BoardView tasks={tasks} onSetStatus={setStatus} onDelete={handleDelete} showProjectBadge={showProjectBadge} />
+        ) : (
+          <ListView
+            tasks={tasks}
+            showDone={showDone}
+            setShowDone={setShowDone}
+            onSetStatus={setStatus}
+            onDelete={handleDelete}
+            showProjectBadge={showProjectBadge}
+          />
+        ))}
     </div>
+  );
+
+  const viewToggle = (
+    <div className="flex items-center bg-navy-900 border border-navy-700 rounded-lg p-1 gap-1">
+      <button
+        onClick={() => setView("board")}
+        className={clsx(
+          "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
+          view === "board" ? "bg-navy-700 text-cream-50" : "text-navy-100/60 hover:text-cream-50"
+        )}
+      >
+        <LayoutGrid size={13} /> Tableau
+      </button>
+      <button
+        onClick={() => setView("list")}
+        className={clsx(
+          "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors",
+          view === "list" ? "bg-navy-700 text-cream-50" : "text-navy-100/60 hover:text-cream-50"
+        )}
+      >
+        <List size={13} /> Liste
+      </button>
+    </div>
+  );
+
+  if (hideHeader) {
+    return (
+      <div>
+        <div className="flex justify-end mb-3">{viewToggle}</div>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <GestionPageHeader title="Tâches" subtitle="Check-list interne — priorités et échéances" action={viewToggle} />
+      {content}
+    </div>
+  );
+}
+
+function ProjectBadge({ project }: { project: AdminProjectLite }) {
+  return (
+    <span
+      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+      style={{ backgroundColor: `${project.color}26`, color: project.color }}
+    >
+      {project.name}
+    </span>
   );
 }
 
@@ -183,10 +275,12 @@ function BoardView({
   tasks,
   onSetStatus,
   onDelete,
+  showProjectBadge,
 }: {
   tasks: AdminTask[];
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  showProjectBadge: boolean;
 }) {
   const [dragOverCol, setDragOverCol] = useState<AdminTaskStatus | null>(null);
 
@@ -222,7 +316,7 @@ function BoardView({
             </div>
             <div className="flex flex-col gap-2">
               {colTasks.map((t) => (
-                <TaskCard key={t.id} task={t} onSetStatus={onSetStatus} onDelete={onDelete} />
+                <TaskCard key={t.id} task={t} onSetStatus={onSetStatus} onDelete={onDelete} showProjectBadge={showProjectBadge} />
               ))}
             </div>
           </div>
@@ -236,10 +330,12 @@ function TaskCard({
   task,
   onSetStatus,
   onDelete,
+  showProjectBadge,
 }: {
   task: AdminTask;
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  showProjectBadge: boolean;
 }) {
   const overdue = isOverdue(task);
   return (
@@ -258,6 +354,7 @@ function TaskCard({
         </button>
       </div>
       <div className="flex items-center flex-wrap gap-1.5 mt-2 pl-[18px]">
+        {showProjectBadge && task.project && <ProjectBadge project={task.project} />}
         <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", PRIORITY_STYLE[task.priority])}>
           {PRIORITY_LABEL[task.priority]}
         </span>
@@ -290,12 +387,14 @@ function ListView({
   setShowDone,
   onSetStatus,
   onDelete,
+  showProjectBadge,
 }: {
   tasks: AdminTask[];
   showDone: boolean;
   setShowDone: (v: boolean) => void;
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  showProjectBadge: boolean;
 }) {
   const overdue = tasks.filter((t) => isOverdue(t)).sort(sortTasks);
   const todo = tasks.filter((t) => t.status !== "DONE" && !isOverdue(t)).sort(sortTasks);
@@ -306,9 +405,11 @@ function ListView({
   return (
     <div>
       {overdue.length > 0 && (
-        <TaskGroup title={`En retard (${overdue.length})`} titleClassName="text-red-400" tasks={overdue} onSetStatus={onSetStatus} onDelete={onDelete} />
+        <TaskGroup title={`En retard (${overdue.length})`} titleClassName="text-red-400" tasks={overdue} onSetStatus={onSetStatus} onDelete={onDelete} showProjectBadge={showProjectBadge} />
       )}
-      {todo.length > 0 && <TaskGroup title="À faire / en cours" tasks={todo} onSetStatus={onSetStatus} onDelete={onDelete} />}
+      {todo.length > 0 && (
+        <TaskGroup title="À faire / en cours" tasks={todo} onSetStatus={onSetStatus} onDelete={onDelete} showProjectBadge={showProjectBadge} />
+      )}
 
       {done.length > 0 && (
         <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden mt-5">
@@ -321,7 +422,7 @@ function ListView({
           {showDone && (
             <div className="divide-y divide-navy-800 border-t border-navy-700">
               {done.map((t) => (
-                <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} />
+                <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} showProjectBadge={showProjectBadge} />
               ))}
             </div>
           )}
@@ -337,12 +438,14 @@ function TaskGroup({
   tasks,
   onSetStatus,
   onDelete,
+  showProjectBadge,
 }: {
   title: string;
   titleClassName?: string;
   tasks: AdminTask[];
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: (t: AdminTask) => void;
+  showProjectBadge: boolean;
 }) {
   return (
     <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden mb-5">
@@ -351,7 +454,7 @@ function TaskGroup({
       </div>
       <div className="divide-y divide-navy-800">
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} />
+          <TaskRow key={t.id} task={t} onSetStatus={onSetStatus} onDelete={() => onDelete(t)} showProjectBadge={showProjectBadge} />
         ))}
       </div>
     </div>
@@ -362,10 +465,12 @@ function TaskRow({
   task,
   onSetStatus,
   onDelete,
+  showProjectBadge,
 }: {
   task: AdminTask;
   onSetStatus: (t: AdminTask, s: AdminTaskStatus) => void;
   onDelete: () => void;
+  showProjectBadge: boolean;
 }) {
   const overdue = isOverdue(task);
   return (
@@ -385,6 +490,7 @@ function TaskRow({
         </div>
       </label>
       <div className="flex items-center gap-2 shrink-0">
+        {showProjectBadge && task.project && <ProjectBadge project={task.project} />}
         {task.status === "DOING" && (
           <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-sunset-500/15 text-sunset-500 whitespace-nowrap">En cours</span>
         )}

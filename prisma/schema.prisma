@@ -88,7 +88,7 @@ model User {
   adminEventsCreated     AdminEvent[]    @relation("AdminEventCreatedBy")
   adminNotesCreated      AdminNote[]     @relation("AdminNoteCreatedBy")
   adminContactsCreated   AdminContact[]  @relation("AdminContactCreatedBy")
-  adminSettingsUpdated   AdminSettings[]
+  adminProjectsCreated   AdminProject[]  @relation("AdminProjectCreatedBy")
 }
 
 model StudentProfile {
@@ -931,6 +931,42 @@ model AdminTask {
   createdAt   DateTime          @default(now())
   createdById String
   createdBy   User              @relation("AdminTaskCreatedBy", fields: [createdById], references: [id])
+  // Un projet est optionnel — toutes les tâches n'ont pas besoin d'être
+  // rattachées à un projet (voir AdminProject). Supprimer le projet ne
+  // supprime jamais ses tâches (onDelete: SetNull) : elles redeviennent de
+  // simples tâches sans projet plutôt que d'être perdues.
+  projectId   String?
+  project     AdminProject?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([status, dueDate])
+  @@index([projectId])
+}
+
+enum AdminProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+// Regroupe des tâches sous un même projet (ex. "Réfection hangar", "Audit
+// DGAC 2026") — la progression (% de tâches DONE) et le nombre de tâches
+// sont toujours calculés à la volée depuis AdminTask, jamais stockés ici,
+// pour ne jamais désynchroniser. Distinct d'un AdminEvent (agenda) : un
+// projet n'a pas d'horaire, juste une échéance optionnelle.
+model AdminProject {
+  id          String             @id @default(cuid())
+  name        String
+  description String?
+  color       String             @default("#f04818")
+  status      AdminProjectStatus @default(ACTIVE)
+  dueDate     DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdById String
+  createdBy   User               @relation("AdminProjectCreatedBy", fields: [createdById], references: [id])
+
+  tasks AdminTask[]
 
   @@index([status, dueDate])
 }
@@ -986,17 +1022,3 @@ model AdminContact {
   @@index([category, name])
 }
 
-// Réglages de la plateforme de gestion — une seule ligne, comme
-// SchoolSettings mais volontairement séparée : ceci reste Gérant uniquement
-// (voir /api/admin/settings), alors que SchoolSettings est lisible de tout
-// compte connecté. Pour l'instant, seulement le lien de "salle habituelle"
-// Google Meet (voir GestionVisioView.tsx) — meet.google.com ne peut pas
-// être intégré en iframe (bloqué par Google), donc ce lien s'ouvre toujours
-// dans un nouvel onglet.
-model AdminSettings {
-  id             String   @id @default("singleton")
-  googleMeetLink String?
-  updatedAt      DateTime @updatedAt
-  updatedById    String?
-  updatedBy      User?    @relation(fields: [updatedById], references: [id])
-}

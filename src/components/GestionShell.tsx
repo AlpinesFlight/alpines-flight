@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Inbox,
   ListChecks,
+  FolderKanban,
   CalendarClock,
   StickyNote,
   Contact2,
@@ -23,6 +24,7 @@ import {
 const NAV_ITEMS = [
   { href: "/gestion", label: "Accueil", icon: LayoutDashboard },
   { href: "/gestion/documents", label: "Documents", icon: Inbox },
+  { href: "/gestion/projets", label: "Projets", icon: FolderKanban },
   { href: "/gestion/taches", label: "Tâches", icon: ListChecks },
   { href: "/gestion/planning", label: "Agenda", icon: CalendarClock },
   { href: "/gestion/notes", label: "Notes", icon: StickyNote },
@@ -31,6 +33,7 @@ const NAV_ITEMS = [
 ];
 
 type SearchResults = {
+  projects: { id: string; name: string; color: string }[];
   documents: { id: string; title: string; category: string | null }[];
   tasks: { id: string; title: string; status: string }[];
   notes: { id: string; title: string }[];
@@ -38,7 +41,7 @@ type SearchResults = {
   events: { id: string; title: string; startTime: string }[];
 };
 
-const EMPTY_RESULTS: SearchResults = { documents: [], tasks: [], notes: [], contacts: [], events: [] };
+const EMPTY_RESULTS: SearchResults = { projects: [], documents: [], tasks: [], notes: [], contacts: [], events: [] };
 
 // Coquille "workspace" de la plateforme de gestion — fond sombre
 // délibérément distinct du reste de l'appli (claire) : monter dans
@@ -84,7 +87,12 @@ export function GestionShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const totalResults =
-    results.documents.length + results.tasks.length + results.notes.length + results.contacts.length + results.events.length;
+    results.projects.length +
+    results.documents.length +
+    results.tasks.length +
+    results.notes.length +
+    results.contacts.length +
+    results.events.length;
 
   function goTo(href: string) {
     setQuery("");
@@ -141,6 +149,11 @@ export function GestionShell({ children }: { children: React.ReactNode }) {
               {totalResults === 0 && !searching && (
                 <p className="px-3 py-2 text-xs text-navy-100/50">Aucun résultat pour « {query.trim()} ».</p>
               )}
+              <SearchGroup label="Projets" onSeeAll={() => goTo("/gestion/projets")}>
+                {results.projects.map((p) => (
+                  <SearchRow key={p.id} label={p.name} onClick={() => goTo(`/gestion/projets/${p.id}`)} />
+                ))}
+              </SearchGroup>
               <SearchGroup label="Documents" onSeeAll={() => goTo("/gestion/documents")}>
                 {results.documents.map((d) => (
                   <SearchRow key={d.id} label={d.title} sub={d.category} onClick={() => goTo("/gestion/documents")} />

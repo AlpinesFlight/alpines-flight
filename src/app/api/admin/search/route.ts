@@ -4,19 +4,25 @@ import { prisma } from "@/lib/prisma";
 import { isGerant } from "@/lib/permissions";
 
 // Recherche transversale (barre de recherche façon Notion, GestionShell) —
-// documents, tâches, notes, contacts et agenda en une seule requête. Limité
-// à 5 résultats par catégorie : c'est un accès rapide, pas une page de
-// résultats à faire défiler.
+// projets, documents, tâches, notes, contacts et agenda en une seule
+// requête. Limité à 5 résultats par catégorie : c'est un accès rapide, pas
+// une page de résultats à faire défiler.
 export async function GET(req: Request) {
   const session = await auth();
   if (!session || !isGerant(session.user.role))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const q = new URL(req.url).searchParams.get("q")?.trim();
-  if (!q || q.length < 2) return NextResponse.json({ documents: [], tasks: [], notes: [], contacts: [], events: [] });
+  if (!q || q.length < 2)
+    return NextResponse.json({ projects: [], documents: [], tasks: [], notes: [], contacts: [], events: [] });
 
   const take = 5;
-  const [documents, tasks, notes, contacts, events] = await Promise.all([
+  const [projects, documents, tasks, notes, contacts, events] = await Promise.all([
+    prisma.adminProject.findMany({
+      where: { name: { contains: q, mode: "insensitive" } },
+      select: { id: true, name: true, color: true },
+      take,
+    }),
     prisma.adminDocument.findMany({
       where: { title: { contains: q, mode: "insensitive" } },
       select: { id: true, title: true, category: true },
@@ -44,5 +50,5 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  return NextResponse.json({ documents, tasks, notes, contacts, events });
+  return NextResponse.json({ projects, documents, tasks, notes, contacts, events });
 }

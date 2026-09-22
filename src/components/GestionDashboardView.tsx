@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
 import { apiFetch } from "@/lib/api";
-import { AdminDocument, AdminEvent, AdminTask } from "@/types/models";
+import { AdminDocument, AdminEvent, AdminProject, AdminTask } from "@/types/models";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
-import { Inbox, ListChecks, CalendarClock, StickyNote, Contact2, Video, ArrowRight } from "lucide-react";
+import { Inbox, ListChecks, FolderKanban, CalendarClock, StickyNote, Contact2, Video, ArrowRight } from "lucide-react";
 
 function isOverdue(task: AdminTask, now: number): boolean {
   return !!task.dueDate && task.status !== "DONE" && new Date(task.dueDate).getTime() < now;
@@ -17,6 +17,7 @@ export function GestionDashboardView() {
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
   const [tasks, setTasks] = useState<AdminTask[]>([]);
   const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [projects, setProjects] = useState<AdminProject[]>([]);
   const [loading, setLoading] = useState(true);
   // Capturé au chargement plutôt que lu pendant le rendu (Date.now() est impur).
   const [now] = useState(() => Date.now());
@@ -26,11 +27,13 @@ export function GestionDashboardView() {
       apiFetch<AdminDocument[]>("/api/admin/documents"),
       apiFetch<AdminTask[]>("/api/admin/tasks"),
       apiFetch<AdminEvent[]>("/api/admin/events"),
+      apiFetch<AdminProject[]>("/api/admin/projects"),
     ])
-      .then(([d, t, e]) => {
+      .then(([d, t, e, p]) => {
         setDocuments(d);
         setTasks(t);
         setEvents(e);
+        setProjects(p);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -39,12 +42,14 @@ export function GestionDashboardView() {
   const overdueTasks = tasks.filter((t) => isOverdue(t, now));
   const activeTasks = tasks.filter((t) => t.status !== "DONE");
   const nextEvents = events.filter((e) => new Date(e.startTime).getTime() >= now).slice(0, 4);
+  const activeProjects = projects.filter((p) => p.status === "ACTIVE" || p.status === "ON_HOLD");
 
   return (
     <div>
       <GestionPageHeader title="Accueil" subtitle="Vue d'ensemble de la gestion administrative" />
       <div className="px-4 md:px-10 pb-10">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+          <StatCard value={activeProjects.length} label="Projets actifs" href="/gestion/projets" tone="navy" />
           <StatCard value={pendingDocs.length} label="Documents à traiter" href="/gestion/documents" tone={pendingDocs.length > 0 ? "sunset" : "navy"} />
           <StatCard value={overdueTasks.length} label="Tâches en retard" href="/gestion/taches" tone={overdueTasks.length > 0 ? "red" : "navy"} />
           <StatCard value={activeTasks.length} label="Tâches actives" href="/gestion/taches" tone="navy" />
@@ -52,6 +57,19 @@ export function GestionDashboardView() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <Panel title="Projets actifs" href="/gestion/projets" empty="Aucun projet actif." loading={loading} isEmpty={activeProjects.length === 0}>
+            {activeProjects.slice(0, 5).map((p) => {
+              const pct = p.taskCount > 0 ? Math.round((p.doneCount / p.taskCount) * 100) : 0;
+              return (
+                <Link key={p.id} href={`/gestion/projets/${p.id}`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-navy-800/50 transition-colors">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                  <span className="text-sm text-cream-50 truncate flex-1">{p.name}</span>
+                  <span className="text-xs text-navy-100/40 shrink-0">{pct}%</span>
+                </Link>
+              );
+            })}
+          </Panel>
+
           <Panel title="Documents à traiter" href="/gestion/documents" empty="Rien à traiter — tout est à jour." loading={loading} isEmpty={pendingDocs.length === 0}>
             {pendingDocs.slice(0, 5).map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
@@ -60,7 +78,9 @@ export function GestionDashboardView() {
               </div>
             ))}
           </Panel>
+        </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           <Panel title="Tâches prioritaires" href="/gestion/taches" empty="Aucune tâche urgente." loading={loading} isEmpty={activeTasks.length === 0}>
             {[...overdueTasks, ...activeTasks.filter((t) => !isOverdue(t, now))].slice(0, 5).map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
@@ -73,22 +93,23 @@ export function GestionDashboardView() {
               </div>
             ))}
           </Panel>
+
+          <Panel title="Prochains événements" href="/gestion/planning" empty="Rien de prévu pour l'instant." loading={loading} isEmpty={nextEvents.length === 0}>
+            {nextEvents.map((e) => (
+              <div key={e.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm text-cream-50 truncate">{e.title}</p>
+                  {e.category && <p className="text-xs text-navy-100/40">{e.category}</p>}
+                </div>
+                <p className="text-xs text-navy-100/40 shrink-0">{formatDateTime(e.startTime)}</p>
+              </div>
+            ))}
+          </Panel>
         </div>
 
-        <Panel title="Prochains événements" href="/gestion/planning" empty="Rien de prévu pour l'instant." loading={loading} isEmpty={nextEvents.length === 0}>
-          {nextEvents.map((e) => (
-            <div key={e.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
-              <div className="min-w-0">
-                <p className="text-sm text-cream-50 truncate">{e.title}</p>
-                {e.category && <p className="text-xs text-navy-100/40">{e.category}</p>}
-              </div>
-              <p className="text-xs text-navy-100/40 shrink-0">{formatDateTime(e.startTime)}</p>
-            </div>
-          ))}
-        </Panel>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6">
           <QuickLink href="/gestion/documents" icon={Inbox} label="Documents" />
+          <QuickLink href="/gestion/projets" icon={FolderKanban} label="Projets" />
           <QuickLink href="/gestion/taches" icon={ListChecks} label="Tâches" />
           <QuickLink href="/gestion/planning" icon={CalendarClock} label="Agenda" />
           <QuickLink href="/gestion/notes" icon={StickyNote} label="Notes" />

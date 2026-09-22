@@ -14,6 +14,7 @@ const patchSchema = z.object({
   dueDate: z.string().nullable().optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
   status: z.enum(["TODO", "DOING", "DONE"]).optional(),
+  projectId: z.string().nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -38,7 +39,7 @@ export async function PATCH(req: Request, { params }: Params) {
       ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}),
       ...(status !== undefined ? { status, completedAt: status === "DONE" ? new Date() : null } : {}),
     },
-    include: { createdBy: { select: safeUserSelect } },
+    include: { createdBy: { select: safeUserSelect }, project: { select: { id: true, name: true, color: true } } },
   });
   return NextResponse.json(task);
 }

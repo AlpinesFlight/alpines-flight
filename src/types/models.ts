@@ -447,6 +447,28 @@ export interface AdminDocument {
 
 export type AdminTaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 export type AdminTaskStatus = "TODO" | "DOING" | "DONE";
+export type AdminProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "ARCHIVED";
+
+export interface AdminProjectLite {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface AdminProject {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  status: AdminProjectStatus;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+  createdBy: UserLite;
+  taskCount: number;
+  doneCount: number;
+}
 
 export interface AdminTask {
   id: string;
@@ -459,6 +481,8 @@ export interface AdminTask {
   createdAt: string;
   createdById: string;
   createdBy: UserLite;
+  projectId: string | null;
+  project: AdminProjectLite | null;
 }
 
 export interface AdminEvent {
