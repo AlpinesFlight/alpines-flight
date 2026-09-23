@@ -32,7 +32,10 @@ export async function GET(_req: Request, { params }: Params) {
         include: {
           instructor: { select: safeUserSelect },
           aircraft: { select: safeAircraftSelect },
-          flightLog: true,
+          // include (pas juste true) : le formulaire d'édition de séance
+          // affiche `flightLog.aircraft.registration` (voir SessionFormModal
+          // dans TrainingView.tsx) — un flightLog "nu" plantait ce rendu.
+          flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
           progress: { include: { exercise: true } },
         },
       },

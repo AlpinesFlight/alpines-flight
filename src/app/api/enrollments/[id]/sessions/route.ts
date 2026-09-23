@@ -78,7 +78,8 @@ export async function POST(req: Request, { params }: Params) {
       include: {
         instructor: { select: safeUserSelect },
         aircraft: { select: safeAircraftSelect },
-        flightLog: true,
+        // include (pas juste true) : le front lit flightLog.aircraft.registration.
+        flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
         progress: { include: { exercise: true } },
       },
     });
