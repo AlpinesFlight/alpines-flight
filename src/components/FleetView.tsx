@@ -882,6 +882,15 @@ function MaintenanceFormModal({
   const [dueAtCycles, setDueAtCycles] = useState(existing?.dueAtCycles != null ? String(existing.dueAtCycles) : "");
   const [dueAtDate, setDueAtDate] = useState(existing?.dueAtDate ? existing.dueAtDate.slice(0, 10) : "");
   const [alertBefore, setAlertBefore] = useState(String(existing?.alertBefore ?? 10));
+  const [renewalInterval, setRenewalInterval] = useState(
+    existing?.intervalHours != null
+      ? String(existing.intervalHours)
+      : existing?.intervalCycles != null
+        ? String(existing.intervalCycles)
+        : existing?.intervalDays != null
+          ? String(existing.intervalDays)
+          : ""
+  );
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -891,6 +900,7 @@ function MaintenanceFormModal({
     setSaving(true);
     setError(null);
     try {
+      const intervalValue = renewalInterval ? parseFloat(renewalInterval) : null;
       const payload = {
         aircraftId: aircraft.id,
         label,
@@ -899,6 +909,9 @@ function MaintenanceFormModal({
         dueAtCycles: type === "CYCLES" ? parseInt(dueAtCycles, 10) : null,
         dueAtDate: type === "CALENDAR" ? dueAtDate : null,
         alertBefore: parseFloat(alertBefore),
+        intervalHours: type === "HOURLY" ? intervalValue : null,
+        intervalCycles: type === "CYCLES" ? (intervalValue != null ? Math.round(intervalValue) : null) : null,
+        intervalDays: type === "CALENDAR" ? (intervalValue != null ? Math.round(intervalValue) : null) : null,
         notes: notes || null,
       };
       if (existing) {
@@ -982,6 +995,26 @@ function MaintenanceFormModal({
             onChange={(e) => setAlertBefore(e.target.value)}
             className="input"
           />
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">
+              Renouvellement automatique (optionnel) — programme la prochaine échéance dès que celle-ci est
+              clôturée
+            </span>
+            <input
+              type="number"
+              step={type === "HOURLY" ? "0.1" : "1"}
+              placeholder={
+                type === "HOURLY"
+                  ? "Tous les combien d'heures (ex: 100)"
+                  : type === "CYCLES"
+                    ? "Tous les combien de cycles"
+                    : "Tous les combien de jours (ex: 365)"
+              }
+              value={renewalInterval}
+              onChange={(e) => setRenewalInterval(e.target.value)}
+              className="input"
+            />
+          </label>
           <textarea
             placeholder="Notes (optionnel)"
             value={notes}

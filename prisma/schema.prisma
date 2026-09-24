@@ -58,6 +58,9 @@ model User {
   kardexEntriesCreated KardexEntry[] @relation("KardexCreatedBy")
   maintenanceIssuesReported MaintenanceIssue[] @relation("MaintenanceIssueReportedBy")
   maintenanceIssuesResolved MaintenanceIssue[] @relation("MaintenanceIssueResolvedBy")
+  maintenanceVisitsOpened MaintenanceVisit[] @relation("MaintenanceVisitOpenedBy")
+  maintenanceVisitsClosed MaintenanceVisit[] @relation("MaintenanceVisitClosedBy")
+  maintenanceVisitDocumentsUploaded MaintenanceVisitDocument[] @relation("MaintenanceVisitDocUploadedBy")
   instructorAvailability InstructorAvailability[]
 
   // Tarifs avion personnalisés (dérogations Gérant) — voir PilotAircraftRate
@@ -190,6 +193,7 @@ model Aircraft {
   maintenanceRecords  MaintenanceRecord[]
   kardexEntries       KardexEntry[]
   maintenanceIssues   MaintenanceIssue[]
+  maintenanceVisits   MaintenanceVisit[]
   trainingSessions    TrainingSession[]
   pilotRates          PilotAircraftRate[]
 }
@@ -217,17 +221,35 @@ model MaintenanceRecord {
   dueAtDate     DateTime? // pour type CALENDAR
   dueAtCycles   Int? // pour type CYCLES
   alertBefore   Float    @default(10) // heures, jours ou cycles avant échéance pour alerter
+  // Renouvellement automatique (optionnel) : si défini, clore cette échéance
+  // (marquer fait, ou via la clôture d'une MaintenanceVisit) crée aussitôt la
+  // suivante avec dueAtX = compteur de l'avion au moment de la clôture +
+  // cet intervalle — voir src/lib/maintenance.ts closeMaintenanceRecord.
+  intervalHours  Float?
+  intervalDays   Int?
+  intervalCycles Int?
   status        MaintenanceStatus @default(UPCOMING)
   completedAt   DateTime?
   notes         String?
+  // Dernier rappel email envoyé au Gérant/Admin pour cette échéance (voir
+  // /api/cron/reminders) — évite de relancer chaque jour tant que rien n'a
+  // changé, même logique que Qualification.lastReminderSentAt.
+  lastReminderSentAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   kardexEntries KardexEntry[]
 
+  // Visite en cours à laquelle cette échéance est rattachée (calcul
+  // automatique "au lancement" — voir MaintenanceVisit) ; onDelete: SetNull
+  // pour qu'une visite supprimée ne supprime jamais une échéance encore due.
+  maintenanceVisitId String?
+  maintenanceVisit    MaintenanceVisit? @relation(fields: [maintenanceVisitId], references: [id], onDelete: SetNull)
+
   // Le tableau de bord (Gérant) filtre systématiquement les échéances
   // DUE/OVERDUE.
   @@index([status])
+  @@index([maintenanceVisitId])
 }
 
 // ---------- Kardex (dossier technique de chaque avion) ----------
@@ -259,9 +281,74 @@ model KardexEntry {
   reference             String? // n° de facture, bon de travail, référence CN...
   maintenanceRecordId  String? // échéance soldée par cette intervention, le cas échéant
   maintenanceRecord    MaintenanceRecord?  @relation(fields: [maintenanceRecordId], references: [id])
+  // Visite (ordre de travail) qui a produit cette entrée, le cas échéant —
+  // regroupe plusieurs KardexEntry sous une même intervention datée (ex. une
+  // visite annuelle qui solde 3 échéances d'un coup). onDelete: SetNull :
+  // l'historique reste même si la visite elle-même est supprimée.
+  maintenanceVisitId   String?
+  maintenanceVisit     MaintenanceVisit?   @relation(fields: [maintenanceVisitId], references: [id], onDelete: SetNull)
   createdAt            DateTime            @default(now())
   createdById          String?
   createdBy            User?               @relation("KardexCreatedBy", fields: [createdById], references: [id])
+
+  @@index([maintenanceVisitId])
+}
+
+// ---------- Visites (ordres de travail) ----------
+//
+// Une visite regroupe le traitement de PLUSIEURS échéances en une seule
+// intervention datée (ex. la visite annuelle qui solde la 100h, une CN et un
+// remplacement de pièce le même jour chez le même atelier) — au lieu de les
+// clore une par une sans lien entre elles. "Ouvrir" une visite calcule
+// automatiquement les échéances dues/proches à cet instant (les "travaux à
+// effectuer") ; "Clôturer" les solde toutes, régénère celles qui ont un
+// intervalle de renouvellement, et consigne une entrée de Kardex par échéance
+// soldée, toutes rattachées à cette même visite.
+
+enum MaintenanceVisitStatus {
+  OPEN
+  CLOSED
+}
+
+model MaintenanceVisit {
+  id           String                 @id @default(cuid())
+  aircraftId   String
+  aircraft     Aircraft               @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  title        String // ex: "Visite 100h + CDN 2026-09"
+  status       MaintenanceVisitStatus @default(OPEN)
+  performedBy  String? // atelier / mécanicien agréé
+  reference    String? // n° bon de travail / facture
+  notes        String?
+  openedAt     DateTime               @default(now())
+  openedById   String
+  openedBy     User                   @relation("MaintenanceVisitOpenedBy", fields: [openedById], references: [id])
+  closedAt     DateTime?
+  closedById   String?
+  closedBy     User?                  @relation("MaintenanceVisitClosedBy", fields: [closedById], references: [id])
+
+  records       MaintenanceRecord[]
+  kardexEntries KardexEntry[]
+  documents     MaintenanceVisitDocument[]
+
+  @@index([aircraftId, status])
+}
+
+model MaintenanceVisitDocument {
+  id           String            @id @default(cuid())
+  visitId      String
+  visit        MaintenanceVisit  @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  fileName     String
+  fileMimeType String
+  fileSize     Int
+  // Jamais renvoyé en JSON — streaming uniquement via
+  // /api/maintenance-visits/[id]/documents/[docId]/file, même logique que
+  // AdminDocument.fileData.
+  fileData     Bytes
+  uploadedAt   DateTime          @default(now())
+  uploadedById String
+  uploadedBy   User              @relation("MaintenanceVisitDocUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([visitId])
 }
 
 // ---------- Signalements de défauts ----------

@@ -27,6 +27,9 @@ const createSchema = z
     dueAtDate: z.string().optional().nullable(),
     dueAtCycles: z.number().int().optional().nullable(),
     alertBefore: z.number().default(10),
+    intervalHours: z.number().positive().optional().nullable(),
+    intervalDays: z.number().int().positive().optional().nullable(),
+    intervalCycles: z.number().int().positive().optional().nullable(),
     notes: z.string().optional().nullable(),
   })
   .refine(
@@ -35,6 +38,13 @@ const createSchema = z
       (d.type === "CALENDAR" && d.dueAtDate != null) ||
       (d.type === "CYCLES" && d.dueAtCycles != null),
     { message: "L'échéance doit correspondre au type choisi (heures, date ou cycles)." }
+  )
+  .refine(
+    (d) =>
+      (d.type === "HOURLY" && d.intervalDays == null && d.intervalCycles == null) ||
+      (d.type === "CALENDAR" && d.intervalHours == null && d.intervalCycles == null) ||
+      (d.type === "CYCLES" && d.intervalHours == null && d.intervalDays == null),
+    { message: "L'intervalle de renouvellement doit correspondre au type choisi." }
   );
 
 export async function POST(req: Request) {

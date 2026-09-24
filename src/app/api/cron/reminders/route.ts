@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { notifyReservation } from "@/lib/reservation-emails";
+import { sendMail } from "@/lib/mailer";
+import { findDueMaintenanceRecords, composeMaintenanceReminderEmail } from "@/lib/maintenance";
 
 // Déclenché une fois par jour par Vercel Cron (voir vercel.json) — envoie le
-// rappel du soir pour tous les vols confirmés prévus le lendemain.
+// rappel du soir pour tous les vols confirmés prévus le lendemain, puis (voir
+// plus bas) les échéances de maintenance DUE/OVERDUE au Gérant/Admin.
 //
 // Fenêtre calculée en UTC plutôt qu'en tenant compte précisément du fuseau
 // Europe/Paris (qui demanderait de gérer heure d'été/hiver) : la frontière
@@ -38,5 +41,35 @@ export async function GET(req: Request) {
     await notifyReservation(r, "reminder");
   }
 
-  return NextResponse.json({ ok: true, count: reservations.length });
+  // Échéances de maintenance dues/dépassées — un mail par échéance plutôt
+  // qu'un digest groupé, pour rester cohérent avec le rappel qualifications
+  // (POST /api/qualifications/[id]/remind) qui procède pareil.
+  const dueMaintenance = await findDueMaintenanceRecords();
+  let maintenanceEmailsSent = 0;
+  if (dueMaintenance.length > 0) {
+    const managers = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "GERANT"] } },
+      select: { email: true },
+    });
+    const recipients = managers.map((m) => m.email);
+
+    for (const record of dueMaintenance) {
+      const { subject, text } = composeMaintenanceReminderEmail(record);
+      const result = await sendMail({ to: recipients, subject, text });
+      if (result.sent) {
+        await prisma.maintenanceRecord.update({
+          where: { id: record.id },
+          data: { lastReminderSentAt: new Date() },
+        });
+        maintenanceEmailsSent++;
+      }
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    count: reservations.length,
+    maintenanceDue: dueMaintenance.length,
+    maintenanceEmailsSent,
+  });
 }

@@ -125,3 +125,18 @@ export const safeAdminDocumentSelect = {
   uploadedById: true,
   uploadedBy: { select: safeUserSelect },
 } as const;
+
+// Champs d'un MaintenanceVisitDocument à renvoyer au client — exclut
+// systématiquement fileData, même logique que safeAdminDocumentSelect. Le
+// fichier ne transite que par
+// /api/maintenance-visits/[id]/documents/[docId]/file.
+export const safeMaintenanceVisitDocumentSelect = {
+  id: true,
+  visitId: true,
+  fileName: true,
+  fileMimeType: true,
+  fileSize: true,
+  uploadedAt: true,
+  uploadedById: true,
+  uploadedBy: { select: safeUserSelect },
+} as const;

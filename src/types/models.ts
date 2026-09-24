@@ -59,9 +59,13 @@ export interface MaintenanceRecord {
   dueAtDate: string | null;
   dueAtCycles: number | null;
   alertBefore: number;
+  intervalHours: number | null;
+  intervalDays: number | null;
+  intervalCycles: number | null;
   status: MaintenanceStatus;
   completedAt: string | null;
   notes: string | null;
+  maintenanceVisitId: string | null;
 }
 
 export type MaintenanceIssueStatus = "OPEN" | "RESOLVED";
@@ -102,9 +106,44 @@ export interface KardexEntry {
   reference: string | null;
   maintenanceRecordId: string | null;
   maintenanceRecord?: MaintenanceRecord | null;
+  maintenanceVisitId: string | null;
   createdAt: string;
   createdById: string | null;
   createdBy?: UserLite | null;
+}
+
+export type MaintenanceVisitStatus = "OPEN" | "CLOSED";
+
+export interface MaintenanceVisitDocument {
+  id: string;
+  visitId: string;
+  fileName: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+  uploadedById: string;
+  uploadedBy?: UserLite;
+}
+
+export interface MaintenanceVisit {
+  id: string;
+  aircraftId: string;
+  aircraft?: Aircraft;
+  title: string;
+  status: MaintenanceVisitStatus;
+  performedBy: string | null;
+  reference: string | null;
+  notes: string | null;
+  openedAt: string;
+  openedById: string;
+  openedBy?: UserLite;
+  closedAt: string | null;
+  closedById: string | null;
+  closedBy?: UserLite | null;
+  records: MaintenanceRecord[];
+  kardexEntries?: KardexEntry[];
+  documents?: MaintenanceVisitDocument[];
+  _count?: { documents: number };
 }
 
 export type ReservationType = "INSTRUCTION" | "SOLO" | "LOCATION" | "MAINTENANCE" | "DISCOVERY";

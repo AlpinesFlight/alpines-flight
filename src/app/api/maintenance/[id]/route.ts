@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
+import { recalcAircraftMaintenanceStatuses, closeMaintenanceRecord } from "@/lib/maintenance";
 import { canManageSchool } from "@/lib/permissions";
 import { z } from "zod";
 
@@ -15,6 +15,10 @@ const patchSchema = z.object({
   dueAtDate: z.string().nullable().optional(),
   dueAtCycles: z.number().int().nullable().optional(),
   alertBefore: z.number().optional(),
+  // Un seul à la fois, cohérent avec `type` — voir le .refine plus bas.
+  intervalHours: z.number().positive().nullable().optional(),
+  intervalDays: z.number().int().positive().nullable().optional(),
+  intervalCycles: z.number().int().positive().nullable().optional(),
   notes: z.string().nullable().optional(),
   // Marquer l'échéance comme faite : bascule status=DONE et consigne
   // automatiquement l'intervention au kardex de l'avion.
@@ -55,28 +59,13 @@ export async function PATCH(req: Request, { params }: Params) {
     });
 
     if (markDone) {
-      const aircraft = await db.aircraft.findUniqueOrThrow({
-        where: { id: updated.aircraftId },
+      await closeMaintenanceRecord(db, updated, {
+        performedBy: markDone.performedBy,
+        reference: markDone.reference,
+        description: markDone.description,
+        createdById: session.user.id,
       });
-      updated = await db.maintenanceRecord.update({
-        where: { id },
-        data: { status: "DONE", completedAt: new Date() },
-      });
-      await db.kardexEntry.create({
-        data: {
-          aircraftId: updated.aircraftId,
-          date: new Date(),
-          hoursAt: aircraft.totalHours,
-          cyclesAt: aircraft.totalCycles,
-          category: "VISITE",
-          title: updated.label,
-          description: markDone.description ?? null,
-          performedBy: markDone.performedBy ?? null,
-          reference: markDone.reference ?? null,
-          maintenanceRecordId: updated.id,
-          createdById: session.user.id,
-        },
-      });
+      updated = await db.maintenanceRecord.findUniqueOrThrow({ where: { id } });
     } else {
       // Champs modifiés sans marquer "fait" : on retrouve un statut
       // cohérent avec les nouvelles échéances (sauf si déjà soldée).
