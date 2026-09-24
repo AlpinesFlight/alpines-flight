@@ -562,3 +562,41 @@ export interface AdminContact {
   createdById: string;
   createdBy: UserLite;
 }
+
+// ---------- Préparation de vol (page /gestion/preparation-vol) ----------
+
+export interface FlightPrepDocument {
+  id: string;
+  title: string;
+  category: string | null;
+  fileName: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+  uploadedById: string;
+  uploadedBy: UserLite;
+}
+
+// ---------- Classes virtuelles (page /gestion/classes-virtuelles) ----------
+
+export interface TheoryClassDocument {
+  id: string;
+  theoryClassId: string;
+  fileName: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+  uploadedById: string;
+  uploadedBy: UserLite;
+}
+
+export interface TheoryClass {
+  id: string;
+  title: string;
+  description: string | null;
+  roomSlug: string;
+  createdAt: string;
+  createdById: string;
+  createdBy: UserLite;
+  documents?: TheoryClassDocument[];
+}

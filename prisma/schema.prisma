@@ -92,6 +92,10 @@ model User {
   adminNotesCreated      AdminNote[]     @relation("AdminNoteCreatedBy")
   adminContactsCreated   AdminContact[]  @relation("AdminContactCreatedBy")
   adminProjectsCreated   AdminProject[]  @relation("AdminProjectCreatedBy")
+
+  flightPrepDocumentsUploaded  FlightPrepDocument[]  @relation("FlightPrepDocumentUploadedBy")
+  theoryClassesCreated         TheoryClass[]         @relation("TheoryClassCreatedBy")
+  theoryClassDocumentsUploaded TheoryClassDocument[] @relation("TheoryClassDocUploadedBy")
 }
 
 model StudentProfile {
@@ -1119,5 +1123,69 @@ model AdminContact {
   createdBy   User     @relation("AdminContactCreatedBy", fields: [createdById], references: [id])
 
   @@index([category, name])
+}
+
+// ---------- Préparation de vol (page /gestion/preparation-vol) ----------
+//
+// Documents de référence utiles à la préparation d'un vol (masse et
+// centrage, performances...), rassemblés sur une seule page avec les outils
+// externes (Windy, Aéroweb, SOFIA Briefing, carte OACI Géoportail). Modèle
+// distinct d'AdminDocument (qui porte un statut à traiter/traité propre aux
+// pièces comptables, sans rapport ici) et de SchoolDocument (bibliothèque
+// visible de toute l'école, alors que cet espace reste Gérant uniquement le
+// temps des tests — voir alpines-flight-feedback memory).
+model FlightPrepDocument {
+  id           String   @id @default(cuid())
+  title        String
+  category     String? // ex: "Masse et centrage", "Performances", immatriculation avion...
+  fileName     String
+  fileMimeType String
+  fileSize     Int
+  // Jamais renvoyé en JSON — streaming uniquement via
+  // /api/flight-prep-documents/[id]/file, même logique qu'AdminDocument.fileData.
+  fileData     Bytes
+  uploadedAt   DateTime @default(now())
+  uploadedById String
+  uploadedBy   User     @relation("FlightPrepDocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([category])
+}
+
+// ---------- Classes virtuelles (page /gestion/classes-virtuelles) ----------
+//
+// Cours théoriques à distance : chaque classe a sa propre salle Jitsi
+// (roomSlug stable, générée une fois pour toutes — contrairement à la salle
+// privée de GestionVisioView qui se régénère à volonté — puisqu'ici FI et
+// élèves doivent pouvoir réutiliser le même lien d'une séance à l'autre) et
+// ses propres documents de cours à transmettre. Reste dans /gestion (Gérant
+// uniquement) le temps des tests — voir alpines-flight-feedback memory ;
+// vocation à migrer vers l'espace normal (FI + élèves) une fois validé.
+model TheoryClass {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  roomSlug    String   @unique
+  createdAt   DateTime @default(now())
+  createdById String
+  createdBy   User     @relation("TheoryClassCreatedBy", fields: [createdById], references: [id])
+
+  documents TheoryClassDocument[]
+}
+
+model TheoryClassDocument {
+  id            String      @id @default(cuid())
+  theoryClassId String
+  theoryClass   TheoryClass @relation(fields: [theoryClassId], references: [id], onDelete: Cascade)
+  fileName      String
+  fileMimeType  String
+  fileSize      Int
+  // Jamais renvoyé en JSON — streaming uniquement via
+  // /api/theory-classes/[id]/documents/[docId]/file.
+  fileData      Bytes
+  uploadedAt    DateTime    @default(now())
+  uploadedById  String
+  uploadedBy    User        @relation("TheoryClassDocUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([theoryClassId])
 }
 

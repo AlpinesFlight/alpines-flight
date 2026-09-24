@@ -140,3 +140,42 @@ export const safeMaintenanceVisitDocumentSelect = {
   uploadedById: true,
   uploadedBy: { select: safeUserSelect },
 } as const;
+
+// Champs d'un FlightPrepDocument (page /gestion/preparation-vol) à renvoyer
+// au client — exclut systématiquement fileData. Le fichier ne transite que
+// par /api/flight-prep-documents/[id]/file.
+export const safeFlightPrepDocumentSelect = {
+  id: true,
+  title: true,
+  category: true,
+  fileName: true,
+  fileMimeType: true,
+  fileSize: true,
+  uploadedAt: true,
+  uploadedById: true,
+  uploadedBy: { select: safeUserSelect },
+} as const;
+
+// Champs d'une TheoryClassDocument à renvoyer au client — exclut
+// systématiquement fileData. Le fichier ne transite que par
+// /api/theory-classes/[id]/documents/[docId]/file.
+export const safeTheoryClassDocumentSelect = {
+  id: true,
+  theoryClassId: true,
+  fileName: true,
+  fileMimeType: true,
+  fileSize: true,
+  uploadedAt: true,
+  uploadedById: true,
+  uploadedBy: { select: safeUserSelect },
+} as const;
+
+export const safeTheoryClassSelect = {
+  id: true,
+  title: true,
+  description: true,
+  roomSlug: true,
+  createdAt: true,
+  createdById: true,
+  createdBy: { select: safeUserSelect },
+} as const;

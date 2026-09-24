@@ -14,7 +14,7 @@ import {
   MaintenanceType,
   MaintenanceVisit,
 } from "@/types/models";
-import { ArrowLeft, Plus, X, Pencil, Trash2, Check, ChevronDown, ChevronRight, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Plus, X, Pencil, Trash2, Check, ChevronDown, ChevronRight, CheckCircle2, Download } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   UPCOMING: "À venir",
@@ -51,7 +51,7 @@ export function GestionAircraftMaintenanceView({ aircraftId }: { aircraftId: str
   const [closedVisits, setClosedVisits] = useState<MaintenanceVisit[]>([]);
   const [tab, setTab] = useState<"echeances" | "kardex" | "visites">("echeances");
   const [showRecordForm, setShowRecordForm] = useState<MaintenanceRecord | "new" | null>(null);
-  const [showKardexForm, setShowKardexForm] = useState<KardexEntry | "new" | null>(null);
+  const [kardexEditingId, setKardexEditingId] = useState<string | "new" | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   async function load() {
@@ -89,6 +89,34 @@ export function GestionAircraftMaintenanceView({ aircraftId }: { aircraftId: str
     if (!window.confirm(`Supprimer cette entrée du kardex (« ${entry.title} ») ?`)) return;
     await apiFetch(`/api/kardex/${entry.id}`, { method: "DELETE" });
     load();
+  }
+
+  async function handleSaveKardex(id: string | "new", payload: Record<string, unknown>) {
+    if (id === "new") {
+      await apiFetch("/api/kardex", { method: "POST", body: JSON.stringify({ aircraftId, ...payload }) });
+    } else {
+      await apiFetch(`/api/kardex/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    }
+    setKardexEditingId(null);
+    load();
+  }
+
+  async function handleExportKardex() {
+    const XLSX = await import("xlsx");
+    const rows = kardex.map((k) => ({
+      Date: formatDate(k.date),
+      Catégorie: KARDEX_CATEGORY_LABEL[k.category],
+      Titre: k.title,
+      Référence: k.reference ?? "",
+      "Heures cellule": k.hoursAt ?? "",
+      Cycles: k.cyclesAt ?? "",
+      "Effectué par": k.performedBy ?? "",
+      Description: k.description ?? "",
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Kardex");
+    XLSX.writeFile(workbook, `Kardex-${aircraft?.registration ?? aircraftId}.xlsx`);
   }
 
   if (!aircraft) {
@@ -188,43 +216,72 @@ export function GestionAircraftMaintenanceView({ aircraftId }: { aircraftId: str
 
         {tab === "kardex" && (
           <div className="flex flex-col gap-3">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
               <button
-                onClick={() => setShowKardexForm("new")}
+                onClick={handleExportKardex}
+                disabled={kardex.length === 0}
+                className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 disabled:opacity-40 disabled:hover:bg-navy-800 text-navy-100 text-sm font-semibold px-3.5 py-2 transition-colors"
+              >
+                <Download size={15} /> Exporter en Excel
+              </button>
+              <button
+                onClick={() => setKardexEditingId("new")}
                 className="flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
               >
                 <Plus size={15} /> Nouvelle entrée
               </button>
             </div>
-            {kardex.length === 0 && <p className="text-sm text-navy-100/40">Aucune entrée au kardex.</p>}
-            {kardex.map((k) => (
-              <div
-                key={k.id}
-                className="flex items-center justify-between gap-3 bg-navy-900 border border-navy-700 rounded-xl px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-cream-50 truncate">
-                    {k.title}
-                    {k.reference && <span className="text-navy-100/40"> · {k.reference}</span>}
-                  </p>
-                  <p className="text-xs text-navy-100/50">
-                    {formatDate(k.date)} · {KARDEX_CATEGORY_LABEL[k.category]}
-                    {k.hoursAt != null && ` · ${k.hoursAt.toFixed(1)} h`}
-                    {k.cyclesAt != null && ` · ${k.cyclesAt} cy`}
-                    {k.performedBy && ` · ${k.performedBy}`}
-                  </p>
-                  {k.description && <p className="text-xs text-navy-100/40 mt-0.5">{k.description}</p>}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => setShowKardexForm(k)} title="Modifier" className="text-navy-100/50 hover:text-cream-50 rounded-lg p-1.5">
-                    <Pencil size={14} />
-                  </button>
-                  <button onClick={() => handleDeleteKardex(k)} title="Supprimer" className="text-navy-100/50 hover:text-red-400 rounded-lg p-1.5">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+            <div className="overflow-x-auto bg-navy-900 border border-navy-700 rounded-xl">
+              <table className="w-full text-sm border-collapse min-w-[900px]">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-navy-100/40 border-b border-navy-700">
+                    <th className="px-3 py-2 font-semibold w-[110px]">Date</th>
+                    <th className="px-3 py-2 font-semibold w-[150px]">Catégorie</th>
+                    <th className="px-3 py-2 font-semibold min-w-[220px]">Titre</th>
+                    <th className="px-3 py-2 font-semibold w-[140px]">Référence</th>
+                    <th className="px-3 py-2 font-semibold w-[110px]">Heures</th>
+                    <th className="px-3 py-2 font-semibold w-[90px]">Cycles</th>
+                    <th className="px-3 py-2 font-semibold w-[140px]">Effectué par</th>
+                    <th className="px-3 py-2 font-semibold w-[80px]"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kardexEditingId === "new" && (
+                    <KardexEditRow
+                      aircraft={aircraft}
+                      existing={null}
+                      onCancel={() => setKardexEditingId(null)}
+                      onSave={(payload) => handleSaveKardex("new", payload)}
+                    />
+                  )}
+                  {kardex.length === 0 && kardexEditingId !== "new" && (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-6 text-center text-navy-100/40">
+                        Aucune entrée au kardex.
+                      </td>
+                    </tr>
+                  )}
+                  {kardex.map((k) =>
+                    kardexEditingId === k.id ? (
+                      <KardexEditRow
+                        key={k.id}
+                        aircraft={aircraft}
+                        existing={k}
+                        onCancel={() => setKardexEditingId(null)}
+                        onSave={(payload) => handleSaveKardex(k.id, payload)}
+                      />
+                    ) : (
+                      <KardexViewRow
+                        key={k.id}
+                        entry={k}
+                        onEdit={() => setKardexEditingId(k.id)}
+                        onDelete={() => handleDeleteKardex(k)}
+                      />
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -278,17 +335,6 @@ export function GestionAircraftMaintenanceView({ aircraftId }: { aircraftId: str
           onClose={() => setShowRecordForm(null)}
           onSaved={() => {
             setShowRecordForm(null);
-            load();
-          }}
-        />
-      )}
-      {showKardexForm && (
-        <KardexFormModal
-          aircraft={aircraft}
-          existing={showKardexForm === "new" ? null : showKardexForm}
-          onClose={() => setShowKardexForm(null)}
-          onSaved={() => {
-            setShowKardexForm(null);
             load();
           }}
         />
@@ -420,16 +466,53 @@ function RecordFormModal({
   );
 }
 
-function KardexFormModal({
+function KardexViewRow({
+  entry,
+  onEdit,
+  onDelete,
+}: {
+  entry: KardexEntry;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <tr className="border-b border-navy-800 last:border-b-0 hover:bg-navy-800/40 align-top">
+      <td className="px-3 py-2.5 text-navy-100/70 whitespace-nowrap">{formatDate(entry.date)}</td>
+      <td className="px-3 py-2.5 text-navy-100/70">{KARDEX_CATEGORY_LABEL[entry.category]}</td>
+      <td className="px-3 py-2.5">
+        <p className="text-cream-50 font-medium">{entry.title}</p>
+        {entry.description && <p className="text-xs text-navy-100/40 mt-0.5">{entry.description}</p>}
+      </td>
+      <td className="px-3 py-2.5 text-navy-100/60">{entry.reference || "—"}</td>
+      <td className="px-3 py-2.5 text-navy-100/70 whitespace-nowrap">
+        {entry.hoursAt != null ? entry.hoursAt.toFixed(1) : "—"}
+      </td>
+      <td className="px-3 py-2.5 text-navy-100/70">{entry.cyclesAt ?? "—"}</td>
+      <td className="px-3 py-2.5 text-navy-100/60">{entry.performedBy || "—"}</td>
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-1.5 justify-end">
+          <button onClick={onEdit} title="Modifier" className="text-navy-100/50 hover:text-cream-50 rounded-lg p-1.5">
+            <Pencil size={14} />
+          </button>
+          <button onClick={onDelete} title="Supprimer" className="text-navy-100/50 hover:text-red-400 rounded-lg p-1.5">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function KardexEditRow({
   aircraft,
   existing,
-  onClose,
-  onSaved,
+  onCancel,
+  onSave,
 }: {
   aircraft: Aircraft;
   existing: KardexEntry | null;
-  onClose: () => void;
-  onSaved: () => void;
+  onCancel: () => void;
+  onSave: (payload: Record<string, unknown>) => Promise<void>;
 }) {
   const [date, setDate] = useState(existing?.date ? existing.date.slice(0, 10) : new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<KardexCategory>(existing?.category ?? "VISITE");
@@ -442,13 +525,15 @@ function KardexFormModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSave() {
+    if (!title.trim()) {
+      setError("Le titre est requis.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const payload = {
-        aircraftId: aircraft.id,
+      await onSave({
         date,
         category,
         title,
@@ -457,60 +542,86 @@ function KardexFormModal({
         cyclesAt: cyclesAt ? parseInt(cyclesAt, 10) : null,
         performedBy: performedBy || null,
         reference: reference || null,
-      };
-      if (existing) {
-        await apiFetch(`/api/kardex/${existing.id}`, { method: "PATCH", body: JSON.stringify(payload) });
-      } else {
-        await apiFetch("/api/kardex", { method: "POST", body: JSON.stringify(payload) });
-      }
-      onSaved();
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
-    } finally {
       setSaving(false);
     }
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") onCancel();
+    if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) {
+      e.preventDefault();
+      handleSave();
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-[60] bg-black/60 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-navy-900 border border-navy-700 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-800">
-          <h2 className="font-semibold text-cream-50">
-            {existing ? "Modifier l'entrée kardex" : "Nouvelle entrée kardex"} · {aircraft.registration}
-          </h2>
-          <button onClick={onClose} className="text-navy-100/50 hover:text-cream-50">
-            <X size={20} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            <input required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input-dark" />
-            <select value={category} onChange={(e) => setCategory(e.target.value as KardexCategory)} className="input-dark">
-              {Object.entries(KARDEX_CATEGORY_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+    <>
+      <tr className="border-b border-navy-700 bg-navy-800/60" onKeyDown={handleKeyDown}>
+        <td className="px-2 py-2 align-top">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input-dark text-xs px-2 py-1.5 w-full" />
+        </td>
+        <td className="px-2 py-2 align-top">
+          <select value={category} onChange={(e) => setCategory(e.target.value as KardexCategory)} className="input-dark text-xs px-2 py-1.5 w-full">
+            {Object.entries(KARDEX_CATEGORY_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td className="px-2 py-2 align-top">
+          <input
+            autoFocus
+            placeholder="Titre"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="input-dark text-xs px-2 py-1.5 w-full mb-1"
+          />
+          <textarea
+            placeholder="Description (optionnel)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="input-dark text-xs px-2 py-1.5 w-full min-h-8"
+          />
+        </td>
+        <td className="px-2 py-2 align-top">
+          <input placeholder="Réf." value={reference} onChange={(e) => setReference(e.target.value)} className="input-dark text-xs px-2 py-1.5 w-full" />
+        </td>
+        <td className="px-2 py-2 align-top">
+          <input type="number" step="0.1" value={hoursAt} onChange={(e) => setHoursAt(e.target.value)} className="input-dark text-xs px-2 py-1.5 w-full" />
+        </td>
+        <td className="px-2 py-2 align-top">
+          <input type="number" step="1" value={cyclesAt} onChange={(e) => setCyclesAt(e.target.value)} className="input-dark text-xs px-2 py-1.5 w-full" />
+        </td>
+        <td className="px-2 py-2 align-top">
+          <input placeholder="Atelier" value={performedBy} onChange={(e) => setPerformedBy(e.target.value)} className="input-dark text-xs px-2 py-1.5 w-full" />
+        </td>
+        <td className="px-2 py-2 align-top">
+          <div className="flex items-center gap-1.5 justify-end">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              title="Enregistrer"
+              className="text-green-400 hover:bg-green-500/10 rounded-lg p-1.5 disabled:opacity-50"
+            >
+              <Check size={15} />
+            </button>
+            <button onClick={onCancel} title="Annuler" className="text-navy-100/50 hover:text-red-400 rounded-lg p-1.5">
+              <X size={15} />
+            </button>
           </div>
-          <input required placeholder="Titre (ex: Remplacement magnéto gauche)" value={title} onChange={(e) => setTitle(e.target.value)} className="input-dark" />
-          <textarea placeholder="Description (optionnel)" value={description} onChange={(e) => setDescription(e.target.value)} className="input-dark min-h-14" />
-          <div className="grid grid-cols-2 gap-2">
-            <input type="number" step="0.1" placeholder="Heures cellule" value={hoursAt} onChange={(e) => setHoursAt(e.target.value)} className="input-dark" />
-            <input type="number" step="1" placeholder="Cycles" value={cyclesAt} onChange={(e) => setCyclesAt(e.target.value)} className="input-dark" />
-          </div>
-          <input placeholder="Réalisé par (atelier / mécanicien)" value={performedBy} onChange={(e) => setPerformedBy(e.target.value)} className="input-dark" />
-          <input placeholder="Référence (bon de travail, CN...)" value={reference} onChange={(e) => setReference(e.target.value)} className="input-dark" />
-          {error && <p className="text-red-400 text-sm bg-red-500/10 rounded-lg px-3 py-2">{error}</p>}
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60 transition-colors"
-          >
-            {saving ? "Enregistrement..." : existing ? "Enregistrer" : "Ajouter au kardex"}
-          </button>
-        </form>
-      </div>
-    </div>
+        </td>
+      </tr>
+      {error && (
+        <tr className="bg-navy-800/60">
+          <td colSpan={8} className="px-3 pb-2 -mt-1 text-xs text-red-400">
+            {error}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
