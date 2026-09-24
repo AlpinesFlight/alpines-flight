@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { clsx } from "clsx";
 import { apiFetch } from "@/lib/api";
 import { formatDate, formatHours } from "@/lib/format";
@@ -16,6 +17,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -223,10 +225,17 @@ function AircraftMaintenanceCard({
         </ul>
       )}
 
+      <Link
+        href={`/gestion/maintenance/${aircraft.id}`}
+        className="flex items-center justify-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-cream-50 text-sm font-semibold px-3.5 py-2 transition-colors"
+      >
+        <BookOpen size={14} /> Kardex &amp; échéances
+      </Link>
+
       {openVisit ? (
         <button
           onClick={onViewVisit}
-          className="mt-1 flex items-center justify-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-cream-50 text-sm font-semibold px-3.5 py-2 transition-colors"
+          className="flex items-center justify-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-cream-50 text-sm font-semibold px-3.5 py-2 transition-colors"
         >
           <Wrench size={14} /> Visite en cours →
         </button>
@@ -234,7 +243,7 @@ function AircraftMaintenanceCard({
         <button
           onClick={onOpenVisit}
           disabled={opening}
-          className="mt-1 flex items-center justify-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors disabled:opacity-60"
+          className="flex items-center justify-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors disabled:opacity-60"
         >
           <Plus size={14} /> {opening ? "Ouverture..." : "Ouvrir une visite"}
         </button>
