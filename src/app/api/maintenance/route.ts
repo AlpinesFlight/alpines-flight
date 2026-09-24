@@ -22,7 +22,11 @@ const createSchema = z
   .object({
     aircraftId: z.string(),
     label: z.string().min(2),
+    reference: z.string().optional().nullable(),
+    zone: z.string().optional().nullable(),
     type: z.enum(["HOURLY", "CALENDAR", "CYCLES"]),
+    // Pas mutuellement exclusifs : une échéance réelle est souvent "au
+    // premier des deux" (ex: 100h OU 12 mois) — voir recalcAircraftMaintenanceStatuses.
     dueAtHours: z.number().optional().nullable(),
     dueAtDate: z.string().optional().nullable(),
     dueAtCycles: z.number().int().optional().nullable(),
@@ -32,20 +36,9 @@ const createSchema = z
     intervalCycles: z.number().int().positive().optional().nullable(),
     notes: z.string().optional().nullable(),
   })
-  .refine(
-    (d) =>
-      (d.type === "HOURLY" && d.dueAtHours != null) ||
-      (d.type === "CALENDAR" && d.dueAtDate != null) ||
-      (d.type === "CYCLES" && d.dueAtCycles != null),
-    { message: "L'échéance doit correspondre au type choisi (heures, date ou cycles)." }
-  )
-  .refine(
-    (d) =>
-      (d.type === "HOURLY" && d.intervalDays == null && d.intervalCycles == null) ||
-      (d.type === "CALENDAR" && d.intervalHours == null && d.intervalCycles == null) ||
-      (d.type === "CYCLES" && d.intervalHours == null && d.intervalDays == null),
-    { message: "L'intervalle de renouvellement doit correspondre au type choisi." }
-  );
+  .refine((d) => d.dueAtHours != null || d.dueAtDate != null || d.dueAtCycles != null, {
+    message: "Au moins une échéance (heures, date ou cycles) est requise.",
+  });
 
 export async function POST(req: Request) {
   const session = await auth();

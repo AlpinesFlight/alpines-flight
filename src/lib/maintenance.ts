@@ -3,12 +3,24 @@ import { prisma } from "./prisma";
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 
+const STATUS_RANK: Record<"UPCOMING" | "DUE" | "OVERDUE", number> = { UPCOMING: 0, DUE: 1, OVERDUE: 2 };
+
+function fieldStatus(remaining: number, alertBefore: number): "UPCOMING" | "DUE" | "OVERDUE" {
+  return remaining <= 0 ? "OVERDUE" : remaining <= alertBefore ? "DUE" : "UPCOMING";
+}
+
 /**
  * Recalcule le statut (UPCOMING / DUE / OVERDUE) de toutes les échéances non
  * soldées (status != DONE) d'un avion, à partir de ses heures/cycles actuels
  * et de la date du jour. Appelé après tout événement qui change les
  * compteurs de l'avion (clôture de vol, correction manuelle des heures) ou
  * la définition d'une échéance elle-même.
+ *
+ * Une échéance peut avoir plusieurs seuils renseignés à la fois (ex: 100h OU
+ * 12 mois, au premier des deux — cas réel très courant en maintenance
+ * aéronautique) : chaque champ dueAtX non nul est évalué indépendamment, et
+ * le statut retenu est le plus urgent des deux (pas seulement celui qui
+ * correspond à `type`).
  */
 export async function recalcAircraftMaintenanceStatuses(db: Tx, aircraftId: string) {
   const aircraft = await db.aircraft.findUnique({ where: { id: aircraftId } });
@@ -23,15 +35,18 @@ export async function recalcAircraftMaintenanceStatuses(db: Tx, aircraftId: stri
   for (const r of records) {
     let status: "UPCOMING" | "DUE" | "OVERDUE" = "UPCOMING";
 
-    if (r.type === "HOURLY" && r.dueAtHours != null) {
-      const remaining = r.dueAtHours - aircraft.totalHours;
-      status = remaining <= 0 ? "OVERDUE" : remaining <= r.alertBefore ? "DUE" : "UPCOMING";
-    } else if (r.type === "CYCLES" && r.dueAtCycles != null) {
-      const remaining = r.dueAtCycles - aircraft.totalCycles;
-      status = remaining <= 0 ? "OVERDUE" : remaining <= r.alertBefore ? "DUE" : "UPCOMING";
-    } else if (r.type === "CALENDAR" && r.dueAtDate) {
+    if (r.dueAtHours != null) {
+      const s = fieldStatus(r.dueAtHours - aircraft.totalHours, r.alertBefore);
+      if (STATUS_RANK[s] > STATUS_RANK[status]) status = s;
+    }
+    if (r.dueAtCycles != null) {
+      const s = fieldStatus(r.dueAtCycles - aircraft.totalCycles, r.alertBefore);
+      if (STATUS_RANK[s] > STATUS_RANK[status]) status = s;
+    }
+    if (r.dueAtDate) {
       const daysRemaining = (r.dueAtDate.getTime() - now) / 86_400_000;
-      status = daysRemaining <= 0 ? "OVERDUE" : daysRemaining <= r.alertBefore ? "DUE" : "UPCOMING";
+      const s = fieldStatus(daysRemaining, r.alertBefore);
+      if (STATUS_RANK[s] > STATUS_RANK[status]) status = s;
     }
 
     if (status !== r.status) {
@@ -44,6 +59,9 @@ type ClosableRecord = {
   id: string;
   aircraftId: string;
   label: string;
+  type: string;
+  reference: string | null;
+  zone: string | null;
   alertBefore: number;
   intervalHours: number | null;
   intervalDays: number | null;
@@ -91,37 +109,25 @@ export async function closeMaintenanceRecord(
     },
   });
 
-  if (record.intervalHours != null) {
+  // Un seul enregistrement renouvelé, avec TOUS les seuils applicables
+  // recalculés (pas un enregistrement par type d'intervalle) — cohérent
+  // avec le fait qu'une échéance double (ex: 100h OU 12 mois) doit rester
+  // double après renouvellement, pas se scinder en deux échéances séparées.
+  if (record.intervalHours != null || record.intervalDays != null || record.intervalCycles != null) {
     await db.maintenanceRecord.create({
       data: {
         aircraftId: record.aircraftId,
         label: record.label,
-        type: "HOURLY",
-        dueAtHours: aircraft.totalHours + record.intervalHours,
+        reference: record.reference,
+        zone: record.zone,
+        type: record.type as "HOURLY" | "CALENDAR" | "CYCLES",
+        dueAtHours: record.intervalHours != null ? aircraft.totalHours + record.intervalHours : null,
+        dueAtCycles: record.intervalCycles != null ? aircraft.totalCycles + record.intervalCycles : null,
+        dueAtDate: record.intervalDays != null ? new Date(Date.now() + record.intervalDays * 86_400_000) : null,
         alertBefore: record.alertBefore,
         intervalHours: record.intervalHours,
-      },
-    });
-  } else if (record.intervalCycles != null) {
-    await db.maintenanceRecord.create({
-      data: {
-        aircraftId: record.aircraftId,
-        label: record.label,
-        type: "CYCLES",
-        dueAtCycles: aircraft.totalCycles + record.intervalCycles,
-        alertBefore: record.alertBefore,
-        intervalCycles: record.intervalCycles,
-      },
-    });
-  } else if (record.intervalDays != null) {
-    await db.maintenanceRecord.create({
-      data: {
-        aircraftId: record.aircraftId,
-        label: record.label,
-        type: "CALENDAR",
-        dueAtDate: new Date(Date.now() + record.intervalDays * 86_400_000),
-        alertBefore: record.alertBefore,
         intervalDays: record.intervalDays,
+        intervalCycles: record.intervalCycles,
       },
     });
   }
@@ -150,18 +156,21 @@ export async function findDueMaintenanceRecords() {
   });
 }
 
+// Une échéance peut avoir plusieurs seuils renseignés (voir
+// recalcAircraftMaintenanceStatuses) — on les affiche tous, séparés par "ou"
+// ("au premier des deux" est la règle implicite en maintenance aéronautique).
 function formatDueValue(r: {
-  type: string;
   dueAtHours: number | null;
   dueAtDate: Date | null;
   dueAtCycles: number | null;
 }): string {
-  if (r.type === "HOURLY" && r.dueAtHours != null) return `${r.dueAtHours.toFixed(1)} h cellule`;
-  if (r.type === "CYCLES" && r.dueAtCycles != null) return `${r.dueAtCycles} cycles`;
-  if (r.type === "CALENDAR" && r.dueAtDate) {
-    return r.dueAtDate.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "long", year: "numeric" });
+  const parts: string[] = [];
+  if (r.dueAtHours != null) parts.push(`${r.dueAtHours.toFixed(1)} h cellule`);
+  if (r.dueAtCycles != null) parts.push(`${r.dueAtCycles} cycles`);
+  if (r.dueAtDate) {
+    parts.push(r.dueAtDate.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "long", year: "numeric" }));
   }
-  return "—";
+  return parts.length > 0 ? parts.join(" ou ") : "—";
 }
 
 export function composeMaintenanceReminderEmail(r: {

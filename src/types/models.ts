@@ -54,6 +54,8 @@ export interface MaintenanceRecord {
   aircraftId: string;
   aircraft?: Aircraft;
   label: string;
+  reference: string | null;
+  zone: string | null;
   type: MaintenanceType;
   dueAtHours: number | null;
   dueAtDate: string | null;

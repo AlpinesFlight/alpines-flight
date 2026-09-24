@@ -10,12 +10,14 @@ type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
   label: z.string().min(2).optional(),
+  reference: z.string().nullable().optional(),
+  zone: z.string().nullable().optional(),
   type: z.enum(["HOURLY", "CALENDAR", "CYCLES"]).optional(),
+  // Pas mutuellement exclusifs — voir recalcAircraftMaintenanceStatuses.
   dueAtHours: z.number().nullable().optional(),
   dueAtDate: z.string().nullable().optional(),
   dueAtCycles: z.number().int().nullable().optional(),
   alertBefore: z.number().optional(),
-  // Un seul à la fois, cohérent avec `type` — voir le .refine plus bas.
   intervalHours: z.number().positive().nullable().optional(),
   intervalDays: z.number().int().positive().nullable().optional(),
   intervalCycles: z.number().int().positive().nullable().optional(),

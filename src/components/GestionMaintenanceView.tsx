@@ -31,11 +31,15 @@ const STATUS_STYLE: Record<string, string> = {
   DONE: "bg-green-500/15 text-green-400",
 };
 
+// Une échéance peut avoir plusieurs seuils à la fois (ex: 100h OU 12 mois,
+// au premier des deux) — on les affiche tous, pas seulement celui qui
+// correspond à `type`.
 function dueSummary(r: MaintenanceRecord): string {
-  if (r.type === "HOURLY" && r.dueAtHours != null) return `${r.dueAtHours.toFixed(1)} h`;
-  if (r.type === "CYCLES" && r.dueAtCycles != null) return `${r.dueAtCycles} cy`;
-  if (r.type === "CALENDAR" && r.dueAtDate) return formatDate(r.dueAtDate);
-  return "—";
+  const parts: string[] = [];
+  if (r.dueAtHours != null) parts.push(`${r.dueAtHours.toFixed(1)} h`);
+  if (r.dueAtCycles != null) parts.push(`${r.dueAtCycles} cy`);
+  if (r.dueAtDate) parts.push(formatDate(r.dueAtDate));
+  return parts.length > 0 ? parts.join(" ou ") : "—";
 }
 
 export function GestionMaintenanceView() {
@@ -458,8 +462,14 @@ function VisitDetailModal({
               {(isOpen ? attached : doneItems).map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-2 bg-navy-950 border border-navy-800 rounded-lg px-3 py-2">
                   <div className="min-w-0">
-                    <p className="text-sm text-cream-50 truncate">{r.label}</p>
-                    <p className="text-[11px] text-navy-100/40">Échéance : {dueSummary(r)}</p>
+                    <p className="text-sm text-cream-50 truncate">
+                      {r.label}
+                      {r.reference && <span className="text-navy-100/40"> · {r.reference}</span>}
+                    </p>
+                    <p className="text-[11px] text-navy-100/40">
+                      {r.zone && <span>{r.zone} · </span>}
+                      Échéance : {dueSummary(r)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", STATUS_STYLE[r.status])}>

@@ -477,11 +477,20 @@ function AircraftDetailModal({
                     className="flex items-center justify-between gap-3 rounded-xl border border-navy-100 px-4 py-3"
                   >
                     <div>
-                      <p className="text-sm font-medium text-navy-900">{m.label}</p>
+                      <p className="text-sm font-medium text-navy-900">
+                        {m.label}
+                        {m.reference && <span className="text-navy-500 font-normal"> · {m.reference}</span>}
+                      </p>
                       <p className="text-xs text-navy-600">
-                        {m.type === "HOURLY" && m.dueAtHours != null && `Échéance à ${formatHoursMinutes(m.dueAtHours)}`}
-                        {m.type === "CYCLES" && `Échéance à ${m.dueAtCycles} cycles`}
-                        {m.type === "CALENDAR" && m.dueAtDate && `Échéance le ${formatDate(m.dueAtDate)}`}
+                        {m.zone && <span>{m.zone} · </span>}
+                        Échéance :{" "}
+                        {[
+                          m.dueAtHours != null ? formatHoursMinutes(m.dueAtHours) : null,
+                          m.dueAtCycles != null ? `${m.dueAtCycles} cycles` : null,
+                          m.dueAtDate ? formatDate(m.dueAtDate) : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" ou ")}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -877,6 +886,8 @@ function MaintenanceFormModal({
   onSaved: () => void;
 }) {
   const [label, setLabel] = useState(existing?.label ?? "");
+  const [reference, setReference] = useState(existing?.reference ?? "");
+  const [zone, setZone] = useState(existing?.zone ?? "");
   const [type, setType] = useState<MaintenanceType>(existing?.type ?? "HOURLY");
   const [dueAtHours, setDueAtHours] = useState(existing?.dueAtHours != null ? String(existing.dueAtHours) : "");
   const [dueAtCycles, setDueAtCycles] = useState(existing?.dueAtCycles != null ? String(existing.dueAtCycles) : "");
@@ -904,6 +915,8 @@ function MaintenanceFormModal({
       const payload = {
         aircraftId: aircraft.id,
         label,
+        reference: reference || null,
+        zone: zone || null,
         type,
         dueAtHours: type === "HOURLY" ? parseFloat(dueAtHours) : null,
         dueAtCycles: type === "CYCLES" ? parseInt(dueAtCycles, 10) : null,
@@ -952,6 +965,20 @@ function MaintenanceFormModal({
             onChange={(e) => setLabel(e.target.value)}
             className="input"
           />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              placeholder="Référence (n° CN/BS, pièce...)"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              className="input"
+            />
+            <input
+              placeholder="Zone (Cellule, Moteur...)"
+              value={zone}
+              onChange={(e) => setZone(e.target.value)}
+              className="input"
+            />
+          </div>
           <select value={type} onChange={(e) => setType(e.target.value as MaintenanceType)} className="input">
             <option value="HOURLY">Échéance en heures de vol</option>
             <option value="CYCLES">Échéance en cycles (atterrissages)</option>

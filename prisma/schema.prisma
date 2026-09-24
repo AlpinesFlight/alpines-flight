@@ -216,10 +216,22 @@ model MaintenanceRecord {
   aircraftId    String
   aircraft      Aircraft           @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
   label         String // ex: "Visite 100h", "Assurance", "CDN"
+  // Référence officielle (n° de CN/BS, ou repère pièce + n° de série) —
+  // distincte du libellé, ex: "EU 2014-0155 (A)" ou "MAG G S4LN21 A138331XF".
+  reference     String?
+  // Zone de l'aéronef, texte libre pour rester générique entre types
+  // d'appareils — ex: "Cellule", "Moteur", "Hélice", "Équipement".
+  zone          String?
   type          MaintenanceType
-  dueAtHours    Float? // pour type HOURLY
-  dueAtDate     DateTime? // pour type CALENDAR
-  dueAtCycles   Int? // pour type CYCLES
+  // dueAtHours/dueAtDate/dueAtCycles ne sont PAS mutuellement exclusifs :
+  // une échéance réelle est souvent "au premier des deux" (ex: 100h OU 12
+  // mois) — voir recalcAircraftMaintenanceStatuses, qui évalue chaque champ
+  // renseigné et retient le statut le plus urgent. `type` reste le champ
+  // "principal" utilisé par le formulaire simple (une seule échéance) ;
+  // les échéances doubles sont créées via import/script.
+  dueAtHours    Float?
+  dueAtDate     DateTime?
+  dueAtCycles   Int?
   alertBefore   Float    @default(10) // heures, jours ou cycles avant échéance pour alerter
   // Renouvellement automatique (optionnel) : si défini, clore cette échéance
   // (marquer fait, ou via la clôture d'une MaintenanceVisit) crée aussitôt la
