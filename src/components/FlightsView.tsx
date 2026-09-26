@@ -290,7 +290,9 @@ export function FlightsView() {
                 </td>
                 {canFinanceAdmin && (
                   <td className="px-5 py-3">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Visible d'office sur écran tactile : sans souris, le survol
+                        n'existe pas et les boutons resteraient invisibles. */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                       <button
                         onClick={() => setEditFlight(f)}
                         title="Modifier"
@@ -355,6 +357,16 @@ function SummaryTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+function centsToInput(cents: number) {
+  return String(Math.round(cents) / 100);
+}
+
+// Corrige un vol déjà clôturé, depuis la page Vols — tout ce que le
+// compte-rendu de vol permettait de saisir (avion, pilote, instructeur,
+// formation, horaires, terrains, atterrissages, montants, carburant) sans
+// repasser par le planning. Le serveur répercute les changements sur les
+// heures/cycles des avions, le compte du pilote et la réservation d'origine
+// (voir PATCH /api/flights/[id]) ; les montants sont ceux affichés ici.
 function EditFlightModal({
   flight,
   onClose,
@@ -364,14 +376,41 @@ function EditFlightModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [aircraftList, setAircraftList] = useState<Aircraft[]>([]);
+  const [students, setStudents] = useState<UserLite[]>([]);
+  const [instructors, setInstructors] = useState<UserLite[]>([]);
+  const [programs, setPrograms] = useState<TrainingProgram[]>([]);
+  const [loadingRefs, setLoadingRefs] = useState(true);
+
+  const [aircraftId, setAircraftId] = useState(flight.aircraftId);
+  const [studentId, setStudentId] = useState(flight.studentId ?? "");
+  const [instructorId, setInstructorId] = useState(flight.instructorId ?? "");
+  // Le type de vol n'est pas conservé sur le vol : une instruction facturée se
+  // reconnaît à son coût ou à sa formation (un instructeur simplement
+  // rattaché à un vol solo n'en facture pas).
+  const [billInstruction, setBillInstruction] = useState(
+    flight.instructionCostCents > 0 || !!flight.trainingProgramId
+  );
+  const [trainingProgramId, setTrainingProgramId] = useState(flight.trainingProgramId ?? "");
   const [departureTime, setDepartureTime] = useState(toLocalInput(new Date(flight.departureTime)));
   const [arrivalTime, setArrivalTime] = useState(toLocalInput(new Date(flight.arrivalTime)));
   const [departureAirfield, setDepartureAirfield] = useState(flight.departureAirfield ?? "");
   const [arrivalAirfield, setArrivalAirfield] = useState(flight.arrivalAirfield ?? "");
+  const [initialStops] = useState<StopRow[]>(() =>
+    flight.stops.map((s) => ({ airfield: s.airfield, touchAndGo: String(s.touchAndGo) }))
+  );
+  const [stops, setStops] = useState<StopRow[]>(initialStops);
   const [totalLandings, setTotalLandings] = useState(String(flight.totalLandings));
   const [remarks, setRemarks] = useState(flight.remarks ?? "");
-  const [aircraftCost, setAircraftCost] = useState(String(flight.aircraftCostCents / 100));
-  const [instructionCost, setInstructionCost] = useState(String(flight.instructionCostCents / 100));
+  const [aircraftCost, setAircraftCost] = useState(centsToInput(flight.aircraftCostCents));
+  const [instructionCost, setInstructionCost] = useState(centsToInput(flight.instructionCostCents));
+  // "Auto" : le montant suit le tarif calculé (avion : durée × tarif du
+  // pilote sur cet avion ; instruction : durée × tarif de la formation ou de
+  // l'instructeur). Activé quand on change ce dont il dépend (avion/pilote,
+  // instructeur/formation), coupé dès qu'on saisit le montant à la main.
+  const [aircraftAuto, setAircraftAuto] = useState(false);
+  const [instructionAuto, setInstructionAuto] = useState(false);
+  const [timesTouched, setTimesTouched] = useState(false);
   const [fuelRefillDone, setFuelRefillDone] = useState(flight.fuelRefillDone);
   const [fuelCard, setFuelCard] = useState(flight.fuelCard ?? "BP");
   const [fuelLiters, setFuelLiters] = useState(flight.fuelLiters ? String(flight.fuelLiters) : "");
@@ -380,8 +419,161 @@ function EditFlightModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    Promise.all([
+      apiFetch<Aircraft[]>("/api/aircraft"),
+      apiFetch<UserLite[]>("/api/students"),
+      apiFetch<UserLite[]>("/api/instructors"),
+      // all=true : la formation du vol peut avoir été désactivée depuis.
+      apiFetch<TrainingProgram[]>("/api/training/programs?all=true"),
+    ])
+      .then(([ac, stu, ins, pr]) => {
+        setAircraftList(ac);
+        setStudents(stu);
+        setInstructors(ins);
+        setPrograms(pr);
+      })
+      .finally(() => setLoadingRefs(false));
+  }, []);
+
+  // Tarif avion réellement applicable (dérogation du pilote incluse, voir
+  // PilotAircraftRate) — indexé par avion|pilote pour ne jamais utiliser le
+  // tarif d'une autre combinaison le temps que la réponse arrive.
+  const [rate, setRate] = useState<{ key: string; cents: number } | null>(null);
+  useEffect(() => {
+    if (!aircraftId) return;
+    let cancelled = false;
+    const key = `${aircraftId}|${studentId}`;
+    const qs = studentId ? `?studentId=${encodeURIComponent(studentId)}` : "";
+    apiFetch<{ rateCents: number }>(`/api/aircraft/${aircraftId}/effective-rate${qs}`)
+      .then((r) => {
+        if (!cancelled) setRate({ key, cents: r.rateCents });
+      })
+      .catch(() => {
+        // Sans tarif, aucun montant n'est proposé : on garde ceux saisis.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aircraftId, studentId]);
+
   const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
   const duration = durationMs > 0 ? durationHours(new Date(departureTime), new Date(arrivalTime)) : 0;
+
+  const aircraftRateCents = rate && rate.key === `${aircraftId}|${studentId}` ? rate.cents : null;
+  const suggestedAircraftCents =
+    aircraftRateCents != null && duration > 0 ? Math.round(duration * aircraftRateCents) : null;
+  const selectedProgram = programs.find((p) => p.id === trainingProgramId);
+  const selectedInstructor = instructors.find((i) => i.id === instructorId);
+  const instructionRateCents =
+    selectedProgram?.instructionRateCents ?? selectedInstructor?.instructorProfile?.hourlyRateCents ?? null;
+  const instructionBilled = !!instructorId && billInstruction;
+  const suggestedInstructionCents =
+    loadingRefs || duration <= 0
+      ? null
+      : instructionBilled && instructionRateCents
+        ? Math.round(duration * instructionRateCents)
+        : 0;
+
+  const aircraftCostShown =
+    aircraftAuto && suggestedAircraftCents != null ? centsToInput(suggestedAircraftCents) : aircraftCost;
+  const instructionCostShown =
+    instructionAuto && suggestedInstructionCents != null ? centsToInput(suggestedInstructionCents) : instructionCost;
+  const aircraftCents = Math.round(parseFloat(aircraftCostShown) * 100) || 0;
+  const instructionCents = Math.round(parseFloat(instructionCostShown) * 100) || 0;
+  // Après un changement d'horaire, propose (sans l'imposer) le montant au
+  // tarif actuel s'il diffère de celui saisi.
+  const aircraftHint =
+    timesTouched && !aircraftAuto && suggestedAircraftCents != null && suggestedAircraftCents !== aircraftCents
+      ? suggestedAircraftCents
+      : null;
+  const instructionHint =
+    timesTouched && !instructionAuto && suggestedInstructionCents != null && suggestedInstructionCents !== instructionCents
+      ? suggestedInstructionCents
+      : null;
+
+  // Liste des sélecteurs : le pilote / l'instructeur / la formation actuels
+  // restent proposés même s'ils ne sont plus dans les listes (compte d'un
+  // autre rôle, formation désactivée...).
+  const knownUserIds = new Set([...students, ...instructors].map((u) => u.id));
+  const extraPilot = flight.student && !knownUserIds.has(flight.student.id) ? flight.student : null;
+  const extraInstructor =
+    flight.instructor && !instructors.some((i) => i.id === flight.instructor!.id) ? flight.instructor : null;
+  const programOptions = programs.filter((p) => p.active || p.id === flight.trainingProgramId);
+  const aircraftOptions = aircraftList.some((a) => a.id === flight.aircraftId)
+    ? aircraftList
+    : [flight.aircraft, ...aircraftList];
+
+  const userName = (id: string) => {
+    const u = [...students, ...instructors, ...(flight.student ? [flight.student] : []), ...(flight.instructor ? [flight.instructor] : [])].find(
+      (x) => x.id === id
+    );
+    return u ? `${u.firstName} ${u.lastName}` : "—";
+  };
+  const registrationOf = (id: string) =>
+    aircraftOptions.find((a) => a.id === id)?.registration ?? flight.aircraft.registration;
+
+  function handleAircraftChange(id: string) {
+    setAircraftId(id);
+    setAircraftAuto(true);
+  }
+  function handlePilotChange(id: string) {
+    setStudentId(id);
+    setAircraftAuto(true);
+  }
+  function handleInstructorChange(id: string) {
+    setInstructorId(id);
+    setInstructionAuto(true);
+    // Ajouter un instructeur à un vol qui n'en avait pas : c'est presque
+    // toujours une instruction à facturer — décochable juste en dessous.
+    if (id && !flight.instructorId) setBillInstruction(true);
+  }
+  function handleTimesChange(setter: (v: string) => void, value: string) {
+    setter(value);
+    setTimesTouched(true);
+  }
+  function changeStops(next: StopRow[]) {
+    setStops(next);
+    // Atterrissage final compté d'office, comme à la clôture du vol.
+    setTotalLandings(String(next.reduce((sum, s) => sum + (parseInt(s.touchAndGo, 10) || 0), 0) + 1));
+  }
+
+  const normalizeStops = (rows: StopRow[]) =>
+    rows
+      .filter((s) => s.airfield.trim())
+      .map((s) => ({ airfield: s.airfield.trim().toUpperCase(), touchAndGo: parseInt(s.touchAndGo, 10) || 1 }));
+  const stopsChanged = JSON.stringify(normalizeStops(stops)) !== JSON.stringify(normalizeStops(initialStops));
+
+  const nextProgramId = instructionBilled ? trainingProgramId || null : null;
+  const aircraftChanged = aircraftId !== flight.aircraftId;
+  const pilotChanged = studentId !== (flight.studentId ?? "");
+  const instructorChanged = instructorId !== (flight.instructorId ?? "");
+  const programChanged = nextProgramId !== (flight.trainingProgramId ?? null);
+
+  const oldTotalCents = flight.aircraftCostCents + flight.instructionCostCents;
+  const newTotalCents = aircraftCents + instructionCents;
+  const landingsCount = parseInt(totalLandings, 10) || 0;
+  const impacts: string[] = [];
+  if (aircraftChanged) {
+    impacts.push(
+      `Les ${formatHoursMinutes(duration)} de vol et ${landingsCount} atterrissage${landingsCount > 1 ? "s" : ""} passent de ${flight.aircraft.registration} à ${registrationOf(aircraftId)} (heures, cycles et échéances maintenance des deux avions).`
+    );
+  }
+  if (pilotChanged) {
+    if (flight.isBaptism) {
+      impacts.push("Vol baptême : aucun débit, seules les heures passent d'un pilote à l'autre.");
+    } else {
+      const parts: string[] = [];
+      if (flight.studentId) parts.push(`${userName(flight.studentId)} est recrédité de ${formatMoney(oldTotalCents)}`);
+      if (studentId) parts.push(`${userName(studentId)} est débité de ${formatMoney(newTotalCents)}`);
+      impacts.push(`Compte pilote : ${parts.join(" ; ")}.`);
+    }
+  } else if (studentId && !flight.isBaptism && newTotalCents !== oldTotalCents) {
+    const delta = newTotalCents - oldTotalCents;
+    impacts.push(
+      `Compte de ${userName(studentId)} : ${delta > 0 ? "débit supplémentaire" : "remboursement"} de ${formatMoney(Math.abs(delta))}.`
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -391,14 +583,19 @@ function EditFlightModal({
       await apiFetch(`/api/flights/${flight.id}`, {
         method: "PATCH",
         body: JSON.stringify({
+          ...(aircraftChanged ? { aircraftId } : {}),
+          ...(pilotChanged ? { studentId: studentId || null } : {}),
+          ...(instructorChanged ? { instructorId: instructorId || null } : {}),
+          ...(programChanged ? { trainingProgramId: nextProgramId } : {}),
           departureTime: new Date(departureTime).toISOString(),
           arrivalTime: new Date(arrivalTime).toISOString(),
           departureAirfield: departureAirfield.trim().toUpperCase() || null,
           arrivalAirfield: arrivalAirfield.trim().toUpperCase() || null,
-          totalLandings: parseInt(totalLandings, 10) || 0,
+          totalLandings: landingsCount,
+          ...(stopsChanged ? { stops: normalizeStops(stops) } : {}),
           remarks: remarks || null,
-          aircraftCostCents: Math.round(parseFloat(aircraftCost) * 100) || 0,
-          instructionCostCents: Math.round(parseFloat(instructionCost) * 100) || 0,
+          aircraftCostCents: aircraftCents,
+          instructionCostCents: instructionCents,
           fuelRefillDone,
           ...(fuelRefillDone
             ? { fuelCard, fuelLiters: parseFloat(fuelLiters) || null, fuelType, fuelAirfield: fuelAirfield || null }
@@ -415,173 +612,344 @@ function EditFlightModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white z-10">
           <h2 className="font-semibold text-navy-900">
-            Modifier le vol — {flight.aircraft.registration}
+            Modifier le vol — {flight.aircraft.registration} · {formatDate(flight.date)}
           </h2>
           <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
             <X size={20} />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
-          <p className="text-xs text-navy-600 -mt-1">
-            {flight.student ? `${flight.student.firstName} ${flight.student.lastName}` : "Vol sans élève"}
-            {flight.instructor ? ` avec ${flight.instructor.firstName} ${flight.instructor.lastName}` : ""}
-            {" — "}pour changer l&apos;avion, l&apos;élève ou l&apos;instructeur, supprime ce vol et
-            ressaisis-le depuis le planning.
-          </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Départ</span>
-              <input
-                type="datetime-local"
-                required
-                value={departureTime}
-                onChange={(e) => setDepartureTime(e.target.value)}
-                className="input"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Arrivée</span>
-              <input
-                type="datetime-local"
-                required
-                value={arrivalTime}
-                onChange={(e) => setArrivalTime(e.target.value)}
-                className="input"
-              />
-            </label>
-          </div>
-          <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHoursMinutes(duration)}</p>
+        {loadingRefs ? (
+          <p className="p-5 text-sm text-navy-600">Chargement...</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+            <p className="text-xs text-navy-600 -mt-1">
+              Tout se corrige ici : heures et cycles des avions, compte du pilote, échéances maintenance et créneau du
+              planning suivent automatiquement.
+            </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Terrain de départ (OACI)</span>
-              <input
-                placeholder="ex : LFNA"
-                value={departureAirfield}
-                onChange={(e) => setDepartureAirfield(e.target.value.toUpperCase())}
-                maxLength={12}
-                className="input uppercase tracking-wide"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Terrain de destination (OACI)</span>
-              <input
-                placeholder="ex : LFNA"
-                value={arrivalAirfield}
-                onChange={(e) => setArrivalAirfield(e.target.value.toUpperCase())}
-                maxLength={12}
-                className="input uppercase tracking-wide"
-              />
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Atterrissages (cycles)</span>
-            <input
-              type="number"
-              min={0}
-              value={totalLandings}
-              onChange={(e) => setTotalLandings(e.target.value)}
-              className="input"
-            />
-          </label>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Coût avion (€)</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={aircraftCost}
-                onChange={(e) => setAircraftCost(e.target.value)}
-                className="input"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Coût instruction (€)</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={instructionCost}
-                onChange={(e) => setInstructionCost(e.target.value)}
-                className="input"
-              />
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Remarques</span>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              className="input min-h-16"
-            />
-          </label>
-
-          <div className="rounded-lg border border-navy-100">
-            <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={fuelRefillDone}
-                onChange={(e) => setFuelRefillDone(e.target.checked)}
-              />
-              <span className="text-sm font-medium text-navy-800">Plein de carburant effectué</span>
-            </label>
-            {fuelRefillDone && (
-              <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value as typeof fuelCard)} className="input">
-                    {FUEL_CARD_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Avion">
+                <select value={aircraftId} onChange={(e) => handleAircraftChange(e.target.value)} className="input">
+                  {aircraftOptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.registration}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Pilote (compte débité)">
+                <select value={studentId} onChange={(e) => handlePilotChange(e.target.value)} className="input">
+                  <option value="">— aucun (ex. vol maintenance) —</option>
+                  <optgroup label="Élèves">
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.firstName} {s.lastName}
                       </option>
                     ))}
-                  </select>
-                  <select value={fuelType} onChange={(e) => setFuelType(e.target.value as typeof fuelType)} className="input">
-                    {FUEL_TYPE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
+                  </optgroup>
+                  <optgroup label="Instructeurs">
+                    {instructors.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.firstName} {i.lastName}
                       </option>
                     ))}
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  </optgroup>
+                  {extraPilot && (
+                    <option value={extraPilot.id}>
+                      {extraPilot.firstName} {extraPilot.lastName}
+                    </option>
+                  )}
+                </select>
+              </Field>
+            </div>
+
+            <Field label="Instructeur (si vol accompagné)">
+              <select value={instructorId} onChange={(e) => handleInstructorChange(e.target.value)} className="input">
+                <option value="">— vol seul —</option>
+                {instructors.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.firstName} {i.lastName}
+                  </option>
+                ))}
+                {extraInstructor && (
+                  <option value={extraInstructor.id}>
+                    {extraInstructor.firstName} {extraInstructor.lastName}
+                  </option>
+                )}
+              </select>
+            </Field>
+
+            {instructorId && (
+              <div className="rounded-lg border border-navy-100">
+                <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer">
                   <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    placeholder="Litres"
-                    value={fuelLiters}
-                    onChange={(e) => setFuelLiters(e.target.value)}
-                    className="input"
+                    type="checkbox"
+                    checked={billInstruction}
+                    onChange={(e) => {
+                      setBillInstruction(e.target.checked);
+                      setInstructionAuto(true);
+                    }}
                   />
-                  <input
-                    placeholder="Terrain (OACI)"
-                    value={fuelAirfield}
-                    onChange={(e) => setFuelAirfield(e.target.value.toUpperCase())}
-                    className="input uppercase"
-                  />
-                </div>
+                  <span className="text-sm font-medium text-navy-800">Instruction facturée au pilote</span>
+                </label>
+                {billInstruction && (
+                  <div className="px-3 pb-3 border-t border-navy-100 pt-3">
+                    <Field label="Formation (détermine le tarif d'instruction)">
+                      <select
+                        value={trainingProgramId}
+                        onChange={(e) => {
+                          setTrainingProgramId(e.target.value);
+                          setInstructionAuto(true);
+                        }}
+                        className="input"
+                      >
+                        <option value="">— tarif par défaut de l&apos;instructeur —</option>
+                        {programOptions.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                            {p.instructionRateCents ? ` — ${formatMoney(p.instructionRateCents)}/h` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                )}
               </div>
             )}
-          </div>
 
-          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Départ">
+                <input
+                  type="datetime-local"
+                  required
+                  value={departureTime}
+                  onChange={(e) => handleTimesChange(setDepartureTime, e.target.value)}
+                  className="input"
+                />
+              </Field>
+              <Field label="Arrivée">
+                <input
+                  type="datetime-local"
+                  required
+                  value={arrivalTime}
+                  onChange={(e) => handleTimesChange(setArrivalTime, e.target.value)}
+                  className="input"
+                />
+              </Field>
+            </div>
+            <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHoursMinutes(duration)}</p>
 
-          <button
-            type="submit"
-            disabled={saving || duration <= 0}
-            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
-          >
-            {saving ? "Enregistrement..." : "Enregistrer"}
-          </button>
-        </form>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Terrain de départ (OACI)">
+                <input
+                  placeholder="ex : LFNA"
+                  value={departureAirfield}
+                  onChange={(e) => setDepartureAirfield(e.target.value.toUpperCase())}
+                  maxLength={12}
+                  className="input uppercase tracking-wide"
+                />
+              </Field>
+              <Field label="Terrain de destination (OACI)">
+                <input
+                  placeholder="ex : LFNA"
+                  value={arrivalAirfield}
+                  onChange={(e) => setArrivalAirfield(e.target.value.toUpperCase())}
+                  maxLength={12}
+                  className="input uppercase tracking-wide"
+                />
+              </Field>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-navy-600">
+                  Terrains posés (optionnel — tours de piste/touchés en route)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeStops([...stops, { airfield: "", touchAndGo: "1" }])}
+                  className="flex items-center gap-1 text-xs text-sunset-600 hover:underline"
+                >
+                  <Plus size={12} /> Ajouter un terrain
+                </button>
+              </div>
+              {stops.length === 0 && (
+                <p className="text-xs text-navy-500">Aucun terrain intermédiaire — seul l&apos;atterrissage à destination compte.</p>
+              )}
+              {stops.length > 0 && (
+                <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
+                  <span className="text-[11px] text-navy-500">Code OACI</span>
+                  <span className="text-[11px] text-navy-500">Touchés</span>
+                  <span />
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                {stops.map((s, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_88px_auto] gap-2 items-center">
+                    <input
+                      required
+                      placeholder="ex : LFNA"
+                      value={s.airfield}
+                      onChange={(e) =>
+                        changeStops(stops.map((x, j) => (j === i ? { ...x, airfield: e.target.value.toUpperCase() } : x)))
+                      }
+                      maxLength={12}
+                      className="input uppercase tracking-wide"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={s.touchAndGo}
+                      onChange={(e) => changeStops(stops.map((x, j) => (j === i ? { ...x, touchAndGo: e.target.value } : x)))}
+                      className="input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => changeStops(stops.filter((_, j) => j !== i))}
+                      className="text-navy-600 hover:text-red-600"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Field label="Atterrissages (cycles)">
+              <input
+                type="number"
+                min={0}
+                value={totalLandings}
+                onChange={(e) => setTotalLandings(e.target.value)}
+                className="input"
+              />
+            </Field>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <Field label="Coût avion (€)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={aircraftCostShown}
+                    onChange={(e) => {
+                      setAircraftCost(e.target.value);
+                      setAircraftAuto(false);
+                    }}
+                    className="input"
+                  />
+                </Field>
+                {aircraftHint != null && (
+                  <button
+                    type="button"
+                    onClick={() => setAircraftAuto(true)}
+                    className="text-left text-[11px] text-sunset-600 hover:underline"
+                  >
+                    Au tarif actuel : {formatMoney(aircraftHint)} — appliquer
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <Field label="Coût instruction (€)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={instructionCostShown}
+                    onChange={(e) => {
+                      setInstructionCost(e.target.value);
+                      setInstructionAuto(false);
+                    }}
+                    className="input"
+                  />
+                </Field>
+                {instructionHint != null && (
+                  <button
+                    type="button"
+                    onClick={() => setInstructionAuto(true)}
+                    className="text-left text-[11px] text-sunset-600 hover:underline"
+                  >
+                    Au tarif actuel : {formatMoney(instructionHint)} — appliquer
+                  </button>
+                )}
+              </div>
+            </div>
+            {flight.isBaptism && (
+              <p className="text-xs text-green-700 -mt-1.5">Vol baptême : ces montants sont indicatifs, aucun débit du compte pilote.</p>
+            )}
+
+            <Field label="Remarques">
+              <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} className="input min-h-16" />
+            </Field>
+
+            <div className="rounded-lg border border-navy-100">
+              <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer">
+                <input type="checkbox" checked={fuelRefillDone} onChange={(e) => setFuelRefillDone(e.target.checked)} />
+                <span className="text-sm font-medium text-navy-800">Plein de carburant effectué</span>
+              </label>
+              {fuelRefillDone && (
+                <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value as typeof fuelCard)} className="input">
+                      {FUEL_CARD_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={fuelType} onChange={(e) => setFuelType(e.target.value as typeof fuelType)} className="input">
+                      {FUEL_TYPE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      placeholder="Litres"
+                      value={fuelLiters}
+                      onChange={(e) => setFuelLiters(e.target.value)}
+                      className="input"
+                    />
+                    <input
+                      placeholder="Terrain (OACI)"
+                      value={fuelAirfield}
+                      onChange={(e) => setFuelAirfield(e.target.value.toUpperCase())}
+                      className="input uppercase"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {impacts.length > 0 && (
+              <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-xs text-navy-700 flex flex-col gap-1">
+                {impacts.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            )}
+
+            {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={saving || duration <= 0}
+              className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+            >
+              {saving ? "Enregistrement..." : "Enregistrer"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
