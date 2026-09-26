@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { safeUserSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
+import { operationDateSchema } from "@/lib/transactions";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,6 +19,9 @@ const editSchema = z.object({
   method: z.enum(["CARD", "TRANSFER", "CASH", "CHECK"]).nullable().optional(),
   reference: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  // Date de l'opération (virement, écriture) — pas pour un débit relié à un
+  // vol, dont la date est celle du vol (voir plus bas).
+  date: operationDateSchema.optional(),
 });
 
 // PATCH sert deux usages, distingués par la forme du corps :
@@ -78,13 +82,23 @@ export async function PATCH(req: Request, { params }: Params) {
   const existing = await prisma.accountTransaction.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  const { date, ...fields } = parsed.data;
+  // Un débit relié à un vol porte la date de ce vol : elle se corrige depuis la
+  // page Vols (PATCH /api/flights/[id]), sinon les deux divergeraient.
+  if (date !== undefined && existing.flightLogId) {
+    return NextResponse.json(
+      { error: "La date d'un vol est celle du vol : corrige-la depuis la page Vols." },
+      { status: 400 }
+    );
+  }
+
   const amountDelta =
-    parsed.data.amountCents !== undefined ? parsed.data.amountCents - existing.amountCents : 0;
+    fields.amountCents !== undefined ? fields.amountCents - existing.amountCents : 0;
 
   const tx = await prisma.$transaction(async (db) => {
     const updated = await db.accountTransaction.update({
       where: { id },
-      data: parsed.data,
+      data: { ...fields, ...(date !== undefined ? { date: new Date(date) } : {}) },
       include: { student: { select: safeUserSelect } },
     });
     if (existing.status === "CONFIRMED" && amountDelta !== 0) {

@@ -46,7 +46,7 @@ export async function GET() {
     prisma.reservation.findMany({ where: { instructorId: userId }, orderBy: { startTime: "desc" } }),
     prisma.flightLog.findMany({ where: { studentId: userId }, include: { stops: true }, orderBy: { date: "desc" } }),
     prisma.flightLog.findMany({ where: { instructorId: userId }, include: { stops: true }, orderBy: { date: "desc" } }),
-    prisma.accountTransaction.findMany({ where: { studentId: userId }, orderBy: { createdAt: "desc" } }),
+    prisma.accountTransaction.findMany({ where: { studentId: userId }, orderBy: [{ date: "desc" }, { createdAt: "desc" }] }),
     prisma.qualification.findMany({
       where: { userId },
       select: {

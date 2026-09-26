@@ -220,6 +220,8 @@ export async function POST(req: Request, { params }: Params) {
           status: "CONFIRMED",
           amountCents: -amountCents,
           flightLogId: flight.id,
+          // Le débit est classé à la date du vol, pas à celle du compte-rendu.
+          date: start,
           notes: notesParts.join(" + "),
           confirmedAt: new Date(),
           confirmedById: session.user.id,

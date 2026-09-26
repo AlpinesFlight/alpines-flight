@@ -37,24 +37,23 @@ export default async function BillingPrintPage({
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(new Date(to).getTime() + 86_399_999) : null; // fin de journée incluse
 
-  // Filtre sur confirmedAt (la date "effective" affichée partout ailleurs
-  // dans l'appli, ex. BillingView), pas createdAt (date d'enregistrement de
-  // la ligne) : un versement peut être déclaré un jour et confirmé
-  // plusieurs jours plus tard une fois le virement vérifié — c'est la date
-  // de confirmation qui doit tomber dans la période choisie. Toujours
-  // non-null ici puisque status est filtré sur CONFIRMED.
+  // Filtre et tri sur date : la date de l'OPÉRATION (date du vol, du virement),
+  // la même que dans l'historique de la page Comptes pilotes (BillingView) —
+  // ni la date de saisie, ni celle de la confirmation. Un vol saisi plusieurs
+  // jours après, ou un virement confirmé plus tard, tombe ainsi dans la bonne
+  // période et à sa vraie place.
   const transactions = await prisma.accountTransaction.findMany({
     where: {
       status: "CONFIRMED",
       ...(fromDate || toDate
-        ? { confirmedAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
+        ? { date: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
         : {}),
     },
     include: {
       student: { select: safeUserSelect },
       flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
     },
-    orderBy: [{ student: { lastName: "asc" } }, { confirmedAt: "asc" }],
+    orderBy: [{ student: { lastName: "asc" } }, { date: "asc" }, { createdAt: "asc" }],
   });
 
   const byStudent = new Map<string, { name: string; rows: typeof transactions }>();
@@ -138,7 +137,7 @@ export default async function BillingPrintPage({
                   {entry.rows.map((t) => (
                     <tr key={t.id} className="border-t border-navy-100">
                       <td className="px-3 py-1.5 text-navy-500 whitespace-nowrap">
-                        {formatDate(t.confirmedAt ?? t.createdAt)}
+                        {formatDate(t.date)}
                       </td>
                       <td className="px-3 py-1.5">{TYPE_LABEL[t.type] ?? t.type}</td>
                       <td className="px-3 py-1.5 text-navy-600">

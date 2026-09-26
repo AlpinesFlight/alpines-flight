@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { UserLite, Aircraft } from "@/types/models";
-import { formatHours, formatMoney } from "@/lib/format";
+import { formatDate, formatHours, formatMoney } from "@/lib/format";
 import { Plus, Search, X, ShieldCheck, Pencil, UserX, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -414,7 +414,8 @@ interface StudentDetail extends UserLite {
     type: string;
     status: string;
     amountCents: number;
-    createdAt: string;
+    // Date de l'opération (vol, virement...), pas de la saisie.
+    date: string;
     notes: string | null;
   }>;
   // Gérant uniquement — voir PilotAircraftRate et /api/students/[id].
@@ -768,7 +769,7 @@ function StudentDetailModal({
                 {data.transactions.map((t) => (
                   <div key={t.id} className="text-sm flex justify-between text-navy-700">
                     <span>
-                      {TX_TYPE_LABEL[t.type]}
+                      <span className="text-navy-500">{formatDate(t.date)}</span> · {TX_TYPE_LABEL[t.type]}
                       {t.status === "PENDING" && " · en attente"}
                       {t.status === "REJECTED" && " · rejeté"}
                     </span>

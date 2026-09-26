@@ -311,6 +311,9 @@ export interface AccountTransaction {
     aircraft: Aircraft;
   } | null;
   notes: string | null;
+  // Date de l'opération (vol, virement...) — celle à afficher et à trier ;
+  // createdAt n'est que le moment de la saisie.
+  date: string;
   createdAt: string;
   confirmedAt: string | null;
   confirmedById: string | null;

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
+import { operationDateSchema } from "@/lib/transactions";
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -26,7 +27,9 @@ export async function GET(req: Request) {
       confirmedBy: { select: safeUserSelect },
       flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
     },
-    orderBy: { createdAt: "desc" },
+    // Classés par date de l'opération (vol, virement...), pas par date de
+    // saisie — voir AccountTransaction.date.
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
   return NextResponse.json(transactions);
 }
@@ -40,6 +43,8 @@ const depositSchema = z.object({
   method: z.enum(["CARD", "TRANSFER", "CASH", "CHECK"]).default("TRANSFER"),
   reference: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Date du virement (par défaut : aujourd'hui).
+  date: operationDateSchema.optional(),
 });
 
 // Écriture manuelle admin (avoir, correction...) : appliquée immédiatement.
@@ -48,6 +53,7 @@ const adjustmentSchema = z.object({
   studentId: z.string(),
   amountCents: z.number().int(), // peut être négatif
   notes: z.string().min(1),
+  date: operationDateSchema.optional(),
 });
 
 export async function POST(req: Request) {
@@ -68,8 +74,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
+    const { date, ...deposit } = parsed.data;
     const tx = await prisma.accountTransaction.create({
-      data: { ...parsed.data, status: "PENDING" },
+      data: { ...deposit, ...(date ? { date: new Date(date) } : {}), status: "PENDING" },
       include: { student: { select: safeUserSelect } },
     });
     return NextResponse.json(tx, { status: 201 });
@@ -83,10 +90,12 @@ export async function POST(req: Request) {
     if (!parsed.success)
       return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
+    const { date: adjustmentDate, ...adjustment } = parsed.data;
     const tx = await prisma.$transaction(async (db) => {
       const created = await db.accountTransaction.create({
         data: {
-          ...parsed.data,
+          ...adjustment,
+          ...(adjustmentDate ? { date: new Date(adjustmentDate) } : {}),
           status: "CONFIRMED",
           confirmedAt: new Date(),
           confirmedById: session.user.id,

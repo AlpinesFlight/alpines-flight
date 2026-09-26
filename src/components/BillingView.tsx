@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { AccountTransaction, SchoolSettings, UserLite } from "@/types/models";
-import { formatDateTime, formatHoursMinutes, formatMoney } from "@/lib/format";
+import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { Plus, X, Check, Ban, Clock, FileDown, FileText, Pencil, Trash2, Landmark, PiggyBank } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -20,6 +20,14 @@ const METHOD_LABEL: Record<string, string> = {
   CASH: "Espèces",
   CHECK: "Chèque",
 };
+
+// Valeur d'un <input type="date"> (jour LOCAL) — ne jamais passer par
+// toISOString().slice(0, 10), qui donne le jour UTC (la veille juste après
+// minuit en France).
+function toDateInput(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 // Reconstruit le détail d'un vol directement depuis le FlightLog relié
 // (toujours à jour, en heures et minutes) plutôt que de rejouer le texte
@@ -245,9 +253,8 @@ export function BillingView() {
                   {t.student.firstName} {t.student.lastName} · {formatMoney(t.amountCents)}
                 </p>
                 <p className="text-xs text-navy-600">
-                  {t.method ? METHOD_LABEL[t.method] : ""}
-                  {t.reference ? ` · réf. ${t.reference}` : ""} · déclaré le{" "}
-                  {formatDateTime(t.createdAt)}
+                  {t.method ? METHOD_LABEL[t.method] : "Versement"} du {formatDate(t.date)}
+                  {t.reference ? ` · réf. ${t.reference}` : ""}
                   {t.notes ? ` · ${t.notes}` : ""}
                 </p>
               </div>
@@ -296,9 +303,8 @@ export function BillingView() {
           <tbody className="divide-y divide-navy-100">
             {filteredHistory.map((t) => (
               <tr key={t.id} className="group">
-                <td className="px-5 py-3 text-navy-600 whitespace-nowrap">
-                  {formatDateTime(t.confirmedAt ?? t.createdAt)}
-                </td>
+                {/* Date de l'opération (vol, virement...), pas de la saisie. */}
+                <td className="px-5 py-3 text-navy-600 whitespace-nowrap">{formatDate(t.date)}</td>
                 <td className="px-5 py-3 text-navy-900 font-medium">
                   {t.student.firstName} {t.student.lastName}
                 </td>
@@ -593,6 +599,8 @@ function EditTransactionModal({
   const [method, setMethod] = useState(transaction.method ?? "TRANSFER");
   const [reference, setReference] = useState(transaction.reference ?? "");
   const [notes, setNotes] = useState(transaction.notes ?? "");
+  const [initialDate] = useState(() => toDateInput(new Date(transaction.date)));
+  const [date, setDate] = useState(initialDate);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -610,6 +618,9 @@ function EditTransactionModal({
           method: type === "DEPOSIT" ? method : null,
           reference: reference || null,
           notes: notes || null,
+          // Seulement si elle a été modifiée : sinon la date exacte déjà
+          // enregistrée (ex. l'heure d'un vol) resterait intacte.
+          ...(date !== initialDate && !transaction.flightLogId ? { date } : {}),
         }),
       });
       onSaved();
@@ -663,6 +674,25 @@ function EditTransactionModal({
               <option value="NEG">Débit −</option>
             </select>
           </div>
+          {transaction.flightLogId ? (
+            <p className="text-xs text-navy-600 bg-navy-50 rounded-lg px-3 py-2">
+              Date du vol : {formatDate(transaction.date)} — elle se corrige depuis la page Vols.
+            </p>
+          ) : (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">
+                {type === "DEPOSIT" ? "Date du versement" : "Date de l'opération"}
+              </span>
+              <input
+                required
+                type="date"
+                max={toDateInput(new Date())}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="input"
+              />
+            </label>
+          )}
           {type === "DEPOSIT" && (
             <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="input">
               <option value="TRANSFER">Virement</option>
@@ -849,6 +879,9 @@ function DeclareDepositModal({
     canPickRecipient ? students[0]?.id ?? "" : self?.id ?? ""
   );
   const [amount, setAmount] = useState("");
+  // Date du virement — pas celle de la déclaration : c'est elle qui classe le
+  // versement dans l'historique.
+  const [date, setDate] = useState(() => toDateInput(new Date()));
   const [method, setMethod] = useState<"TRANSFER" | "CARD" | "CASH" | "CHECK">("TRANSFER");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
@@ -866,6 +899,7 @@ function DeclareDepositModal({
           type: "DEPOSIT",
           studentId,
           amountCents: Math.round(parseFloat(amount) * 100),
+          date,
           method,
           reference: reference || null,
           notes: notes || null,
@@ -919,6 +953,17 @@ function DeclareDepositModal({
             onChange={(e) => setAmount(e.target.value)}
             className="input"
           />
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Date du virement / versement</span>
+            <input
+              required
+              type="date"
+              max={toDateInput(new Date())}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="input"
+            />
+          </label>
           <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="input">
             <option value="TRANSFER">Virement</option>
             <option value="CARD">Carte bancaire</option>

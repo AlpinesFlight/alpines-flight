@@ -228,6 +228,9 @@ export async function PATCH(req: Request, { params }: Params) {
         where: { session: { flightLogId: id } },
         data: { date: departureTime },
       });
+      // Idem pour le débit du compte pilote : classé à la date du vol (voir
+      // AccountTransaction.date).
+      await db.accountTransaction.updateMany({ where: { flightLogId: id }, data: { date: departureTime } });
     }
 
     // Réservation d'origine : la clôture l'avait alignée sur le vol réel
@@ -305,7 +308,7 @@ export async function PATCH(req: Request, { params }: Params) {
         if (transaction) {
           await db.accountTransaction.update({
             where: { id: transaction.id },
-            data: { studentId: newStudentId, amountCents: -newTotalCost, notes },
+            data: { studentId: newStudentId, amountCents: -newTotalCost, date: departureTime, notes },
           });
         } else {
           await db.accountTransaction.create({
@@ -315,6 +318,7 @@ export async function PATCH(req: Request, { params }: Params) {
               status: "CONFIRMED",
               amountCents: -newTotalCost,
               flightLogId: id,
+              date: departureTime,
               notes,
               confirmedAt: new Date(),
               confirmedById: session.user.id,

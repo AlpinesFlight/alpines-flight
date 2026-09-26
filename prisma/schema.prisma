@@ -613,15 +613,25 @@ model AccountTransaction {
   flightLogId   String?            @unique
   flightLog     FlightLog?         @relation(fields: [flightLogId], references: [id])
   notes         String?
+  // Date de l'OPÉRATION — celle qui sert à classer et à afficher le mouvement
+  // (page Comptes pilotes, relevé PDF) : date de départ du vol pour un débit de
+  // vol (suit ses corrections d'horaire, voir PATCH /api/flights/[id]), date du
+  // versement/virement pour un versement, date de l'écriture pour un
+  // ajustement. Distincte de createdAt (moment de la saisie dans l'appli) et de
+  // confirmedAt (moment de la vérification) : un vol saisi plusieurs jours
+  // après, ou un virement confirmé plus tard, doit rester à sa vraie place dans
+  // le relevé.
+  date          DateTime           @default(now())
   createdAt     DateTime           @default(now())
   confirmedAt   DateTime?
   confirmedById String?
   confirmedBy   User?              @relation("TransactionConfirmedBy", fields: [confirmedById], references: [id])
 
-  // BillingView sépare systématiquement PENDING/le reste par status ; l'export
-  // comptable (comptes-pilotes/print) filtre par confirmedAt.
+  // BillingView sépare systématiquement PENDING/le reste par status ; le relevé
+  // comptable (comptes-pilotes/print) filtre et trie par date.
   @@index([status])
   @@index([confirmedAt])
+  @@index([date])
 }
 
 // ---------- Licences, qualifications, médicales ----------

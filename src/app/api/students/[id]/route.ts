@@ -61,7 +61,8 @@ export async function GET(_req: Request, { params }: Params) {
       transactions: canSeeFinance
         ? {
             include: { flightLog: { include: { aircraft: { select: safeAircraftSelect } } } },
-            orderBy: { createdAt: "desc" },
+            // Par date de l'opération (vol, virement), pas de saisie.
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
             take: 30,
           }
         : false,
