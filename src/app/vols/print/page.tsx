@@ -109,7 +109,7 @@ export default async function FlightsPrintPage({
               {flights.map((f) => (
                 <tr key={f.id} className="border-t border-navy-100">
                   <td className="px-3 py-1.5 text-navy-600 whitespace-nowrap">{formatDate(f.date)}</td>
-                  <td className="px-3 py-1.5 font-medium">{f.aircraft.registration}</td>
+                  <td className="px-3 py-1.5 font-medium whitespace-nowrap">{f.aircraft.registration}</td>
                   <td className="px-3 py-1.5 text-navy-600">
                     {f.instructor ? `${f.instructor.firstName} ${f.instructor.lastName}` : "—"}
                   </td>

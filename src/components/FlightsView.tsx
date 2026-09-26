@@ -194,7 +194,7 @@ export function FlightsView() {
               <div className="flex flex-col gap-2">
                 {managementSummary.byAircraft.map((a) => (
                   <div key={a.registration} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="font-medium text-navy-900">{a.registration}</span>
+                    <span className="font-medium text-navy-900 whitespace-nowrap">{a.registration}</span>
                     <span className="text-navy-600 text-right">
                       {formatHours(a.hours)} · {a.landings} att. · {formatMoney(a.revenueCents)}
                     </span>
@@ -262,7 +262,7 @@ export function FlightsView() {
             {flights.map((f) => (
               <tr key={f.id} className="group hover:bg-navy-50/50 transition-colors">
                 <td className="px-5 py-3 text-navy-600 whitespace-nowrap">{formatDate(f.date)}</td>
-                <td className="px-5 py-3 font-medium text-navy-900">{f.aircraft.registration}</td>
+                <td className="px-5 py-3 font-medium text-navy-900 whitespace-nowrap">{f.aircraft.registration}</td>
                 <td className="px-5 py-3 text-navy-700">
                   {f.student ? `${f.student.firstName} ${f.student.lastName}` : "—"}
                 </td>
@@ -553,10 +553,15 @@ function EditFlightModal({
   const oldTotalCents = flight.aircraftCostCents + flight.instructionCostCents;
   const newTotalCents = aircraftCents + instructionCents;
   const landingsCount = parseInt(totalLandings, 10) || 0;
-  const impacts: string[] = [];
+  const impacts: React.ReactNode[] = [];
   if (aircraftChanged) {
     impacts.push(
-      `Les ${formatHoursMinutes(duration)} de vol et ${landingsCount} atterrissage${landingsCount > 1 ? "s" : ""} passent de ${flight.aircraft.registration} à ${registrationOf(aircraftId)} (heures, cycles et échéances maintenance des deux avions).`
+      <>
+        Les {formatHoursMinutes(duration)} de vol et {landingsCount} atterrissage{landingsCount > 1 ? "s" : ""} passent
+        de <span className="whitespace-nowrap">{flight.aircraft.registration}</span> à{" "}
+        <span className="whitespace-nowrap">{registrationOf(aircraftId)}</span> (heures, cycles et échéances
+        maintenance des deux avions).
+      </>
     );
   }
   if (pilotChanged) {
@@ -615,7 +620,8 @@ function EditFlightModal({
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white z-10">
           <h2 className="font-semibold text-navy-900">
-            Modifier le vol — {flight.aircraft.registration} · {formatDate(flight.date)}
+            Modifier le vol — <span className="whitespace-nowrap">{flight.aircraft.registration}</span> ·{" "}
+            <span className="whitespace-nowrap">{formatDate(flight.date)}</span>
           </h2>
           <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
             <X size={20} />
@@ -933,8 +939,8 @@ function EditFlightModal({
 
             {impacts.length > 0 && (
               <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-xs text-navy-700 flex flex-col gap-1">
-                {impacts.map((line) => (
-                  <p key={line}>{line}</p>
+                {impacts.map((line, i) => (
+                  <p key={i}>{line}</p>
                 ))}
               </div>
             )}
