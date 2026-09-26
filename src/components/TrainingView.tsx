@@ -1072,8 +1072,28 @@ function SessionFormModal({
   }, [existing]);
 
   const currentPhase = enrollment.program.phases.find((p) => p.id === phaseId);
-  const [entries, setEntries] = useState<Record<string, EntryDraft>>({});
-  const [entriesInitialized, setEntriesInitialized] = useState(false);
+
+  // Un brouillon par exercice de TOUT le programme : le sélecteur de phase ne
+  // fait que changer les exercices affichés, sans jamais perdre ce qui a été
+  // coché dans une autre phase (une même séance peut couvrir plusieurs phases,
+  // ex. 1A et 1B). En édition, les exercices déjà notés sont cochés d'office.
+  const [entries, setEntries] = useState<Record<string, EntryDraft>>(() => {
+    const drafts: Record<string, EntryDraft> = {};
+    for (const phase of enrollment.program.phases) {
+      for (const ex of phase.exercises) {
+        const editedLevel = existingLevels.get(ex.id);
+        drafts[ex.id] = {
+          exerciseId: ex.id,
+          numero: ex.numero,
+          intitule: ex.intitule,
+          level: editedLevel ?? latest.get(ex.id)?.level ?? "NON_VU",
+          checked: editedLevel !== undefined,
+        };
+      }
+    }
+    return drafts;
+  });
+  const totalChecked = Object.values(entries).filter((e) => e.checked).length;
 
   useEffect(() => {
     apiFetch<Aircraft[]>("/api/aircraft").then(setAircraftList).catch(() => {});
@@ -1092,24 +1112,6 @@ function SessionFormModal({
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollment.studentId]);
-
-  useEffect(() => {
-    if (!currentPhase) return;
-    const initial: Record<string, EntryDraft> = {};
-    for (const ex of currentPhase.exercises) {
-      const editedLevel = !entriesInitialized ? existingLevels.get(ex.id) : undefined;
-      initial[ex.id] = {
-        exerciseId: ex.id,
-        numero: ex.numero,
-        intitule: ex.intitule,
-        level: editedLevel ?? latest.get(ex.id)?.level ?? "NON_VU",
-        checked: editedLevel !== undefined,
-      };
-    }
-    setEntries(initial);
-    setEntriesInitialized(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phaseId]);
 
   // Relier un vol reprend sa date de départ (et verrouille le champ Date, voir
   // plus bas) ; le délier rend la main sur la date.
@@ -1218,46 +1220,60 @@ function SessionFormModal({
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-navy-600">Phase</span>
             <select value={phaseId} onChange={(e) => setPhaseId(e.target.value)} className="input">
-              {enrollment.program.phases.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} · {p.title}
-                </option>
-              ))}
+              {enrollment.program.phases.map((p) => {
+                const n = p.exercises.filter((ex) => entries[ex.id]?.checked).length;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.code} · {p.title}
+                    {n > 0 ? ` — ${n} coché${n > 1 ? "s" : ""}` : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
 
           <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto border border-navy-100 rounded-lg p-2">
-            {Object.values(entries).map((entry) => (
-              <div
-                key={entry.exerciseId}
-                className={clsx(
-                  "flex items-center gap-2 px-2 py-1.5 rounded-lg",
-                  entry.checked && "bg-navy-50"
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={entry.checked}
-                  onChange={() => toggle(entry.exerciseId)}
-                  className="shrink-0"
-                />
-                <span className="text-sm text-navy-800 flex-1 min-w-0 truncate">
-                  {entry.numero}. {entry.intitule}
-                </span>
-                <select
-                  value={entry.level}
-                  onChange={(e) => setLevel(entry.exerciseId, e.target.value as ProgressLevel)}
-                  className="text-xs border border-navy-100 rounded-md px-1.5 py-1 shrink-0"
+            {(currentPhase?.exercises ?? []).map((ex) => {
+              const entry = entries[ex.id];
+              if (!entry) return null;
+              return (
+                <div
+                  key={entry.exerciseId}
+                  className={clsx(
+                    "flex items-center gap-2 px-2 py-1.5 rounded-lg",
+                    entry.checked && "bg-navy-50"
+                  )}
                 >
-                  {Object.entries(LEVEL_LABEL).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
+                  <input
+                    type="checkbox"
+                    checked={entry.checked}
+                    onChange={() => toggle(entry.exerciseId)}
+                    className="shrink-0"
+                  />
+                  <span className="text-sm text-navy-800 flex-1 min-w-0 truncate">
+                    {entry.numero}. {entry.intitule}
+                  </span>
+                  <select
+                    value={entry.level}
+                    onChange={(e) => setLevel(entry.exerciseId, e.target.value as ProgressLevel)}
+                    className="text-xs border border-navy-100 rounded-md px-1.5 py-1 shrink-0"
+                  >
+                    {Object.entries(LEVEL_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
           </div>
+          <p className="text-[11px] text-navy-500 -mt-1.5">
+            Tu peux changer de phase : les exercices cochés sont conservés.{" "}
+            <span className="font-semibold text-navy-700">
+              {totalChecked} exercice{totalChecked > 1 ? "s" : ""} dans cette séance.
+            </span>
+          </p>
 
           <textarea
             placeholder="Remarques sur la séance (optionnel)"
