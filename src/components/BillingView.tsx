@@ -72,7 +72,12 @@ export function BillingView() {
     try {
       const [tx, stu, set, me] = await Promise.all([
         apiFetch<AccountTransaction[]>("/api/transactions"),
-        canFinanceAdmin ? apiFetch<UserLite[]>("/api/students") : Promise.resolve<UserLite[]>([]),
+        // withInstructors : les comptes des instructeurs sont aussi des comptes
+        // pilotes (solde, filtre, versement, extrait de vols) — leurs noms
+        // s'ajoutent simplement à la liste, sans distinction.
+        canFinanceAdmin
+          ? apiFetch<UserLite[]>("/api/students?withInstructors=true")
+          : Promise.resolve<UserLite[]>([]),
         apiFetch<SchoolSettings>("/api/settings"),
         userId ? apiFetch<UserLite>(`/api/students/${userId}`) : Promise.resolve(null),
       ]);

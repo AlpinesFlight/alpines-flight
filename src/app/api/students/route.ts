@@ -5,12 +5,22 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { safeUserSelect } from "@/lib/selects";
-import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
+import { canManageFinance, canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
 import { sendWelcomeEmail } from "@/lib/welcome-email";
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Page Comptes pilotes (Gérant) : un instructeur qui vole comme pilote a lui
+  // aussi un compte débité, donc la page liste, avec les élèves/pilotes, les
+  // instructeurs et toute personne ayant déjà un compte — sinon leur solde
+  // manquerait du total et on ne pourrait ni les filtrer ni leur déclarer un
+  // versement. Réservé au Gérant (soldes) ; ignoré pour tout autre compte, et
+  // absent de tous les autres usages de cette route (pickers, page Élèves).
+  const withInstructors =
+    new URL(req.url).searchParams.get("withInstructors") === "true" &&
+    canManageFinance(session.user.role);
 
   // Le trombinoscope complet (utile pour les pickers élève/instructeur) est
   // visible de tous les comptes connectés, mais le solde du compte pilote et
@@ -21,7 +31,15 @@ export async function GET() {
   const staff = isInstructorOrAbove(session.user.role);
 
   const students = await prisma.user.findMany({
-    where: { role: "STUDENT" },
+    where: withInstructors
+      ? {
+          OR: [
+            { role: "STUDENT" },
+            { instructorProfile: { isNot: null } },
+            { studentProfile: { isNot: null } },
+          ],
+        }
+      : { role: "STUDENT" },
     select: {
       ...safeUserSelect,
       studentProfile: staff

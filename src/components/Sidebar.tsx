@@ -167,8 +167,13 @@ export function Sidebar({
             (!item.staffOnly || userRole === "GERANT" || userRole === "ADMIN" || userRole === "INSTRUCTOR") &&
             (!item.schoolManagerOnly || userRole === "GERANT" || userRole === "ADMIN")
         ).map((item) => {
+          // Page exacte ou sous-page ("/vols/print") — jamais un simple préfixe
+          // de texte : "/comptes" (Comptes & droits) est aussi le début de
+          // "/comptes-pilotes", ce qui allumait les deux entrées à la fois.
           const active =
-            item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            item.href === "/"
+              ? pathname === "/"
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
             <Link
