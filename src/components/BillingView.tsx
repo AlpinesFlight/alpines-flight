@@ -119,6 +119,30 @@ export function BillingView() {
     [history, filterStudentId]
   );
 
+  // Compte du pilote choisi dans le filtre : son solde et de quoi il est fait.
+  // Seuls les mouvements confirmés comptent (un versement en attente n'a pas
+  // encore crédité le compte) — c'est exactement ce que somme le solde stocké.
+  const selectedAccount = useMemo<PilotAccount | null>(() => {
+    const person = filterStudentId ? students.find((s) => s.id === filterStudentId) : undefined;
+    if (!person) return null;
+    const mine = transactions.filter((t) => t.studentId === person.id);
+    const confirmed = mine.filter((t) => t.status === "CONFIRMED");
+    const figure = (type: AccountTransaction["type"]) => {
+      const rows = confirmed.filter((t) => t.type === type);
+      return { count: rows.length, cents: rows.reduce((sum, t) => sum + t.amountCents, 0) };
+    };
+    const pendingRows = mine.filter((t) => t.status === "PENDING");
+    return {
+      person,
+      balanceCents: person.studentProfile?.balanceCents ?? 0,
+      deposits: figure("DEPOSIT"),
+      flights: figure("FLIGHT_DEBIT"),
+      adjustments: figure("ADJUSTMENT"),
+      pendingCount: pendingRows.length,
+      pendingCents: pendingRows.reduce((sum, t) => sum + t.amountCents, 0),
+    };
+  }, [filterStudentId, students, transactions]);
+
   const summary = useMemo(() => {
     const balances = students.map((s) => s.studentProfile?.balanceCents ?? 0);
     const totalBalance = balances.reduce((sum, b) => sum + b, 0);
@@ -212,7 +236,7 @@ export function BillingView() {
       </div>
 
       {canFinanceAdmin && (
-        <label className="flex flex-col gap-1 mb-6 max-w-xs">
+        <label className={clsx("flex flex-col gap-1 max-w-xs", selectedAccount ? "mb-3" : "mb-6")}>
           <span className="text-xs font-medium text-navy-600">
             Filtrer par compte pilote (versements et vols ci-dessous)
           </span>
@@ -232,6 +256,8 @@ export function BillingView() {
           </select>
         </label>
       )}
+
+      {canFinanceAdmin && selectedAccount && <PilotAccountCard account={selectedAccount} />}
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-6">
         <div className="flex items-center gap-2 px-5 py-4 border-b border-navy-100">
@@ -414,6 +440,83 @@ export function BillingView() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+interface PilotAccount {
+  person: UserLite;
+  balanceCents: number;
+  deposits: { count: number; cents: number };
+  flights: { count: number; cents: number };
+  adjustments: { count: number; cents: number };
+  pendingCount: number;
+  pendingCents: number;
+}
+
+// "+" explicite devant un montant positif (formatMoney met déjà le "-").
+function signedMoney(cents: number) {
+  return `${cents > 0 ? "+" : ""}${formatMoney(cents)}`;
+}
+
+// Le compte d'UN pilote : son solde — créditeur (positif), débiteur (négatif)
+// ou nul — et le calcul qui y mène : versements confirmés, vols débités,
+// éventuels ajustements. Affiché quand un pilote est choisi dans le filtre.
+function PilotAccountCard({ account }: { account: PilotAccount }) {
+  const { person, balanceCents, deposits, flights, adjustments, pendingCount, pendingCents } = account;
+  const tone =
+    balanceCents > 0
+      ? { label: "Créditeur", accent: "border-l-green-600", text: "text-green-700", badge: "bg-green-100 text-green-700" }
+      : balanceCents < 0
+        ? { label: "Débiteur", accent: "border-l-red-600", text: "text-red-600", badge: "bg-red-100 text-red-600" }
+        : { label: "Solde nul", accent: "border-l-navy-200", text: "text-navy-900", badge: "bg-navy-100 text-navy-600" };
+
+  return (
+    <div className={clsx("bg-white rounded-2xl border border-navy-100 border-l-4 p-5 mb-6 max-w-lg", tone.accent)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-navy-600 truncate">
+            Solde de {person.firstName} {person.lastName}
+          </p>
+          <p className={clsx("text-2xl font-bold leading-tight whitespace-nowrap", tone.text)}>
+            {signedMoney(balanceCents)}
+          </p>
+        </div>
+        <span className={clsx("shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full", tone.badge)}>
+          {tone.label}
+        </span>
+      </div>
+      <dl className="mt-4 pt-3 border-t border-navy-100 text-sm flex flex-col gap-1.5">
+        <AccountLine label="Versements confirmés" count={deposits.count} cents={deposits.cents} />
+        <AccountLine label="Vols" count={flights.count} cents={flights.cents} />
+        {adjustments.count > 0 && (
+          <AccountLine label="Ajustements" count={adjustments.count} cents={adjustments.cents} />
+        )}
+      </dl>
+      {pendingCount > 0 && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-navy-600">
+          <Clock size={12} className="shrink-0" />
+          {formatMoney(pendingCents)} en attente de vérification — pas encore compté dans le solde.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AccountLine({ label, count, cents }: { label: string; count: number; cents: number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-navy-600">
+        {label} <span className="text-navy-400">({count})</span>
+      </dt>
+      <dd
+        className={clsx(
+          "font-semibold whitespace-nowrap",
+          cents < 0 ? "text-red-600" : cents > 0 ? "text-green-700" : "text-navy-500"
+        )}
+      >
+        {signedMoney(cents)}
+      </dd>
     </div>
   );
 }
