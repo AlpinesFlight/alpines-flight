@@ -54,6 +54,17 @@ const LEVEL_STYLE: Record<ProgressLevel, string> = {
   ASSIMILE: "bg-green-100 text-green-700",
 };
 
+// Valeur d'un <input type="datetime-local"> (heure LOCALE, sans fuseau) à
+// partir d'un instant. Ne jamais passer par toISOString().slice(0, 16) :
+// c'est l'heure UTC, lue ensuite comme une heure locale — décalage de 1h ou 2h
+// à chaque ouverture/enregistrement d'une séance.
+function toLocalInput(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+}
+
 // Déduit, pour chaque exercice, le niveau le plus récent à partir de
 // l'historique complet (trié du plus récent au plus ancien).
 function latestLevelByExercise(progress: ExerciseProgress[]): Map<string, ExerciseProgress> {
@@ -1034,8 +1045,15 @@ function SessionFormModal({
     return enrollment.program.phases[0]?.id ?? "";
   }, [existing, enrollment.program.phases]);
 
+  // Séance reliée à un vol : la date est celle du vol (voir handleFlightChange).
   const [date, setDate] = useState(
-    existing ? existing.date.slice(0, 16) : new Date().toISOString().slice(0, 16)
+    toLocalInput(
+      existing?.flightLog
+        ? new Date(existing.flightLog.departureTime)
+        : existing
+          ? new Date(existing.date)
+          : new Date()
+    )
   );
   const [aircraftId, setAircraftId] = useState(existing?.aircraftId ?? "");
   const [remarks, setRemarks] = useState(existing?.remarks ?? "");
@@ -1092,6 +1110,14 @@ function SessionFormModal({
     setEntriesInitialized(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phaseId]);
+
+  // Relier un vol reprend sa date de départ (et verrouille le champ Date, voir
+  // plus bas) ; le délier rend la main sur la date.
+  function handleFlightChange(id: string) {
+    setFlightLogId(id);
+    const flight = flightOptions.find((f) => f.id === id);
+    if (flight) setDate(toLocalInput(new Date(flight.departureTime)));
+  }
 
   function toggle(exerciseId: string) {
     setEntries((prev) => ({ ...prev, [exerciseId]: { ...prev[exerciseId], checked: !prev[exerciseId].checked } }));
@@ -1150,13 +1176,16 @@ function SessionFormModal({
         <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Date</span>
+              <span className="text-xs font-medium text-navy-600">
+                {flightLogId ? "Date du vol" : "Date"}
+              </span>
               <input
                 type="datetime-local"
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="input"
+                disabled={!!flightLogId}
+                className="input disabled:opacity-60"
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1176,7 +1205,7 @@ function SessionFormModal({
             <span className="text-xs font-medium text-navy-600">
               Vol relié (optionnel — pour le résumé d&apos;heures par phase)
             </span>
-            <select value={flightLogId} onChange={(e) => setFlightLogId(e.target.value)} className="input">
+            <select value={flightLogId} onChange={(e) => handleFlightChange(e.target.value)} className="input">
               <option value="">—</option>
               {flightOptions.map((f) => (
                 <option key={f.id} value={f.id}>

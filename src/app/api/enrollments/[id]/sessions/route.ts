@@ -45,7 +45,19 @@ export async function POST(req: Request, { params }: Params) {
 
   const { date, aircraftId, flightLogId, remarks, entries } = parsed.data;
   const instructorId = parsed.data.instructorId || session.user.id;
-  const sessionDate = new Date(date);
+
+  // Une séance reliée à un vol prend la date (et l'heure) de départ de ce vol,
+  // quelle que soit la date envoyée : c'est le vol qui fait foi, pas le moment
+  // où le FI a rempli la fiche (souvent bien après le vol).
+  let sessionDate = new Date(date);
+  if (flightLogId) {
+    const flight = await prisma.flightLog.findUnique({
+      where: { id: flightLogId },
+      select: { departureTime: true },
+    });
+    if (!flight) return NextResponse.json({ error: "Vol introuvable." }, { status: 400 });
+    sessionDate = flight.departureTime;
+  }
 
   const created = await prisma.$transaction(async (db) => {
     const trainingSession = await db.trainingSession.create({

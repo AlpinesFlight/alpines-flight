@@ -48,11 +48,25 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const { date, aircraftId, flightLogId, remarks, entries } = parsed.data;
 
+  // La date d'une séance reliée à un vol est celle du vol (voir POST
+  // /api/enrollments/[id]/sessions) — que le vol soit relié maintenant ou
+  // l'ait déjà été, la date envoyée est alors ignorée.
+  const linkedFlightId = flightLogId !== undefined ? flightLogId : existing.flightLogId;
+  let newDate = date ? new Date(date) : undefined;
+  if (linkedFlightId) {
+    const flight = await prisma.flightLog.findUnique({
+      where: { id: linkedFlightId },
+      select: { departureTime: true },
+    });
+    if (!flight) return NextResponse.json({ error: "Vol introuvable." }, { status: 400 });
+    newDate = flight.departureTime;
+  }
+
   const updated = await prisma.$transaction(async (db) => {
     const trainingSession = await db.trainingSession.update({
       where: { id: sessionId },
       data: {
-        ...(date ? { date: new Date(date) } : {}),
+        ...(newDate ? { date: newDate } : {}),
         ...(aircraftId !== undefined ? { aircraftId } : {}),
         ...(flightLogId !== undefined ? { flightLogId } : {}),
         ...(remarks !== undefined ? { remarks } : {}),
@@ -75,6 +89,10 @@ export async function PATCH(req: Request, { params }: Params) {
           },
         });
       }
+    } else if (newDate && newDate.getTime() !== existing.date.getTime()) {
+      // Sans nouvelle liste d'exercices, les niveaux déjà notés suivent quand
+      // même la nouvelle date de la séance.
+      await db.exerciseProgress.updateMany({ where: { sessionId }, data: { date: newDate } });
     }
 
     return db.trainingSession.findUniqueOrThrow({

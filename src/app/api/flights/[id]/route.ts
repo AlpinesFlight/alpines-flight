@@ -111,6 +111,17 @@ export async function PATCH(req: Request, { params }: Params) {
       include: { stops: true, aircraft: { select: safeAircraftSelect } },
     });
 
+    // La séance de formation reliée à ce vol porte la date de départ du vol
+    // (voir POST /api/enrollments/[id]/sessions) : si l'horaire est corrigé,
+    // elle et ses exercices notés suivent.
+    if (departureTime.getTime() !== existing.departureTime.getTime()) {
+      await db.trainingSession.updateMany({ where: { flightLogId: id }, data: { date: departureTime } });
+      await db.exerciseProgress.updateMany({
+        where: { session: { flightLogId: id } },
+        data: { date: departureTime },
+      });
+    }
+
     if (existing.studentId && (durationDelta !== 0 || costDelta !== 0)) {
       await db.studentProfile.update({
         where: { userId: existing.studentId },
