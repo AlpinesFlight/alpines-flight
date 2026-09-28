@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { AnnouncementsCard } from "@/components/AnnouncementsCard";
 import { MaintenanceIssuesCard } from "@/components/MaintenanceIssuesCard";
-import { formatDateTime, formatHours } from "@/lib/format";
+import { formatDateTime, formatHoursMinutes } from "@/lib/format";
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
 import Link from "next/link";
 import {
@@ -126,7 +126,7 @@ export default async function DashboardPage() {
         <StatCard
           icon={PlaneTakeoff}
           label="Heures volées ce mois-ci"
-          value={formatHours(monthHours)}
+          value={formatHoursMinutes(monthHours)}
           color="navy"
           href={`/vols?from=${toIsoDate(monthStart)}&to=${toIsoDate(monthEnd)}`}
         />
