@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { clsx } from "clsx";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { DocumentAcknowledgment, DocumentVisibility, SchoolDocument } from "@/types/models";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
@@ -303,6 +305,17 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+
+  function handlePick(f: File | undefined) {
+    if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${formatSize(MAX_UPLOAD_BYTES)} max).`);
+      return;
+    }
+    setError(null);
+    setFile(f);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -311,24 +324,34 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
       return;
     }
     setSaving(true);
+    setProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("title", title);
-      form.set("category", category);
-      form.set("visibility", visibility);
-      form.set("file", file);
-
-      const res = await fetch("/api/documents", { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      // Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // /api/documents/blob-upload).
+      const blob = await upload(`school-documents/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: "/api/documents/blob-upload",
+        multipart: true,
+        onUploadProgress: ({ percentage }) => setProgress(percentage),
+      });
+      await apiFetch("/api/documents", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          category: category || null,
+          visibility,
+          fileName: file.name,
+          blobUrl: blob.url,
+        }),
+      });
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -364,17 +387,21 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">
-              Fichier (PDF, image, Word ou Excel — 4 Mo max)
-            </span>
+            <span className="text-xs font-medium text-navy-600">Fichier (PDF, image, Word ou Excel)</span>
             <input
               type="file"
               required
               accept="application/pdf,image/jpeg,image/png,image/webp,.doc,.docx,.xls,.xlsx"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => handlePick(e.target.files?.[0])}
               className="text-sm"
             />
           </label>
+          {file && (
+            <p className="text-xs text-navy-600 bg-navy-50 rounded-lg px-3 py-2">
+              {file.name} · {formatSize(file.size)}
+            </p>
+          )}
+          {progress !== null && <p className="text-xs text-navy-500">Envoi... {Math.round(progress)} %</p>}
           {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
           <button
             type="submit"

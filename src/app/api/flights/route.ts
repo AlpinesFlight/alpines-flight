@@ -52,10 +52,11 @@ export async function GET(req: Request) {
     },
     include: {
       // aircraft: true (avant) incluait aussi photoData — la photo complète
-      // de l'avion (jusqu'à 4 Mo, voir /api/aircraft/[id]/photo), répétée à
-      // chaque vol. Sur une période large, ça faisait grimper la réponse à
-      // plusieurs dizaines de Mo pour une poignée de vols. Le binaire ne
-      // doit transiter que par la route de streaming dédiée.
+      // de l'avion, répétée à chaque vol. Sur une période large, ça faisait
+      // grimper la réponse à plusieurs dizaines de Mo pour une poignée de
+      // vols (et depuis la migration Blob, photoData est de toute façon
+      // vide pour toute nouvelle photo, voir /api/aircraft/[id]/photo). Le
+      // binaire ne doit transiter que par la route de streaming dédiée.
       aircraft: { select: safeAircraftSelect },
       student: { select: safeUserSelect },
       instructor: { select: safeUserSelect },

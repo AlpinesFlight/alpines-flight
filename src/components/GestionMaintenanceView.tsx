@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { formatDate, formatHours } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
 import { Aircraft, MaintenanceRecord, MaintenanceVisit } from "@/types/models";
@@ -270,6 +272,7 @@ function VisitDetailModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [closeDescription, setCloseDescription] = useState("");
   const [closing, setClosing] = useState(false);
@@ -371,21 +374,33 @@ function VisitDetailModal({
   }
 
   async function handleUpload(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} Mo max).`);
+      return;
+    }
     setUploading(true);
+    setUploadProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const res = await fetch(`/api/maintenance-visits/${visitId}/documents`, { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      // Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // .../blob-upload).
+      const blob = await upload(`maintenance-visit-documents/${visitId}/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: `/api/maintenance-visits/${visitId}/documents/blob-upload`,
+        multipart: true,
+        onUploadProgress: ({ percentage }) => setUploadProgress(percentage),
+      });
+      await apiFetch(`/api/maintenance-visits/${visitId}/documents`, {
+        method: "POST",
+        body: JSON.stringify({ fileName: file.name, blobUrl: blob.url }),
+      });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -538,7 +553,10 @@ function VisitDetailModal({
               ))}
             </div>
             <label className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-navy-700 hover:border-navy-600 text-navy-100/50 hover:text-cream-50 text-sm px-3.5 py-2 cursor-pointer transition-colors">
-              <Upload size={14} /> {uploading ? "Envoi..." : "Ajouter un document (PDF ou image, 4 Mo max)"}
+              <Upload size={14} />{" "}
+              {uploading
+                ? `Envoi... ${uploadProgress !== null ? Math.round(uploadProgress) + " %" : ""}`
+                : "Ajouter un document (PDF ou image)"}
               <input
                 type="file"
                 accept="application/pdf,image/jpeg,image/png,image/webp"

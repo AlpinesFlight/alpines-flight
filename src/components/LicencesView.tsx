@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { Qualification, QualificationDocument, QualificationType, UserLite } from "@/types/models";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { canManageSchool } from "@/lib/permissions";
@@ -809,6 +811,17 @@ function UploadDocumentModal({
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+
+  function handlePick(f: File | undefined) {
+    if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} Mo max).`);
+      return;
+    }
+    setError(null);
+    setFile(f);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -821,33 +834,43 @@ function UploadDocumentModal({
       return;
     }
     setSaving(true);
+    setProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("userId", person.id);
-      if (qualificationId !== NEW_SLOT) {
-        form.set("qualificationId", qualificationId);
-      } else {
-        form.set("type", type);
-        form.set("label", label);
-        form.set("reminderDaysBefore", reminderDaysBefore);
-      }
-      if (number) form.set("number", number);
-      if (issuedAt) form.set("issuedAt", issuedAt);
-      if (expiresAt) form.set("expiresAt", expiresAt);
-      if (notes) form.set("notes", notes);
-      if (file) form.set("file", file);
+      // Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // /api/qualifications/documents/blob-upload). clientPayload porte
+      // l'id du compte concerné : la route vérifie que c'est bien soi-même
+      // ou que le compte a les droits staff, comme côté création.
+      const blob = await upload(`qualification-documents/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: "/api/qualifications/documents/blob-upload",
+        clientPayload: person.id,
+        multipart: true,
+        onUploadProgress: ({ percentage }) => setProgress(percentage),
+      });
 
-      const res = await fetch("/api/qualifications/documents", { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      await apiFetch("/api/qualifications/documents", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: person.id,
+          ...(qualificationId !== NEW_SLOT
+            ? { qualificationId }
+            : { type, label, reminderDaysBefore: parseInt(reminderDaysBefore, 10) || 45 }),
+          number: number || null,
+          issuedAt: issuedAt || null,
+          expiresAt: expiresAt || null,
+          notes: notes || null,
+          fileName: file.name,
+          blobUrl: blob.url,
+        }),
+      });
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -919,15 +942,18 @@ function UploadDocumentModal({
           </div>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Fichier (PDF, JPEG, PNG — 4 Mo max)</span>
+            <span className="text-xs font-medium text-navy-600">Fichier (PDF, JPEG, PNG, HEIC, WebP)</span>
             <input
               type="file"
               required
               accept="application/pdf,image/jpeg,image/png,image/heic,image/webp"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => handlePick(e.target.files?.[0])}
               className="text-sm"
             />
           </label>
+          {progress !== null && (
+            <p className="text-xs text-navy-500">Envoi... {Math.round(progress)} %</p>
+          )}
 
           <textarea
             placeholder="Notes (optionnel)"

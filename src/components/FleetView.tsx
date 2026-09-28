@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { Aircraft, KardexCategory, KardexEntry, MaintenanceRecord, MaintenanceStatus, MaintenanceType } from "@/types/models";
 import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { isInstructorOrAbove } from "@/lib/permissions";
@@ -633,24 +635,37 @@ function AircraftPhotoUpload({
   onChanged: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} Mo max).`);
+      return;
+    }
     setUploading(true);
+    setProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const res = await fetch(`/api/aircraft/${aircraft.id}/photo`, { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      // Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // .../photo/blob-upload).
+      const blob = await upload(`aircraft-photos/${aircraft.id}/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: `/api/aircraft/${aircraft.id}/photo/blob-upload`,
+        multipart: true,
+        onUploadProgress: ({ percentage }) => setProgress(percentage),
+      });
+      await apiFetch(`/api/aircraft/${aircraft.id}/photo`, {
+        method: "POST",
+        body: JSON.stringify({ fileName: file.name, blobUrl: blob.url }),
+      });
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setUploading(false);
+      setProgress(null);
     }
   }
 
@@ -684,7 +699,11 @@ function AircraftPhotoUpload({
       </div>
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-semibold text-sunset-600 hover:underline cursor-pointer w-fit">
-          {uploading ? "Envoi..." : aircraft.photoMimeType ? "Changer la photo" : "Ajouter une photo"}
+          {uploading
+            ? `Envoi... ${progress !== null ? Math.round(progress) + " %" : ""}`
+            : aircraft.photoMimeType
+              ? "Changer la photo"
+              : "Ajouter une photo"}
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -697,7 +716,7 @@ function AircraftPhotoUpload({
             className="hidden"
           />
         </label>
-        <p className="text-[11px] text-navy-400">JPEG, PNG ou WebP — 4 Mo max</p>
+        <p className="text-[11px] text-navy-400">JPEG, PNG ou WebP</p>
         {aircraft.photoMimeType && (
           <button
             type="button"

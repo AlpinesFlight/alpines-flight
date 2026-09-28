@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { FlightPrepDocument } from "@/types/models";
 import { formatDateTime } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
@@ -232,11 +234,16 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   function handlePick(f: File | undefined) {
     if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${formatSize(MAX_UPLOAD_BYTES)} max).`);
+      return;
+    }
     setError(null);
     setFile(f);
     if (!title) setTitle(f.name.replace(/\.\w+$/, ""));
@@ -249,23 +256,33 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
       return;
     }
     setSaving(true);
+    setProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("title", title || file.name);
-      form.set("category", category);
-      form.set("file", file);
-
-      const res = await fetch("/api/flight-prep-documents", { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      // Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // /api/flight-prep-documents/blob-upload).
+      const blob = await upload(`flight-prep-documents/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: "/api/flight-prep-documents/blob-upload",
+        multipart: true,
+        onUploadProgress: ({ percentage }) => setProgress(percentage),
+      });
+      await apiFetch("/api/flight-prep-documents", {
+        method: "POST",
+        body: JSON.stringify({
+          title: title || file.name,
+          category: category || null,
+          fileName: file.name,
+          blobUrl: blob.url,
+        }),
+      });
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -317,6 +334,9 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             <p className="text-xs text-navy-100/70 bg-navy-800 rounded-lg px-3 py-2">
               {file.name} · {formatSize(file.size)}
             </p>
+          )}
+          {progress !== null && (
+            <p className="text-xs text-navy-100/50">Envoi... {Math.round(progress)} %</p>
           )}
 
           <label className="flex flex-col gap-1">

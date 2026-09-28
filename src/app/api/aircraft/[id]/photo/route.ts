@@ -1,67 +1,71 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeAircraftSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
+import { get, del, head } from "@vercel/blob";
+import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Vercel plafonne le corps d'une requête à 4,5 Mo — limite fixe de la
-// plateforme, non contournable ni en config ni en code : au-delà, la
-// requête est rejetée AVANT d'atteindre ce code (413 générique
-// FUNCTION_PAYLOAD_TOO_LARGE, pas le message clair ci-dessous) — c'est
-// exactement ce qui se produisait avec l'ancienne limite à 8 Mo, jamais
-// vraiment atteignable pour une photo de téléphone un peu grande. 4 Mo de
-// marge de sécurité ici.
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
-// Formats affichables directement en <img> — pas de PDF/HEIC ici (contrairement
-// aux documents de licences, cette photo s'affiche en ligne sur la carte avion.
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+// La photo elle-même est déjà envoyée à Vercel Blob par le navigateur avant
+// cet appel (voir .../photo/blob-upload et FleetView.tsx) — ce POST ne fait
+// plus qu'enregistrer son URL. Importe (ou remplace) la photo d'un avion,
+// affichée sur sa carte dans la page Flotte. Une seule photo par avion — un
+// nouvel envoi remplace l'ancienne. Admin uniquement.
+const createSchema = z.object({
+  fileName: z.string().min(1),
+  blobUrl: z.string().url(),
+});
 
-// Importe (ou remplace) la photo d'un avion, affichée sur sa carte dans la
-// page Flotte. Une seule photo par avion — un nouvel envoi remplace
-// l'ancienne. Admin uniquement.
 export async function POST(req: Request, { params }: Params) {
   const session = await auth();
   if (!session || !canManageSchool(session.user.role))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.aircraft.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.aircraft.findUnique({ where: { id }, select: { photoBlobUrl: true } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  let form: FormData;
-  try {
-    form = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Formulaire invalide." }, { status: 400 });
-  }
+  const body = await req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success)
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
-  const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "Fichier manquant." }, { status: 400 });
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return NextResponse.json({ error: "Fichier trop volumineux (4 Mo max)." }, { status: 400 });
-  }
-  if (file.type && !ALLOWED_MIME.has(file.type)) {
+  let meta;
+  try {
+    meta = await head(parsed.data.blobUrl);
+  } catch {
     return NextResponse.json(
-      { error: "Format non accepté (JPEG, PNG ou WebP uniquement)." },
+      { error: "Fichier introuvable dans le stockage — réessaie l'envoi." },
       { status: 400 }
     );
   }
 
-  const photoData = new Uint8Array(await file.arrayBuffer());
-
   const aircraft = await prisma.aircraft.update({
     where: { id },
     data: {
-      photoData,
-      photoMimeType: file.type || "application/octet-stream",
-      photoFileName: file.name,
+      photoBlobUrl: parsed.data.blobUrl,
+      photoData: null,
+      photoMimeType: meta.contentType || "application/octet-stream",
+      photoFileName: parsed.data.fileName,
     },
     select: safeAircraftSelect,
   });
+
+  // L'ancienne photo (si elle était déjà dans Blob) est remplacée — la
+  // supprimer évite un fichier orphelin. Après l'écriture réussie en base,
+  // pour ne jamais perdre le pointeur vers l'ancien fichier si ça échouait
+  // avant.
+  if (existing.photoBlobUrl && existing.photoBlobUrl !== parsed.data.blobUrl) {
+    try {
+      await del(existing.photoBlobUrl);
+    } catch (err) {
+      console.error(`Suppression de l'ancienne photo Blob de Aircraft ${id} échouée :`, err);
+    }
+  }
+
   return NextResponse.json(aircraft);
 }
 
@@ -75,14 +79,32 @@ export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
   const aircraft = await prisma.aircraft.findUnique({
     where: { id },
-    select: { photoData: true, photoMimeType: true, photoFileName: true },
+    select: { photoData: true, photoMimeType: true, photoFileName: true, photoBlobUrl: true },
   });
-  if (!aircraft?.photoData) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!aircraft || (!aircraft.photoData && !aircraft.photoBlobUrl)) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
 
-  return new NextResponse(new Uint8Array(aircraft.photoData), {
+  const disposition = `inline; filename="${aircraft.photoFileName ?? "photo"}"`;
+
+  if (aircraft.photoBlobUrl) {
+    const blob = await get(aircraft.photoBlobUrl, { access: "private" });
+    if (!blob || blob.stream === null) {
+      return NextResponse.json({ error: "Fichier introuvable dans le stockage." }, { status: 404 });
+    }
+    return new NextResponse(blob.stream, {
+      headers: {
+        "Content-Type": aircraft.photoMimeType || "application/octet-stream",
+        "Content-Disposition": disposition,
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  }
+
+  return new NextResponse(new Uint8Array(aircraft.photoData!), {
     headers: {
       "Content-Type": aircraft.photoMimeType || "application/octet-stream",
-      "Content-Disposition": `inline; filename="${aircraft.photoFileName ?? "photo"}"`,
+      "Content-Disposition": disposition,
       "Cache-Control": "private, max-age=3600",
     },
   });
@@ -95,10 +117,22 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  const existing = await prisma.aircraft.findUnique({ where: { id }, select: { photoBlobUrl: true } });
+  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+
   const aircraft = await prisma.aircraft.update({
     where: { id },
-    data: { photoData: null, photoMimeType: null, photoFileName: null },
+    data: { photoData: null, photoBlobUrl: null, photoMimeType: null, photoFileName: null },
     select: safeAircraftSelect,
   });
+
+  if (existing.photoBlobUrl) {
+    try {
+      await del(existing.photoBlobUrl);
+    } catch (err) {
+      console.error(`Suppression de la photo Blob de Aircraft ${id} échouée :`, err);
+    }
+  }
+
   return NextResponse.json(aircraft);
 }

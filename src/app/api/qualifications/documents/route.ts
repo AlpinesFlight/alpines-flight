@@ -1,15 +1,28 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeDocumentSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
+import { head } from "@vercel/blob";
+import { z } from "zod";
 
-// Vercel plafonne le corps d'une requête à 4,5 Mo — limite fixe de la
-// plateforme, non contournable ni en config ni en code (au-delà, la
-// requête est rejetée avant même d'atteindre ce code, avec un 413 générique
-// au lieu du message clair ci-dessous). 4 Mo de marge de sécurité ici.
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png", "image/heic", "image/webp"]);
+// Le fichier lui-même est déjà envoyé à Vercel Blob par le navigateur avant
+// cet appel (voir .../blob-upload et LicencesView.tsx) — ce POST ne fait
+// plus que créer la fiche (et, au besoin, la qualification elle-même).
+const createSchema = z.object({
+  userId: z.string().min(1),
+  qualificationId: z.string().optional().nullable(),
+  type: z.string().optional(),
+  label: z.string().optional(),
+  reminderDaysBefore: z.number().int().optional(),
+  number: z.string().optional().nullable(),
+  issuedAt: z.string().optional().nullable(),
+  expiresAt: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  fileName: z.string().min(1),
+  blobUrl: z.string().url(),
+});
 
 // Importe un nouveau document (renouvellement) pour une qualification —
 // existante (qualificationId fourni) ou nouvelle (type + label fournis).
@@ -19,36 +32,16 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let form: FormData;
-  try {
-    form = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Formulaire invalide." }, { status: 400 });
-  }
+  const body = await req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success)
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
-  const userId = String(form.get("userId") ?? "");
-  const qualificationId = form.get("qualificationId") ? String(form.get("qualificationId")) : null;
-  const type = form.get("type") ? String(form.get("type")) : null;
-  const label = form.get("label") ? String(form.get("label")) : null;
-  const reminderDaysBefore = form.get("reminderDaysBefore")
-    ? parseInt(String(form.get("reminderDaysBefore")), 10)
-    : 45;
-  const number = form.get("number") ? String(form.get("number")) : null;
-  const issuedAt = form.get("issuedAt") ? String(form.get("issuedAt")) : null;
-  const expiresAt = form.get("expiresAt") ? String(form.get("expiresAt")) : null;
-  const notes = form.get("notes") ? String(form.get("notes")) : null;
-  const file = form.get("file");
+  const { userId, qualificationId, type, label, reminderDaysBefore, number, issuedAt, expiresAt, notes } =
+    parsed.data;
 
-  if (!userId) return NextResponse.json({ error: "userId manquant." }, { status: 400 });
   if (!canManageSchool(session.user.role) && userId !== session.user.id) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  // Un document sans fichier n'a rien à faire valider : ça a déjà produit
-  // un document "courant" vide masquant silencieusement, dans l'historique,
-  // le vrai document avec son fichier — revérifié ici, jamais fait
-  // confiance au seul contrôle du formulaire.
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "Un fichier est requis." }, { status: 400 });
   }
 
   let qualification;
@@ -65,42 +58,33 @@ export async function POST(req: Request) {
       );
     }
     qualification = await prisma.qualification.create({
-      data: { userId, type: type as never, label, reminderDaysBefore },
+      data: { userId, type: type as never, label, reminderDaysBefore: reminderDaysBefore ?? 45 },
     });
   }
 
-  let fileName: string | null = null;
-  let fileMimeType: string | null = null;
-  let fileSize: number | null = null;
-  let fileData: Uint8Array<ArrayBuffer> | null = null;
-
-  if (file instanceof File && file.size > 0) {
-    if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: "Fichier trop volumineux (4 Mo max)." }, { status: 400 });
-    }
-    if (file.type && !ALLOWED_MIME.has(file.type)) {
-      return NextResponse.json(
-        { error: "Format non accepté (PDF, JPEG, PNG, HEIC ou WebP uniquement)." },
-        { status: 400 }
-      );
-    }
-    fileName = file.name;
-    fileMimeType = file.type || "application/octet-stream";
-    fileSize = file.size;
-    fileData = new Uint8Array(await file.arrayBuffer());
+  // Vérifie que le fichier existe vraiment dans Blob et récupère taille/type
+  // réels — jamais ceux annoncés par le client.
+  let meta;
+  try {
+    meta = await head(parsed.data.blobUrl);
+  } catch {
+    return NextResponse.json(
+      { error: "Fichier introuvable dans le stockage — réessaie l'envoi." },
+      { status: 400 }
+    );
   }
 
   const document = await prisma.qualificationDocument.create({
     data: {
       qualificationId: qualification.id,
-      number,
+      number: number || null,
       issuedAt: issuedAt ? new Date(issuedAt) : null,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
-      notes,
-      fileName,
-      fileMimeType,
-      fileSize,
-      fileData,
+      notes: notes || null,
+      fileName: parsed.data.fileName,
+      fileMimeType: meta.contentType || "application/octet-stream",
+      fileSize: meta.size,
+      blobUrl: parsed.data.blobUrl,
       status: "PENDING",
       uploadedById: session.user.id,
     },

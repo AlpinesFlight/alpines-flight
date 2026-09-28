@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeDocumentSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
+import { del } from "@vercel/blob";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -77,6 +78,14 @@ export async function DELETE(_req: Request, { params }: Params) {
     data: { currentDocumentId: null },
   });
   await prisma.qualificationDocument.delete({ where: { id } });
+
+  if (doc.blobUrl) {
+    try {
+      await del(doc.blobUrl);
+    } catch (err) {
+      console.error(`Suppression du fichier Blob de QualificationDocument ${id} échouée :`, err);
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { TheoryClass, TheoryClassDocument } from "@/types/models";
 import { formatDateTime } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
@@ -278,8 +280,19 @@ function UploadModal({ classId, onClose, onUploaded }: { classId: string; onClos
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  function handlePick(f: File | undefined) {
+    if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${formatSize(MAX_UPLOAD_BYTES)} max).`);
+      return;
+    }
+    setError(null);
+    setFile(f);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -288,20 +301,28 @@ function UploadModal({ classId, onClose, onUploaded }: { classId: string; onClos
       return;
     }
     setSaving(true);
+    setProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const res = await fetch(`/api/theory-classes/${classId}/documents`, { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      // Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // .../blob-upload).
+      const blob = await upload(`theory-class-documents/${classId}/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: `/api/theory-classes/${classId}/documents/blob-upload`,
+        multipart: true,
+        onUploadProgress: ({ percentage }) => setProgress(percentage),
+      });
+      await apiFetch(`/api/theory-classes/${classId}/documents`, {
+        method: "POST",
+        body: JSON.stringify({ fileName: file.name, blobUrl: blob.url }),
+      });
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -338,7 +359,7 @@ function UploadModal({ classId, onClose, onUploaded }: { classId: string; onClos
             type="file"
             accept="application/pdf,image/*"
             className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => handlePick(e.target.files?.[0])}
           />
           <input
             ref={cameraInputRef}
@@ -346,12 +367,15 @@ function UploadModal({ classId, onClose, onUploaded }: { classId: string; onClos
             accept="image/*"
             capture="environment"
             className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => handlePick(e.target.files?.[0])}
           />
           {file && (
             <p className="text-xs text-navy-100/70 bg-navy-800 rounded-lg px-3 py-2">
               {file.name} · {formatSize(file.size)}
             </p>
+          )}
+          {progress !== null && (
+            <p className="text-xs text-navy-100/50">Envoi... {Math.round(progress)} %</p>
           )}
           {error && <p className="text-red-400 text-sm bg-red-500/15 rounded-lg px-3 py-2">{error}</p>}
           <button

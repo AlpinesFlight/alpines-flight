@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { AdminDocument } from "@/types/models";
 import { formatDateTime } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
@@ -23,9 +24,6 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-// Même valeur que côté serveur (voir /api/admin/documents/blob-upload) —
-// rejeter tout de suite au choix du fichier évite un envoi pour rien.
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 export function GestionDocumentsView() {
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
@@ -195,8 +193,8 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
 
   function handlePick(f: File | undefined) {
     if (!f) return;
-    if (f.size > MAX_FILE_BYTES) {
-      setError(`Fichier trop volumineux (${formatSize(MAX_FILE_BYTES)} max).`);
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(`Fichier trop volumineux (${formatSize(MAX_UPLOAD_BYTES)} max).`);
       return;
     }
     setError(null);
@@ -220,6 +218,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
       const blob = await upload(`admin-documents/${Date.now()}-${file.name}`, file, {
         access: "private",
         handleUploadUrl: "/api/admin/documents/blob-upload",
+        multipart: true,
         onUploadProgress: ({ percentage }) => setProgress(percentage),
       });
       // 2) La fiche elle-même, une fois le fichier bien arrivé dans Blob.

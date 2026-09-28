@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeFlightPrepDocumentSelect } from "@/lib/selects";
 import { isGerant } from "@/lib/permissions";
+import { del } from "@vercel/blob";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -45,5 +46,14 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   await prisma.flightPrepDocument.delete({ where: { id } });
+
+  if (existing.blobUrl) {
+    try {
+      await del(existing.blobUrl);
+    } catch (err) {
+      console.error(`Suppression du fichier Blob de FlightPrepDocument ${id} échouée :`, err);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

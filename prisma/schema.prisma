@@ -186,7 +186,9 @@ model Aircraft {
   // affichée sur sa carte dans la page Flotte. Jamais renvoyée en JSON
   // (voir /api/aircraft/[id]/photo, même principe que les documents de
   // licences : le binaire ne transite que par une route de streaming dédiée).
-  photoData         Bytes?
+  photoData         Bytes? // ancien stockage en base (avant migration Vercel Blob, 2026-09-28) ; nul pour toute nouvelle photo, voir photoBlobUrl
+  // URL de la photo dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  photoBlobUrl      String?
   photoMimeType     String?
   photoFileName     String?
   createdAt         DateTime       @default(now())
@@ -356,10 +358,13 @@ model MaintenanceVisitDocument {
   fileName     String
   fileMimeType String
   fileSize     Int
-  // Jamais renvoyé en JSON — streaming uniquement via
-  // /api/maintenance-visits/[id]/documents/[docId]/file, même logique que
-  // AdminDocument.fileData.
-  fileData     Bytes
+  // Ancien stockage en base (avant migration Vercel Blob, 2026-09-28) —
+  // gardé nullable pour un très ancien document uniquement, plus jamais
+  // écrit. Jamais renvoyé en JSON — streaming uniquement via
+  // /api/maintenance-visits/[id]/documents/[docId]/file.
+  fileData     Bytes?
+  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  blobUrl      String?
   uploadedAt   DateTime          @default(now())
   uploadedById String
   uploadedBy   User              @relation("MaintenanceVisitDocUploadedBy", fields: [uploadedById], references: [id])
@@ -692,7 +697,9 @@ model QualificationDocument {
   fileName        String?
   fileMimeType    String?
   fileSize        Int?
-  fileData        Bytes?         // contenu du fichier (scan/photo/PDF), servi via une route authentifiée
+  fileData        Bytes?         // ancien stockage en base (avant migration Vercel Blob, 2026-09-28) ; nul pour tout nouveau document, voir blobUrl
+  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  blobUrl         String?
   status          DocumentStatus @default(PENDING)
   rejectionReason String?
   uploadedAt      DateTime       @default(now())
@@ -907,9 +914,13 @@ model AnnouncementAttachment {
   fileName       String
   fileMimeType   String
   fileSize       Int
-  // Jamais renvoyé en JSON, voir safeAnnouncementSelect — streaming
-  // uniquement via /api/announcements/[id]/attachments/[attachmentId].
-  fileData       Bytes
+  // Ancien stockage en base (avant migration Vercel Blob, 2026-09-28) —
+  // gardé nullable pour une très ancienne pièce jointe uniquement, plus
+  // jamais écrit. Jamais renvoyé en JSON, voir safeAnnouncementSelect —
+  // streaming uniquement via /api/announcements/[id]/attachments/[attachmentId].
+  fileData       Bytes?
+  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  blobUrl        String?
   uploadedAt     DateTime     @default(now())
 }
 
@@ -937,9 +948,13 @@ model SchoolDocument {
   fileName     String
   fileMimeType String
   fileSize     Int
-  // Jamais renvoyé en JSON — streaming uniquement via
+  // Ancien stockage en base (avant migration Vercel Blob, 2026-09-28) —
+  // gardé nullable pour un très ancien document uniquement, plus jamais
+  // écrit. Jamais renvoyé en JSON — streaming uniquement via
   // /api/documents/[id]/file, qui applique aussi la règle de visibilité.
-  fileData     Bytes
+  fileData     Bytes?
+  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  blobUrl      String?
   uploadedAt   DateTime           @default(now())
   uploadedById String
   uploadedBy   User               @relation(fields: [uploadedById], references: [id])
@@ -1160,9 +1175,13 @@ model FlightPrepDocument {
   fileName     String
   fileMimeType String
   fileSize     Int
-  // Jamais renvoyé en JSON — streaming uniquement via
-  // /api/flight-prep-documents/[id]/file, même logique qu'AdminDocument.fileData.
-  fileData     Bytes
+  // Ancien stockage en base (avant migration Vercel Blob, 2026-09-28) —
+  // gardé nullable pour un très ancien document uniquement, plus jamais
+  // écrit. Jamais renvoyé en JSON — streaming uniquement via
+  // /api/flight-prep-documents/[id]/file.
+  fileData     Bytes?
+  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  blobUrl      String?
   uploadedAt   DateTime @default(now())
   uploadedById String
   uploadedBy   User     @relation("FlightPrepDocumentUploadedBy", fields: [uploadedById], references: [id])
@@ -1198,9 +1217,13 @@ model TheoryClassDocument {
   fileName      String
   fileMimeType  String
   fileSize      Int
-  // Jamais renvoyé en JSON — streaming uniquement via
+  // Ancien stockage en base (avant migration Vercel Blob, 2026-09-28) —
+  // gardé nullable pour un très ancien document uniquement, plus jamais
+  // écrit. Jamais renvoyé en JSON — streaming uniquement via
   // /api/theory-classes/[id]/documents/[docId]/file.
-  fileData      Bytes
+  fileData      Bytes?
+  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
+  blobUrl       String?
   uploadedAt    DateTime    @default(now())
   uploadedById  String
   uploadedBy    User        @relation("TheoryClassDocUploadedBy", fields: [uploadedById], references: [id])

@@ -1,20 +1,27 @@
 import { NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { auth } from "@/lib/auth";
-import { isGerant } from "@/lib/permissions";
+import { canManageSchool } from "@/lib/permissions";
 import { MAX_UPLOAD_BYTES, assertPathnamePrefix } from "@/lib/blob";
 
-const ALLOWED_CONTENT_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+const ALLOWED_CONTENT_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
 
 // Émet le jeton qui autorise le navigateur à uploader directement vers
-// Vercel Blob (voir GestionDocumentsView.tsx). Le document (titre,
-// catégorie...) n'est créé qu'ensuite, par un POST classique vers
-// /api/admin/documents une fois l'upload terminé — pas via le webhook
-// onUploadCompleted de Vercel (il ne peut pas joindre localhost en dev, ce
-// qui rendrait les échecs silencieux en local).
+// Vercel Blob (voir AnnouncementsCard.tsx) — un par pièce jointe, avant la
+// création de l'actualité elle-même (qui n'existe pas encore à ce stade).
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session || !isGerant(session.user.role))
+  if (!session || !canManageSchool(session.user.role))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = (await req.json()) as HandleUploadBody;
@@ -24,7 +31,7 @@ export async function POST(req: Request) {
       body,
       request: req,
       onBeforeGenerateToken: async (pathname) => {
-        assertPathnamePrefix(pathname, "admin-documents/");
+        assertPathnamePrefix(pathname, "announcement-attachments/");
         return {
           allowedContentTypes: ALLOWED_CONTENT_TYPES,
           maximumSizeInBytes: MAX_UPLOAD_BYTES,

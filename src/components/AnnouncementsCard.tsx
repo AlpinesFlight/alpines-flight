@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
+import { MAX_UPLOAD_BYTES } from "@/lib/blob";
 import { Announcement } from "@/types/models";
 import { formatDateTime } from "@/lib/format";
 import { Megaphone, Plus, X, Paperclip, Trash2, FileText } from "lucide-react";
@@ -116,9 +118,18 @@ function ComposeAnnouncementModal({
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Progression globale (moyenne des fichiers en cours) — plusieurs pièces
+  // jointes possibles, pas de sens à afficher un pourcentage par fichier ici.
+  const [progress, setProgress] = useState<number | null>(null);
 
   function addFiles(newFiles: FileList | null) {
     if (!newFiles) return;
+    const tooBig = Array.from(newFiles).find((f) => f.size > MAX_UPLOAD_BYTES);
+    if (tooBig) {
+      setError(`« ${tooBig.name} » dépasse ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} Mo.`);
+      return;
+    }
+    setError(null);
     setFiles((prev) => [...prev, ...Array.from(newFiles)].slice(0, 5));
   }
 
@@ -129,23 +140,38 @@ function ComposeAnnouncementModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setProgress(files.length > 0 ? 0 : null);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("title", title);
-      form.set("body", body);
-      for (const file of files) form.append("files", file);
+      // Envoi direct du navigateur vers Vercel Blob, un par pièce jointe —
+      // contourne la limite dure de 4,5 Mo sur le corps d'une requête
+      // serverless (voir /api/announcements/blob-upload).
+      const perFileProgress = new Array(files.length).fill(0);
+      const attachments = await Promise.all(
+        files.map(async (file, i) => {
+          const blob = await upload(`announcement-attachments/${Date.now()}-${file.name}`, file, {
+            access: "private",
+            handleUploadUrl: "/api/announcements/blob-upload",
+            multipart: true,
+            onUploadProgress: ({ percentage }) => {
+              perFileProgress[i] = percentage;
+              setProgress(perFileProgress.reduce((s, p) => s + p, 0) / files.length);
+            },
+          });
+          return { fileName: file.name, blobUrl: blob.url };
+        })
+      );
 
-      const res = await fetch("/api/announcements", { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      await apiFetch("/api/announcements", {
+        method: "POST",
+        body: JSON.stringify({ title, body, attachments }),
+      });
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -179,7 +205,7 @@ function ComposeAnnouncementModal({
 
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-navy-600">
-              Documents joints (optionnel, 5 max, PDF/image/Word/Excel — 4 Mo au total)
+              Documents joints (optionnel, 5 max, PDF/image/Word/Excel)
             </span>
             <input
               type="file"
@@ -212,6 +238,7 @@ function ComposeAnnouncementModal({
             </div>
           )}
 
+          {progress !== null && <p className="text-xs text-navy-500">Envoi... {Math.round(progress)} %</p>}
           {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
 
           <button

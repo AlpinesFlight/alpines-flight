@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeSchoolDocumentSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
+import { del } from "@vercel/blob";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -46,5 +47,14 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   await prisma.schoolDocument.delete({ where: { id } });
+
+  if (existing.blobUrl) {
+    try {
+      await del(existing.blobUrl);
+    } catch (err) {
+      console.error(`Suppression du fichier Blob de SchoolDocument ${id} échouée :`, err);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

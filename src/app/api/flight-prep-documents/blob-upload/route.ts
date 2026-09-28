@@ -7,11 +7,8 @@ import { MAX_UPLOAD_BYTES, assertPathnamePrefix } from "@/lib/blob";
 const ALLOWED_CONTENT_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
 // Émet le jeton qui autorise le navigateur à uploader directement vers
-// Vercel Blob (voir GestionDocumentsView.tsx). Le document (titre,
-// catégorie...) n'est créé qu'ensuite, par un POST classique vers
-// /api/admin/documents une fois l'upload terminé — pas via le webhook
-// onUploadCompleted de Vercel (il ne peut pas joindre localhost en dev, ce
-// qui rendrait les échecs silencieux en local).
+// Vercel Blob (voir GestionPrepVolView.tsx) — même principe que
+// /api/admin/documents/blob-upload.
 export async function POST(req: Request) {
   const session = await auth();
   if (!session || !isGerant(session.user.role))
@@ -24,7 +21,7 @@ export async function POST(req: Request) {
       body,
       request: req,
       onBeforeGenerateToken: async (pathname) => {
-        assertPathnamePrefix(pathname, "admin-documents/");
+        assertPathnamePrefix(pathname, "flight-prep-documents/");
         return {
           allowedContentTypes: ALLOWED_CONTENT_TYPES,
           maximumSizeInBytes: MAX_UPLOAD_BYTES,

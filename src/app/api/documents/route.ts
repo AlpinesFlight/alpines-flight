@@ -1,27 +1,12 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeSchoolDocumentSelect } from "@/lib/selects";
 import { canManageSchool, isInstructorOrAbove } from "@/lib/permissions";
 import { notifyNewDocument } from "@/lib/document-emails";
-
-// Vercel plafonne le corps d'une requête à 4,5 Mo — limite fixe de la
-// plateforme, non contournable ni en config ni en code (au-delà, la
-// requête est rejetée avant même d'atteindre ce code, avec un 413 générique
-// au lieu du message clair ci-dessous). Un manuel/procédure plus volumineux
-// ne peut donc pas passer par cette route quel que soit ce réglage — 4 Mo
-// de marge de sécurité ici.
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_MIME = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
+import { head } from "@vercel/blob";
+import { z } from "zod";
 
 // Documentation de l'école (procédures, manuels, réglementation...). Un
 // élève/pilote ne voit que les documents ALL ; le staff pédagogique (FI et
@@ -69,48 +54,48 @@ export async function GET(req: Request) {
 }
 
 // Publie un document — admin uniquement (gestion de l'école, pas une
-// question financière).
+// question financière). Le fichier lui-même est déjà envoyé à Vercel Blob
+// par le navigateur avant cet appel (voir /api/documents/blob-upload et
+// DocumentationView.tsx) — ce POST ne fait plus que créer la fiche.
+const createSchema = z.object({
+  title: z.string().min(1, "Le titre est requis."),
+  category: z.string().optional().nullable(),
+  visibility: z.enum(["ALL", "FI_ONLY"]).default("ALL"),
+  fileName: z.string().min(1),
+  blobUrl: z.string().url(),
+});
+
 export async function POST(req: Request) {
   const session = await auth();
   if (!session || !canManageSchool(session.user.role))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let form: FormData;
+  const body = await req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success)
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
+
+  // Vérifie que le fichier existe vraiment dans Blob et récupère taille/type
+  // réels — jamais ceux annoncés par le client.
+  let meta;
   try {
-    form = await req.formData();
+    meta = await head(parsed.data.blobUrl);
   } catch {
-    return NextResponse.json({ error: "Formulaire invalide." }, { status: 400 });
-  }
-
-  const title = String(form.get("title") ?? "").trim();
-  const category = form.get("category") ? String(form.get("category")).trim() || null : null;
-  const visibilityRaw = String(form.get("visibility") ?? "ALL");
-  const visibility = visibilityRaw === "FI_ONLY" ? "FI_ONLY" : "ALL";
-  const file = form.get("file");
-
-  if (!title) return NextResponse.json({ error: "Le titre est requis." }, { status: 400 });
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "Fichier manquant." }, { status: 400 });
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return NextResponse.json({ error: "Fichier trop volumineux (4 Mo max)." }, { status: 400 });
-  }
-  if (file.type && !ALLOWED_MIME.has(file.type)) {
     return NextResponse.json(
-      { error: "Format non accepté (PDF, image, Word ou Excel uniquement)." },
+      { error: "Fichier introuvable dans le stockage — réessaie l'envoi." },
       { status: 400 }
     );
   }
 
   const document = await prisma.schoolDocument.create({
     data: {
-      title,
-      category,
-      visibility,
-      fileName: file.name,
-      fileMimeType: file.type || "application/octet-stream",
-      fileSize: file.size,
-      fileData: new Uint8Array(await file.arrayBuffer()),
+      title: parsed.data.title,
+      category: parsed.data.category || null,
+      visibility: parsed.data.visibility,
+      fileName: parsed.data.fileName,
+      fileMimeType: meta.contentType || "application/octet-stream",
+      fileSize: meta.size,
+      blobUrl: parsed.data.blobUrl,
       uploadedById: session.user.id,
     },
     select: safeSchoolDocumentSelect,
