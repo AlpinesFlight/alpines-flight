@@ -1,20 +1,11 @@
 import { NextResponse } from "next/server";
+import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeAdminDocumentSelect } from "@/lib/selects";
 import { isGerant } from "@/lib/permissions";
-
-// Vercel plafonne le corps d'une requête à 4,5 Mo — même limite fixe de
-// plateforme que /api/documents (voir ce fichier), non contournable. Le
-// frontend compresse déjà toute photo prise depuis l'appareil avant envoi
-// (voir GestionDocumentsView.tsx) pour rester confortablement en dessous.
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_MIME = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+import { head } from "@vercel/blob";
+import { z } from "zod";
 
 // Documents à transmettre au comptable (factures, relevés...) — page
 // /gestion, réservée au Gérant. ?status=PENDING|PROCESSED filtre la liste ;
@@ -36,44 +27,46 @@ export async function GET(req: Request) {
   return NextResponse.json(documents);
 }
 
+// Le fichier lui-même est déjà envoyé à Vercel Blob par le navigateur avant
+// cet appel (voir /api/admin/documents/blob-upload et GestionDocumentsView.tsx)
+// — ce POST ne fait plus que créer la fiche, à partir de l'URL renvoyée.
+const createSchema = z.object({
+  title: z.string().min(1, "Le titre est requis."),
+  category: z.string().optional().nullable(),
+  fileName: z.string().min(1),
+  blobUrl: z.string().url(),
+});
+
 export async function POST(req: Request) {
   const session = await auth();
   if (!session || !isGerant(session.user.role))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let form: FormData;
+  const body = await req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success)
+    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
+
+  // Vérifie que le fichier existe vraiment dans Blob et récupère taille/type
+  // réels — jamais ceux annoncés par le client (qui a pu bricoler l'appel).
+  let meta;
   try {
-    form = await req.formData();
+    meta = await head(parsed.data.blobUrl);
   } catch {
-    return NextResponse.json({ error: "Formulaire invalide." }, { status: 400 });
-  }
-
-  const title = String(form.get("title") ?? "").trim();
-  const category = form.get("category") ? String(form.get("category")).trim() || null : null;
-  const file = form.get("file");
-
-  if (!title) return NextResponse.json({ error: "Le titre est requis." }, { status: 400 });
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "Fichier manquant." }, { status: 400 });
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return NextResponse.json({ error: "Fichier trop volumineux (4 Mo max)." }, { status: 400 });
-  }
-  if (file.type && !ALLOWED_MIME.has(file.type)) {
     return NextResponse.json(
-      { error: "Format non accepté (PDF ou image uniquement)." },
+      { error: "Fichier introuvable dans le stockage — réessaie l'envoi." },
       { status: 400 }
     );
   }
 
   const document = await prisma.adminDocument.create({
     data: {
-      title,
-      category,
-      fileName: file.name,
-      fileMimeType: file.type || "application/octet-stream",
-      fileSize: file.size,
-      fileData: new Uint8Array(await file.arrayBuffer()),
+      title: parsed.data.title,
+      category: parsed.data.category || null,
+      fileName: parsed.data.fileName,
+      fileMimeType: meta.contentType || "application/octet-stream",
+      fileSize: meta.size,
+      blobUrl: parsed.data.blobUrl,
       uploadedById: session.user.id,
     },
     select: safeAdminDocumentSelect,

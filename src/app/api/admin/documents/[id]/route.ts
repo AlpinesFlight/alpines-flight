@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeAdminDocumentSelect } from "@/lib/selects";
 import { isGerant } from "@/lib/permissions";
+import { del } from "@vercel/blob";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -54,5 +55,18 @@ export async function DELETE(_req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   await prisma.adminDocument.delete({ where: { id } });
+
+  // Supprime aussi le fichier dans Blob — sinon il resterait orphelin (payé,
+  // invisible) indéfiniment. Après la suppression de la fiche : un blob
+  // orphelin ne coûte qu'un peu de stockage inutile, alors qu'un échec ici
+  // qui empêcherait la suppression de la fiche serait bien plus gênant.
+  if (existing.blobUrl) {
+    try {
+      await del(existing.blobUrl);
+    } catch (err) {
+      console.error(`Suppression du fichier Blob de AdminDocument ${id} échouée :`, err);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

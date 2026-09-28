@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
 import { AdminDocument } from "@/types/models";
 import { formatDateTime } from "@/lib/format";
@@ -22,35 +23,9 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-// Réduit une photo prise depuis l'appareil (souvent 3 à 12 Mo en pleine
-// résolution) avant envoi — sans ça, une bonne partie des photos dépasserait
-// la limite de 4 Mo côté serveur (voir MAX_FILE_BYTES, /api/admin/documents)
-// et donc la limite dure de 4,5 Mo de Vercel sur le corps d'une requête. Un
-// PDF n'a pas ce problème (déjà compact) et n'est jamais touché ici.
-async function compressIfImage(file: File): Promise<File> {
-  if (!file.type.startsWith("image/")) return file;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const maxDim = 1800;
-    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
-    const width = Math.round(bitmap.width * scale);
-    const height = Math.round(bitmap.height * scale);
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
-    if (!blob) return file;
-    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
-  } catch {
-    // Best-effort : si la compression échoue pour une raison quelconque
-    // (navigateur trop ancien...), le fichier original part tel quel — la
-    // vérification de taille côté serveur reste le garde-fou final.
-    return file;
-  }
-}
+// Même valeur que côté serveur (voir /api/admin/documents/blob-upload) —
+// rejeter tout de suite au choix du fichier évite un envoi pour rien.
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 export function GestionDocumentsView() {
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
@@ -210,23 +185,23 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [compressing, setCompressing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Pourcentage d'envoi (upload direct vers Blob, potentiellement gros sur
+  // mobile) ; null tant qu'il n'y a rien en cours.
+  const [progress, setProgress] = useState<number | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  async function handlePick(f: File | undefined) {
+  function handlePick(f: File | undefined) {
     if (!f) return;
-    setError(null);
-    setCompressing(true);
-    try {
-      const compressed = await compressIfImage(f);
-      setFile(compressed);
-      if (!title) setTitle(f.name.replace(/\.\w+$/, ""));
-    } finally {
-      setCompressing(false);
+    if (f.size > MAX_FILE_BYTES) {
+      setError(`Fichier trop volumineux (${formatSize(MAX_FILE_BYTES)} max).`);
+      return;
     }
+    setError(null);
+    setFile(f);
+    if (!title) setTitle(f.name.replace(/\.\w+$/, ""));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -236,23 +211,33 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
       return;
     }
     setSaving(true);
+    setProgress(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("title", title || file.name);
-      form.set("category", category);
-      form.set("file", file);
-
-      const res = await fetch("/api/admin/documents", { method: "POST", body: form });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ? String(data.error) : `Erreur ${res.status}`);
-      }
+      // 1) Envoi direct du navigateur vers Vercel Blob — contourne la limite
+      // dure de 4,5 Mo sur le corps d'une requête serverless (voir
+      // /api/admin/documents/blob-upload, qui émet le jeton d'upload).
+      const blob = await upload(`admin-documents/${Date.now()}-${file.name}`, file, {
+        access: "private",
+        handleUploadUrl: "/api/admin/documents/blob-upload",
+        onUploadProgress: ({ percentage }) => setProgress(percentage),
+      });
+      // 2) La fiche elle-même, une fois le fichier bien arrivé dans Blob.
+      await apiFetch("/api/admin/documents", {
+        method: "POST",
+        body: JSON.stringify({
+          title: title || file.name,
+          category: category || null,
+          fileName: file.name,
+          blobUrl: blob.url,
+        }),
+      });
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -303,11 +288,13 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             onChange={(e) => handlePick(e.target.files?.[0])}
           />
 
-          {compressing && <p className="text-xs text-navy-100/50">Compression de la photo...</p>}
-          {file && !compressing && (
+          {file && (
             <p className="text-xs text-navy-100/70 bg-navy-800 rounded-lg px-3 py-2">
               {file.name} · {formatSize(file.size)}
             </p>
+          )}
+          {progress !== null && (
+            <p className="text-xs text-navy-100/50">Envoi... {Math.round(progress)} %</p>
           )}
 
           <label className="flex flex-col gap-1">
@@ -333,7 +320,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
           {error && <p className="text-red-400 text-sm bg-red-500/15 rounded-lg px-3 py-2">{error}</p>}
           <button
             type="submit"
-            disabled={saving || compressing}
+            disabled={saving}
             className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
           >
             {saving ? "Envoi..." : "Ajouter"}

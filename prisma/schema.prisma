@@ -1006,9 +1006,18 @@ model AdminDocument {
   fileName     String
   fileMimeType String
   fileSize     Int
-  // Jamais renvoyé en JSON — streaming uniquement via
+  // Ancien stockage en base (avant migration Vercel Blob, 2026-09-28) —
+  // gardé nullable pour un très ancien document uniquement, plus jamais
+  // écrit. Jamais renvoyé en JSON — streaming uniquement via
   // /api/admin/documents/[id]/file, même logique que SchoolDocument.fileData.
-  fileData     Bytes
+  fileData     Bytes?
+  // URL du fichier dans Vercel Blob (accès "private" : jamais servi
+  // directement, uniquement via /api/admin/documents/[id]/file après
+  // vérification des droits) — stockage de tout document depuis la
+  // migration Vercel Blob, faite pour dépasser la limite dure de 4,5 Mo
+  // sur le corps d'une requête serverless (voir /api/admin/documents/blob-upload).
+  // Jamais renvoyé en JSON, comme fileData.
+  blobUrl      String?
   notes        String?
   uploadedAt   DateTime            @default(now())
   uploadedById String
