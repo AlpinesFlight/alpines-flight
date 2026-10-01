@@ -38,7 +38,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-navy-800 px-4">
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8">
+        {/* Logo cliquable : ramène vers le site vitrine (alpinesflight.com),
+            pas une route interne — <a> classique plutôt que next/link, et
+            pas de redirect() possible puisqu'on quitte l'appli. */}
+        <a href="https://alpinesflight.com" className="flex flex-col items-center mb-8">
           <Image
             src="/brand/logo-mark.png"
             alt="Alpines Flight"
@@ -51,7 +54,7 @@ export default function LoginPage() {
             Alpines Flight
           </h1>
           <p className="text-navy-100 text-sm mt-1">École de pilotage / Location d&apos;avion</p>
-        </div>
+        </a>
 
         <form
           onSubmit={handleSubmit}

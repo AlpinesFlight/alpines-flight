@@ -199,3 +199,27 @@ body {
   color: var(--color-sunset-500);
   background: transparent;
 }
+/* Vues Semaine/Jour/Agenda : react-big-calendar ne fixe de couleur de texte
+   nulle part pour la gouttière d'heures, les bordures de créneaux ou les
+   cellules date/heure de l'Agenda — tout héritait donc du texte sombre par
+   défaut du site (--foreground = navy-900), illisible sur le fond sombre de
+   /gestion. Seule la vue Mois s'en sortait, entièrement couverte ci-dessus. */
+.gestion-calendar .rbc-time-gutter,
+.gestion-calendar .rbc-label,
+.gestion-calendar .rbc-agenda-date-cell,
+.gestion-calendar .rbc-agenda-time-cell {
+  color: var(--color-navy-100);
+}
+.gestion-calendar .rbc-time-content,
+.gestion-calendar .rbc-timeslot-group,
+.gestion-calendar .rbc-day-slot .rbc-time-slot {
+  border-color: var(--color-navy-700) !important;
+}
+.gestion-calendar .rbc-agenda-view table.rbc-agenda-table {
+  background: transparent;
+}
+/* Ligne "heure actuelle" : vert par défaut de la librairie, detone sur la
+   charte navy/sunset. */
+.gestion-calendar .rbc-current-time-indicator {
+  background-color: var(--color-sunset-500);
+}

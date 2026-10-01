@@ -58,3 +58,22 @@ export function formatDateTime(date: Date | string): string {
     minute: "2-digit",
   });
 }
+
+export function formatTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleTimeString("fr-FR", {
+    timeZone: PARIS_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Comparaison de calendrier (année/mois/jour), pas d'intervalle de 24h —
+// comparer deux dates dans le fuseau Paris, pas celui du runtime (serveur
+// Vercel = UTC, voir le commentaire sur PARIS_TZ plus haut), sans quoi un
+// événement de fin de journée (ex. 23h) ressort "demain" vu depuis l'UTC.
+export function isSameParisDay(a: Date | string, b: Date | string): boolean {
+  const key = (d: Date | string) =>
+    (typeof d === "string" ? new Date(d) : d).toLocaleDateString("fr-CA", { timeZone: PARIS_TZ });
+  return key(a) === key(b);
+}

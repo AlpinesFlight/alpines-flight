@@ -5,7 +5,7 @@ import Link from "next/link";
 import { clsx } from "clsx";
 import { apiFetch } from "@/lib/api";
 import { AdminDocument, AdminEvent, AdminProject, AdminTask } from "@/types/models";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime, formatTime, isSameParisDay } from "@/lib/format";
 import { GestionPageHeader } from "@/components/GestionShell";
 import { Inbox, ListChecks, FolderKanban, CalendarClock, StickyNote, Contact2, Video, ArrowRight } from "lucide-react";
 
@@ -43,11 +43,20 @@ export function GestionDashboardView() {
   const activeTasks = tasks.filter((t) => t.status !== "DONE");
   const nextEvents = events.filter((e) => new Date(e.startTime).getTime() >= now).slice(0, 4);
   const activeProjects = projects.filter((p) => p.status === "ACTIVE" || p.status === "ON_HOLD");
+  // Agenda du jour : propre section en tête de page (plutôt qu'un
+  // sous-ensemble des "Prochains événements" ci-dessous, qui mélange tous
+  // les horizons) — c'est la question qu'on se pose en arrivant sur
+  // l'Accueil le matin : "qu'est-ce qu'il y a aujourd'hui ?".
+  const todayEvents = events
+    .filter((e) => isSameParisDay(e.startTime, new Date(now)))
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
   return (
     <div>
       <GestionPageHeader title="Accueil" subtitle="Vue d'ensemble de la gestion administrative" />
       <div className="px-4 md:px-10 pb-10">
+        <TodayAgenda events={todayEvents} loading={loading} />
+
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
           <StatCard value={activeProjects.length} label="Projets actifs" href="/gestion/projets" tone="navy" />
           <StatCard value={pendingDocs.length} label="Documents à traiter" href="/gestion/documents" tone={pendingDocs.length > 0 ? "sunset" : "navy"} />
@@ -116,6 +125,42 @@ export function GestionDashboardView() {
           <QuickLink href="/gestion/contacts" icon={Contact2} label="Contacts" />
           <QuickLink href="/gestion/visio" icon={Video} label="Visio" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Résumé du jour, mis en avant en tête d'Accueil — heure en gros et
+// tabulaire (tabular-nums) pour que la colonne d'heures s'aligne même à
+// deux chiffres différents, le format qu'on scanne le plus vite du regard.
+function TodayAgenda({ events, loading }: { events: AdminEvent[]; loading: boolean }) {
+  return (
+    <div className="bg-navy-900 rounded-2xl border border-navy-700 overflow-hidden mb-6">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-navy-700">
+        <h2 className="font-semibold text-cream-50 text-sm">
+          Aujourd&apos;hui <span className="text-navy-100/40 font-normal">— {formatDate(new Date())}</span>
+        </h2>
+        <Link href="/gestion/planning" className="flex items-center gap-1 text-xs text-sunset-500 hover:underline shrink-0">
+          Agenda complet <ArrowRight size={12} />
+        </Link>
+      </div>
+      {!loading && events.length === 0 && (
+        <p className="px-5 py-4 text-sm text-navy-100/50">Rien de prévu aujourd&apos;hui.</p>
+      )}
+      <div className="divide-y divide-navy-800">
+        {events.map((e) => (
+          <div key={e.id} className="flex items-center gap-4 px-5 py-3">
+            <span className="font-mono text-base font-semibold text-cream-50 tabular-nums w-12 shrink-0">
+              {formatTime(e.startTime)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-cream-50 truncate">{e.title}</p>
+              {(e.category || e.location) && (
+                <p className="text-xs text-navy-100/50 truncate">{[e.category, e.location].filter(Boolean).join(" · ")}</p>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

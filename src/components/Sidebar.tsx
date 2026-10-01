@@ -94,16 +94,18 @@ export function Sidebar({
         >
           <Menu size={24} />
         </button>
-        <Image
-          src="/brand/logo-mark.png"
-          alt="Alpines Flight"
-          width={28}
-          height={28}
-          className="rounded-full shrink-0"
-        />
-        <span className="font-[family-name:var(--font-display)] font-bold text-base">
-          Alpines Flight
-        </span>
+        <Link href="/" className="flex items-center gap-3">
+          <Image
+            src="/brand/logo-mark.png"
+            alt="Alpines Flight"
+            width={28}
+            height={28}
+            className="rounded-full shrink-0"
+          />
+          <span className="font-[family-name:var(--font-display)] font-bold text-base">
+            Alpines Flight
+          </span>
+        </Link>
       </div>
 
       {/* Fond assombri derrière le tiroir ouvert — seulement en dessous de
@@ -144,7 +146,10 @@ export function Sidebar({
           105px), pour que la limite entre bande claire et reste de la page
           tombe exactement au même niveau à gauche et sur le contenu
           principal. */}
-      <div className="flex items-center gap-3 px-5 py-6 min-h-[105px] bg-cream-50 border-b border-navy-100">
+      <Link
+        href="/"
+        className="flex items-center gap-3 px-5 py-6 min-h-[105px] bg-cream-50 border-b border-navy-100 hover:bg-cream-100 transition-colors"
+      >
         <Image
           src="/brand/logo-mark.png"
           alt="Alpines Flight"
@@ -158,7 +163,7 @@ export function Sidebar({
           </p>
           <p className="text-xs text-navy-600">École de pilotage</p>
         </div>
-      </div>
+      </Link>
 
       <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
         {NAV_ITEMS.filter(
