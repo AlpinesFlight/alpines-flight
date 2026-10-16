@@ -233,6 +233,11 @@ export async function PATCH(req: Request, { params }: Params) {
       await db.accountTransaction.updateMany({ where: { flightLogId: id }, data: { date: departureTime } });
     }
 
+    // Même chose pour l'avion : celui de la séance reliée est celui du vol.
+    if (aircraftChanged) {
+      await db.trainingSession.updateMany({ where: { flightLogId: id }, data: { aircraftId: newAircraftId } });
+    }
+
     // Réservation d'origine : la clôture l'avait alignée sur le vol réel
     // (avion, pilote, instructeur, horaire) — elle reste alignée.
     if (existing.reservationId && (aircraftChanged || studentChanged || instructorChanged || timesChanged)) {

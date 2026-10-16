@@ -9,10 +9,9 @@ import { z } from "zod";
 type Params = { params: Promise<{ id: string }> };
 
 const schema = z.object({
-  date: z.string(),
+  date: z.string().optional(), // ignorée : la date est celle du vol relié
   instructorId: z.string().optional(), // admin peut saisir pour le compte d'un autre FI
-  aircraftId: z.string().optional().nullable(),
-  flightLogId: z.string().optional().nullable(), // vol relié, pour le résumé d'heures par phase
+  flightLogId: z.string().optional().nullable(), // vol relié (obligatoire, vérifié plus bas)
   remarks: z.string().optional().nullable(),
   entries: z
     .array(
@@ -43,21 +42,24 @@ export async function POST(req: Request, { params }: Params) {
   const enrollment = await prisma.enrollment.findUnique({ where: { id: enrollmentId } });
   if (!enrollment) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const { date, aircraftId, flightLogId, remarks, entries } = parsed.data;
+  const { flightLogId, remarks, entries } = parsed.data;
   const instructorId = parsed.data.instructorId || session.user.id;
 
-  // Une séance reliée à un vol prend la date (et l'heure) de départ de ce vol,
-  // quelle que soit la date envoyée : c'est le vol qui fait foi, pas le moment
-  // où le FI a rempli la fiche (souvent bien après le vol).
-  let sessionDate = new Date(date);
-  if (flightLogId) {
-    const flight = await prisma.flightLog.findUnique({
-      where: { id: flightLogId },
-      select: { departureTime: true },
-    });
-    if (!flight) return NextResponse.json({ error: "Vol introuvable." }, { status: 400 });
-    sessionDate = flight.departureTime;
+  // Toute séance est reliée à un vol (sinon pas d'heures par phase, ni de
+  // date/avion fiables).
+  if (!flightLogId) {
+    return NextResponse.json({ error: "Une séance doit être reliée à un vol." }, { status: 400 });
   }
+
+  // La séance prend la date (et l'heure) de départ et l'avion du vol relié,
+  // quelles que soient les valeurs envoyées : c'est le vol qui fait foi, pas
+  // le moment où le FI a rempli la fiche (souvent bien après le vol).
+  const flight = await prisma.flightLog.findUnique({
+    where: { id: flightLogId },
+    select: { departureTime: true, aircraftId: true },
+  });
+  if (!flight) return NextResponse.json({ error: "Vol introuvable." }, { status: 400 });
+  const sessionDate = flight.departureTime;
 
   const created = await prisma.$transaction(async (db) => {
     const trainingSession = await db.trainingSession.create({
@@ -65,8 +67,8 @@ export async function POST(req: Request, { params }: Params) {
         enrollmentId,
         date: sessionDate,
         instructorId,
-        aircraftId: aircraftId || null,
-        flightLogId: flightLogId || null,
+        aircraftId: flight.aircraftId,
+        flightLogId,
         remarks: remarks || null,
       },
     });

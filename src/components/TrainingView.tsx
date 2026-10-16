@@ -1034,16 +1034,23 @@ function SessionFormModal({
 }) {
   const isEdit = !!existing;
 
+  const latest = useMemo(() => latestLevelByExercise(enrollment.progress), [enrollment.progress]);
+
   // En édition, retrouve la phase des exercices déjà notés dans cette séance.
+  // Sinon, propose la phase en cours : la première qui n'est pas terminée
+  // (tous ses exercices assimilés) — 1A bouclée, on arrive directement sur
+  // 1B. Programme entièrement terminé : la dernière phase.
   const initialPhaseId = useMemo(() => {
+    const phases = enrollment.program.phases;
     if (existing?.progress?.[0]) {
-      const phase = enrollment.program.phases.find((ph) =>
+      const phase = phases.find((ph) =>
         ph.exercises.some((ex) => ex.id === existing.progress[0].exerciseId)
       );
       if (phase) return phase.id;
     }
-    return enrollment.program.phases[0]?.id ?? "";
-  }, [existing, enrollment.program.phases]);
+    const current = phases.find((ph) => ph.exercises.some((ex) => latest.get(ex.id)?.level !== "ASSIMILE"));
+    return (current ?? phases[phases.length - 1])?.id ?? "";
+  }, [existing, enrollment.program.phases, latest]);
 
   // Séance reliée à un vol : la date est celle du vol (voir handleFlightChange).
   const [date, setDate] = useState(
@@ -1055,16 +1062,17 @@ function SessionFormModal({
           : new Date()
     )
   );
-  const [aircraftId, setAircraftId] = useState(existing?.aircraftId ?? "");
+  // L'avion est celui du vol relié (voir handleFlightChange).
+  const [aircraftId, setAircraftId] = useState(existing?.flightLog?.aircraftId ?? existing?.aircraftId ?? "");
   const [remarks, setRemarks] = useState(existing?.remarks ?? "");
   const [flightLogId, setFlightLogId] = useState(existing?.flightLogId ?? "");
   const [aircraftList, setAircraftList] = useState<Aircraft[]>([]);
   const [flightOptions, setFlightOptions] = useState<FlightLog[]>([]);
+  const [flightsLoaded, setFlightsLoaded] = useState(false);
   const [phaseId, setPhaseId] = useState(initialPhaseId);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const latest = useMemo(() => latestLevelByExercise(enrollment.progress), [enrollment.progress]);
   const existingLevels = useMemo(() => {
     const map = new Map<string, ProgressLevel>();
     for (const p of existing?.progress ?? []) map.set(p.exerciseId, p.level);
@@ -1109,16 +1117,23 @@ function SessionFormModal({
           setFlightOptions(flights);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setFlightsLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollment.studentId]);
 
-  // Relier un vol reprend sa date de départ (et verrouille le champ Date, voir
-  // plus bas) ; le délier rend la main sur la date.
+  // Relier un vol reprend sa date de départ et son avion (les deux champs sont
+  // verrouillés, voir plus bas) ; le délier rend la main sur la date et vide
+  // l'avion.
   function handleFlightChange(id: string) {
     setFlightLogId(id);
     const flight = flightOptions.find((f) => f.id === id);
-    if (flight) setDate(toLocalInput(new Date(flight.departureTime)));
+    if (flight) {
+      setDate(toLocalInput(new Date(flight.departureTime)));
+      setAircraftId(flight.aircraftId);
+    } else {
+      setAircraftId("");
+    }
   }
 
   function toggle(exerciseId: string) {
@@ -1130,6 +1145,10 @@ function SessionFormModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!flightLogId) {
+      setError("Relie la séance à un vol.");
+      return;
+    }
     const selected = Object.values(entries).filter((e) => e.checked);
     if (selected.length === 0) {
       setError("Sélectionne au moins un exercice.");
@@ -1138,10 +1157,10 @@ function SessionFormModal({
     setSaving(true);
     setError(null);
     try {
+      // L'avion n'est pas envoyé : le serveur prend celui du vol relié.
       const payload = {
         date: new Date(date).toISOString(),
-        aircraftId: aircraftId || null,
-        flightLogId: flightLogId || null,
+        flightLogId,
         remarks: remarks || null,
         entries: selected.map((s) => ({ exerciseId: s.exerciseId, level: s.level })),
       };
@@ -1191,8 +1210,8 @@ function SessionFormModal({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-navy-600">Avion (optionnel)</span>
-              <select value={aircraftId} onChange={(e) => setAircraftId(e.target.value)} className="input">
+              <span className="text-xs font-medium text-navy-600">Avion (celui du vol)</span>
+              <select value={aircraftId} disabled className="input disabled:opacity-60">
                 <option value="">—</option>
                 {aircraftList.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -1204,17 +1223,25 @@ function SessionFormModal({
           </div>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">
-              Vol relié (optionnel — pour le résumé d&apos;heures par phase)
-            </span>
-            <select value={flightLogId} onChange={(e) => handleFlightChange(e.target.value)} className="input">
-              <option value="">—</option>
+            <span className="text-xs font-medium text-navy-600">Vol relié</span>
+            <select
+              required
+              value={flightLogId}
+              onChange={(e) => handleFlightChange(e.target.value)}
+              className="input"
+            >
+              <option value="">Choisir un vol…</option>
               {flightOptions.map((f) => (
                 <option key={f.id} value={f.id}>
                   {formatDate(f.date)} · {f.aircraft.registration} · {formatHoursMinutes(f.duration)}
                 </option>
               ))}
             </select>
+            {flightsLoaded && flightOptions.length === 0 && (
+              <span className="text-[11px] text-red-600">
+                Aucun vol disponible pour cet élève : enregistre d&apos;abord le vol (page Vols), puis relie-le ici.
+              </span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1">
@@ -1250,7 +1277,14 @@ function SessionFormModal({
                     onChange={() => toggle(entry.exerciseId)}
                     className="shrink-0"
                   />
-                  <span className="text-sm text-navy-800 flex-1 min-w-0 truncate">
+                  {/* Assimilé (acquis avant ou noté dans cette séance) : en vert,
+                      pour repérer d'un coup d'œil ce qui reste à travailler. */}
+                  <span
+                    className={clsx(
+                      "text-sm flex-1 min-w-0 truncate",
+                      entry.level === "ASSIMILE" ? "text-green-700 font-medium" : "text-navy-800"
+                    )}
+                  >
                     {entry.numero}. {entry.intitule}
                   </span>
                   <select

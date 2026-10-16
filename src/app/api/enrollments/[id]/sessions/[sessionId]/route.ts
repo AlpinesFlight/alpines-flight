@@ -9,8 +9,7 @@ import { z } from "zod";
 type Params = { params: Promise<{ id: string; sessionId: string }> };
 
 const schema = z.object({
-  date: z.string().optional(),
-  aircraftId: z.string().nullable().optional(),
+  date: z.string().optional(), // ignorée : la date est celle du vol relié
   flightLogId: z.string().nullable().optional(),
   remarks: z.string().nullable().optional(),
   entries: z
@@ -46,28 +45,30 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!parsed.success)
     return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
-  const { date, aircraftId, flightLogId, remarks, entries } = parsed.data;
+  const { flightLogId, remarks, entries } = parsed.data;
 
-  // La date d'une séance reliée à un vol est celle du vol (voir POST
-  // /api/enrollments/[id]/sessions) — que le vol soit relié maintenant ou
-  // l'ait déjà été, la date envoyée est alors ignorée.
+  // Une séance reste reliée à un vol : on peut en changer, pas la délier.
   const linkedFlightId = flightLogId !== undefined ? flightLogId : existing.flightLogId;
-  let newDate = date ? new Date(date) : undefined;
-  if (linkedFlightId) {
-    const flight = await prisma.flightLog.findUnique({
-      where: { id: linkedFlightId },
-      select: { departureTime: true },
-    });
-    if (!flight) return NextResponse.json({ error: "Vol introuvable." }, { status: 400 });
-    newDate = flight.departureTime;
+  if (!linkedFlightId) {
+    return NextResponse.json({ error: "Une séance doit être reliée à un vol." }, { status: 400 });
   }
+
+  // La date et l'avion d'une séance sont ceux du vol relié (voir POST
+  // /api/enrollments/[id]/sessions) — que le vol soit relié maintenant ou
+  // l'ait déjà été, les valeurs envoyées sont ignorées.
+  const flight = await prisma.flightLog.findUnique({
+    where: { id: linkedFlightId },
+    select: { departureTime: true, aircraftId: true },
+  });
+  if (!flight) return NextResponse.json({ error: "Vol introuvable." }, { status: 400 });
+  const newDate = flight.departureTime;
 
   const updated = await prisma.$transaction(async (db) => {
     const trainingSession = await db.trainingSession.update({
       where: { id: sessionId },
       data: {
-        ...(newDate ? { date: newDate } : {}),
-        ...(aircraftId !== undefined ? { aircraftId } : {}),
+        date: newDate,
+        aircraftId: flight.aircraftId,
         ...(flightLogId !== undefined ? { flightLogId } : {}),
         ...(remarks !== undefined ? { remarks } : {}),
       },
@@ -89,7 +90,7 @@ export async function PATCH(req: Request, { params }: Params) {
           },
         });
       }
-    } else if (newDate && newDate.getTime() !== existing.date.getTime()) {
+    } else if (newDate.getTime() !== existing.date.getTime()) {
       // Sans nouvelle liste d'exercices, les niveaux déjà notés suivent quand
       // même la nouvelle date de la séance.
       await db.exerciseProgress.updateMany({ where: { sessionId }, data: { date: newDate } });
