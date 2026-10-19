@@ -12,6 +12,7 @@ const TYPE_LABEL: Record<string, string> = {
   DEPOSIT: "Versement",
   FLIGHT_DEBIT: "Vol",
   ADJUSTMENT: "Ajustement",
+  INSTRUCTION_CREDIT: "Instruction",
 };
 
 const METHOD_LABEL: Record<string, string> = {
@@ -138,6 +139,7 @@ export function BillingView() {
       deposits: figure("DEPOSIT"),
       flights: figure("FLIGHT_DEBIT"),
       adjustments: figure("ADJUSTMENT"),
+      instruction: figure("INSTRUCTION_CREDIT"),
       pendingCount: pendingRows.length,
       pendingCents: pendingRows.reduce((sum, t) => sum + t.amountCents, 0),
     };
@@ -169,9 +171,11 @@ export function BillingView() {
     // antérieur déjà réglé autrement avant d'être saisi dans l'appli.
     const message =
       t.type === "FLIGHT_DEBIT"
-        ? `Retirer la valeur de ce vol (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ? Le solde sera recrédité et le vol repassera à 0€, mais il restera enregistré dans le carnet (heures, atterrissages...).`
-        : `Supprimer ce mouvement (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ?` +
-          (t.status === "CONFIRMED" ? " Le solde du pilote sera recrédité/redébité en conséquence." : "");
+        ? `Retirer la valeur de ce vol (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ? Le solde sera recrédité et le vol repassera à 0€ (le crédit de son instructeur, s'il y en a un, est retiré aussi), mais il restera enregistré dans le carnet (heures, atterrissages...).`
+        : t.type === "INSTRUCTION_CREDIT"
+          ? `Retirer ce crédit d'instruction (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ? Son solde sera débité d'autant ; le vol reste au carnet et ce crédit ne sera pas recréé.`
+          : `Supprimer ce mouvement (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ?` +
+            (t.status === "CONFIRMED" ? " Le solde du pilote sera recrédité/redébité en conséquence." : "");
     if (!window.confirm(message)) return;
     await apiFetch(`/api/transactions/${t.id}`, { method: "DELETE" });
     load();
@@ -344,7 +348,7 @@ export function BillingView() {
                   {t.type === "DEPOSIT" &&
                     `${t.method ? METHOD_LABEL[t.method] : ""}${t.reference ? ` · ${t.reference}` : ""}`}
                   {t.type === "FLIGHT_DEBIT" && flightDebitDetail(t)}
-                  {t.type === "ADJUSTMENT" && (t.notes ?? "")}
+                  {(t.type === "ADJUSTMENT" || t.type === "INSTRUCTION_CREDIT") && (t.notes ?? "")}
                 </td>
                 <td
                   className={clsx(
@@ -352,7 +356,7 @@ export function BillingView() {
                     t.amountCents < 0 ? "text-red-600" : "text-green-700"
                   )}
                 >
-                  {t.amountCents >= 0 ? "+" : ""}
+                  {t.amountCents > 0 ? "+" : ""}
                   {formatMoney(t.amountCents)}
                 </td>
                 <td className="px-5 py-3">
@@ -378,7 +382,13 @@ export function BillingView() {
                       </button>
                       <button
                         onClick={() => handleDeleteTx(t)}
-                        title={t.type === "FLIGHT_DEBIT" ? "Retirer la valeur (le vol reste au carnet)" : "Supprimer"}
+                        title={
+                          t.type === "FLIGHT_DEBIT"
+                            ? "Retirer la valeur (le vol reste au carnet)"
+                            : t.type === "INSTRUCTION_CREDIT"
+                              ? "Retirer le crédit (le vol reste au carnet)"
+                              : "Supprimer"
+                        }
                         className="text-navy-500 hover:text-red-600 hover:bg-red-100 rounded-lg p-1.5"
                       >
                         <Trash2 size={14} />
@@ -450,6 +460,7 @@ interface PilotAccount {
   deposits: { count: number; cents: number };
   flights: { count: number; cents: number };
   adjustments: { count: number; cents: number };
+  instruction: { count: number; cents: number };
   pendingCount: number;
   pendingCents: number;
 }
@@ -463,7 +474,7 @@ function signedMoney(cents: number) {
 // ou nul — et le calcul qui y mène : versements confirmés, vols débités,
 // éventuels ajustements. Affiché quand un pilote est choisi dans le filtre.
 function PilotAccountCard({ account }: { account: PilotAccount }) {
-  const { person, balanceCents, deposits, flights, adjustments, pendingCount, pendingCents } = account;
+  const { person, balanceCents, deposits, flights, adjustments, instruction, pendingCount, pendingCents } = account;
   const tone =
     balanceCents > 0
       ? { label: "Créditeur", accent: "border-l-green-600", text: "text-green-700", badge: "bg-green-100 text-green-700" }
@@ -491,6 +502,9 @@ function PilotAccountCard({ account }: { account: PilotAccount }) {
         <AccountLine label="Vols" count={flights.count} cents={flights.cents} />
         {adjustments.count > 0 && (
           <AccountLine label="Ajustements" count={adjustments.count} cents={adjustments.cents} />
+        )}
+        {instruction.count > 0 && (
+          <AccountLine label="Instruction (part FI)" count={instruction.count} cents={instruction.cents} />
         )}
       </dl>
       {pendingCount > 0 && (
@@ -711,6 +725,8 @@ function EditTransactionModal({
   const [date, setDate] = useState(initialDate);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Débit du pilote ou crédit de l'instructeur : la date est celle du vol.
+  const linkedToFlight = !!(transaction.flightLogId || transaction.instructorFlightLogId);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -728,7 +744,7 @@ function EditTransactionModal({
           notes: notes || null,
           // Seulement si elle a été modifiée : sinon la date exacte déjà
           // enregistrée (ex. l'heure d'un vol) resterait intacte.
-          ...(date !== initialDate && !transaction.flightLogId ? { date } : {}),
+          ...(date !== initialDate && !linkedToFlight ? { date } : {}),
         }),
       });
       onSaved();
@@ -761,6 +777,7 @@ function EditTransactionModal({
             <option value="DEPOSIT">Versement</option>
             <option value="FLIGHT_DEBIT">Vol</option>
             <option value="ADJUSTMENT">Ajustement</option>
+            {transaction.type === "INSTRUCTION_CREDIT" && <option value="INSTRUCTION_CREDIT">Instruction</option>}
           </select>
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <input
@@ -782,7 +799,7 @@ function EditTransactionModal({
               <option value="NEG">Débit −</option>
             </select>
           </div>
-          {transaction.flightLogId ? (
+          {linkedToFlight ? (
             <p className="text-xs text-navy-600 bg-navy-50 rounded-lg px-3 py-2">
               Date du vol : {formatDate(transaction.date)} — elle se corrige depuis la page Vols.
             </p>

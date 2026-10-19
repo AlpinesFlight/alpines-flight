@@ -431,6 +431,7 @@ const TX_TYPE_LABEL: Record<string, string> = {
   DEPOSIT: "Versement",
   FLIGHT_DEBIT: "Vol",
   ADJUSTMENT: "Ajustement",
+  INSTRUCTION_CREDIT: "Instruction",
 };
 
 function StudentDetailModal({

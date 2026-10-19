@@ -21,6 +21,7 @@ const TYPE_LABEL: Record<string, string> = {
   DEPOSIT: "Versement",
   FLIGHT_DEBIT: "Vol",
   ADJUSTMENT: "Ajustement",
+  INSTRUCTION_CREDIT: "Instruction",
 };
 
 export default async function BillingPrintPage({
@@ -71,7 +72,11 @@ export default async function BillingPrintPage({
   const totalAdjustments = transactions
     .filter((t) => t.type === "ADJUSTMENT")
     .reduce((s, t) => s + t.amountCents, 0);
-  const grandTotal = totalDeposits + totalDebits + totalAdjustments;
+  // Part de l'instruction créditée aux instructeurs (voir src/lib/instructor-credit.ts).
+  const totalInstructionCredits = transactions
+    .filter((t) => t.type === "INSTRUCTION_CREDIT")
+    .reduce((s, t) => s + t.amountCents, 0);
+  const grandTotal = totalDeposits + totalDebits + totalAdjustments + totalInstructionCredits;
 
   return (
     <div className="min-h-screen bg-white text-navy-900 print:bg-white">
@@ -88,7 +93,9 @@ export default async function BillingPrintPage({
           </div>
         </header>
 
-        <section className="mb-6 grid grid-cols-4 gap-3 text-sm bg-navy-50 rounded-lg px-4 py-3">
+        <section
+          className={`mb-6 grid ${totalInstructionCredits !== 0 ? "grid-cols-5" : "grid-cols-4"} gap-3 text-sm bg-navy-50 rounded-lg px-4 py-3`}
+        >
           <div>
             <p className="text-navy-500 text-xs uppercase tracking-wide">Versements</p>
             <p className="font-bold text-green-700">+{formatMoney(totalDeposits)}</p>
@@ -104,6 +111,15 @@ export default async function BillingPrintPage({
               {formatMoney(totalAdjustments)}
             </p>
           </div>
+          {totalInstructionCredits !== 0 && (
+            <div>
+              <p className="text-navy-500 text-xs uppercase tracking-wide">Instruction FI</p>
+              <p className="font-bold text-green-700">
+                {totalInstructionCredits >= 0 ? "+" : ""}
+                {formatMoney(totalInstructionCredits)}
+              </p>
+            </div>
+          )}
           <div>
             <p className="text-navy-500 text-xs uppercase tracking-wide">Mouvement net</p>
             <p className="font-bold">
@@ -150,7 +166,7 @@ export default async function BillingPrintPage({
                           t.amountCents < 0 ? "text-red-600" : "text-green-700"
                         }`}
                       >
-                        {t.amountCents >= 0 ? "+" : ""}
+                        {t.amountCents > 0 ? "+" : ""}
                         {formatMoney(t.amountCents)}
                       </td>
                     </tr>

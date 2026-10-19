@@ -11,6 +11,9 @@ export interface UserLite {
     color: string;
     qualifications: string | null;
     hourlyRateCents: number | null;
+    // Part (%) de l'instruction reversée sur son compte pilote — renvoyée au
+    // Gérant seulement.
+    instructionSharePct?: number;
   } | null;
   studentProfile?: {
     licenseType: string | null;
@@ -288,7 +291,7 @@ export interface DocumentAcknowledgment {
   acknowledgedAt: string | null;
 }
 
-export type TransactionType = "DEPOSIT" | "FLIGHT_DEBIT" | "ADJUSTMENT";
+export type TransactionType = "DEPOSIT" | "FLIGHT_DEBIT" | "ADJUSTMENT" | "INSTRUCTION_CREDIT";
 export type TransactionStatus = "PENDING" | "CONFIRMED" | "REJECTED";
 export type PaymentMethod = "CARD" | "TRANSFER" | "CASH" | "CHECK";
 
@@ -302,6 +305,8 @@ export interface AccountTransaction {
   method: PaymentMethod | null;
   reference: string | null;
   flightLogId: string | null;
+  // Crédit instructeur (INSTRUCTION_CREDIT) : le vol dont c'est la part.
+  instructorFlightLogId: string | null;
   flightLog?: {
     id: string;
     duration: number;

@@ -7,6 +7,7 @@ import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { isInstructorOrAbove } from "@/lib/permissions";
 import { effectiveAircraftRateCents } from "@/lib/reservations";
 import { durationHours, formatHoursMinutes } from "@/lib/format";
+import { createInstructorCredit, currentInstructorSharePct, instructorCreditCents } from "@/lib/instructor-credit";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -91,7 +92,9 @@ export async function POST(req: Request, { params }: Params) {
     where: { id },
     include: {
       aircraft: { select: safeAircraftSelect },
-      student: { select: { studentProfile: { select: { canGiveBaptism: true } } } },
+      student: {
+        select: { firstName: true, lastName: true, studentProfile: { select: { canGiveBaptism: true } } },
+      },
     },
   });
   if (!reservation) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -170,6 +173,13 @@ export async function POST(req: Request, { params }: Params) {
   }
   const amountCents = aircraftCostCents + instructionCostCents;
 
+  // Part de l'instruction reversée à l'instructeur (voir
+  // src/lib/instructor-credit.ts) — seulement si l'instruction est bien
+  // facturée à un pilote (pas de débit = rien à reverser).
+  const instructorSharePct = finalInstructorId ? await currentInstructorSharePct(prisma, finalInstructorId) : null;
+  const creditCents =
+    reservation.studentId && !isBaptism ? instructorCreditCents(instructionCostCents, instructorSharePct) : 0;
+
   const result = await prisma.$transaction(async (db) => {
     const flight = await db.flightLog.create({
       data: {
@@ -187,6 +197,7 @@ export async function POST(req: Request, { params }: Params) {
         totalLandings,
         aircraftCostCents,
         instructionCostCents,
+        instructorSharePct,
         isBaptism,
         remarks,
         stops: { create: stops },
@@ -230,6 +241,19 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
 
+    if (creditCents > 0 && finalInstructorId) {
+      await createInstructorCredit(db, {
+        flightId: flight.id,
+        instructorId: finalInstructorId,
+        amountCents: creditCents,
+        sharePct: instructorSharePct ?? 0,
+        date: start,
+        duration,
+        pilotName: reservation.student ? `${reservation.student.firstName} ${reservation.student.lastName}` : null,
+        confirmedById: session.user.id,
+      });
+    }
+
     // Les heures volées comptent pour le pilote qu'il ait payé ou non ce
     // vol précis (carnet de vol réel) — seul le débit est conditionnel,
     // voir juste au-dessus. upsert (pas update) : un instructeur qui vole
@@ -270,7 +294,14 @@ export async function POST(req: Request, { params }: Params) {
 
     await recalcAircraftMaintenanceStatuses(db, reservation.aircraftId);
 
-    return { flight, transaction, aircraftCostCents, instructionCostCents, totalCents: amountCents };
+    return {
+      flight,
+      transaction,
+      aircraftCostCents,
+      instructionCostCents,
+      totalCents: amountCents,
+      instructorCreditCents: creditCents,
+    };
   });
 
   return NextResponse.json(result, { status: 201 });

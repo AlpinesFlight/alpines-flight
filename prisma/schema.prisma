@@ -158,6 +158,11 @@ model InstructorProfile {
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   qualifications String? // ex: "FI(A), IRI"
   hourlyRateCents Int?    // tarif horaire instruction, si facturé séparément
+  // Part (en %) de l'instruction facturée à l'élève qui revient à l'instructeur :
+  // créditée automatiquement sur son compte pilote à chaque vol (voir
+  // src/lib/instructor-credit.ts). Réglée par le Gérant seul, jamais visible
+  // des autres comptes.
+  instructionSharePct Int @default(100)
   color          String  @default("#0C2448") // couleur d'affichage dans le planning
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -535,7 +540,13 @@ model FlightLog {
   // découverte (Reservation.type DISCOVERY, client sans compte).
   isBaptism            Boolean      @default(false)
   remarks              String?
-  accountTransaction   AccountTransaction?
+  accountTransaction   AccountTransaction? @relation("FlightDebit")
+  // Crédit de l'instructeur pour ce vol (sa part de l'instruction facturée),
+  // et la part (%) appliquée, figée à la clôture : une correction ultérieure
+  // du vol la réutilise, même si la part de l'instructeur a changé depuis.
+  // 0 = crédit retiré à la main depuis le compte pilote (ne pas le recréer).
+  instructorCredit     AccountTransaction? @relation("InstructorCredit")
+  instructorSharePct   Int?
   stops                FlightStop[] // terrains survolés/posés + nombre de touchés
   trainingSession      TrainingSession? // séance de formation reliée à ce vol, le cas échéant
   createdAt            DateTime @default(now())
@@ -591,6 +602,7 @@ enum TransactionType {
   DEPOSIT       // versement déclaré par le pilote (viré sur le compte école)
   FLIGHT_DEBIT  // débit automatique suite à un vol clôturé
   ADJUSTMENT    // écriture manuelle admin (avoir, correction...)
+  INSTRUCTION_CREDIT // crédit automatique de l'instructeur d'un vol (sa part de l'instruction)
 }
 
 enum TransactionStatus {
@@ -616,7 +628,11 @@ model AccountTransaction {
   method        PaymentMethod?     // pour les versements (DEPOSIT)
   reference     String?            // référence de virement communiquée par le pilote
   flightLogId   String?            @unique
-  flightLog     FlightLog?         @relation(fields: [flightLogId], references: [id])
+  flightLog     FlightLog?         @relation("FlightDebit", fields: [flightLogId], references: [id])
+  // Vol dont ce mouvement est le crédit instructeur (type INSTRUCTION_CREDIT) :
+  // un vol a au plus un débit (pilote, ci-dessus) et un crédit (instructeur).
+  instructorFlightLogId String?     @unique
+  instructorFlightLog   FlightLog?  @relation("InstructorCredit", fields: [instructorFlightLogId], references: [id])
   notes         String?
   // Date de l'OPÉRATION — celle qui sert à classer et à afficher le mouvement
   // (page Comptes pilotes, relevé PDF) : date de départ du vol pour un débit de

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
-import { canManageSchool } from "@/lib/permissions";
+import { instructorProfileSelect, safeUserSelect, safeAircraftSelect } from "@/lib/selects";
+import { canManageFinance, canManageSchool } from "@/lib/permissions";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: Params) {
     where: { id },
     select: {
       ...safeUserSelect,
-      instructorProfile: true,
+      instructorProfile: instructorProfileSelect(canManageFinance(session.user.role)),
       reservationsAsInstructor: {
         include: { aircraft: { select: safeAircraftSelect }, student: { select: safeUserSelect } },
         orderBy: { startTime: "desc" },
@@ -42,6 +42,13 @@ const patchSchema = z.object({
   qualifications: z.string().nullable().optional(),
   hourlyRateCents: z.number().int().positive().nullable().optional(),
   color: z.string().optional(),
+  // Part de l'instruction reversée sur son compte pilote, en % (Gérant seul).
+  instructionSharePct: z
+    .number()
+    .int("La part doit être un nombre entier de %.")
+    .min(0, "La part doit être entre 0 et 100 %.")
+    .max(100, "La part doit être entre 0 et 100 %.")
+    .optional(),
 });
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -55,6 +62,11 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!parsed.success)
     return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
+  const isFinance = canManageFinance(session.user.role);
+  if (parsed.data.instructionSharePct !== undefined && !isFinance) {
+    return NextResponse.json({ error: "Seul le Gérant peut régler la part reversée." }, { status: 403 });
+  }
+
   if (parsed.data.email) {
     const dup = await prisma.user.findUnique({ where: { email: parsed.data.email } });
     if (dup && dup.id !== id) {
@@ -62,17 +74,17 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
-  const { qualifications, hourlyRateCents, color, ...userFields } = parsed.data;
+  const { qualifications, hourlyRateCents, color, instructionSharePct, ...userFields } = parsed.data;
 
   const user = await prisma.user.update({
     where: { id },
     data: {
       ...userFields,
       instructorProfile: {
-        update: { qualifications, hourlyRateCents, color },
+        update: { qualifications, hourlyRateCents, color, instructionSharePct },
       },
     },
-    select: { ...safeUserSelect, instructorProfile: true },
+    select: { ...safeUserSelect, instructorProfile: instructorProfileSelect(isFinance) },
   });
   return NextResponse.json(user);
 }

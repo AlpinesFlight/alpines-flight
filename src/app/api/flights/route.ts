@@ -7,6 +7,7 @@ import { isGerant, canManageFinance } from "@/lib/permissions";
 import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { effectiveAircraftRateCents } from "@/lib/reservations";
 import { durationHours, formatHoursMinutes } from "@/lib/format";
+import { createInstructorCredit, currentInstructorSharePct, instructorCreditCents } from "@/lib/instructor-credit";
 import { z } from "zod";
 
 // Liste des vols (carnet) — alimente à la fois le sélecteur de vol du
@@ -215,6 +216,16 @@ export async function POST(req: Request) {
   }
   const amountCents = aircraftCostCents + instructionCostCents;
 
+  // Part de l'instruction reversée à l'instructeur, comme à la clôture
+  // normale (voir src/lib/instructor-credit.ts) — seulement si un pilote est
+  // débité.
+  const instructorSharePct = instructorId ? await currentInstructorSharePct(prisma, instructorId) : null;
+  const creditCents = studentId ? instructorCreditCents(instructionCostCents, instructorSharePct) : 0;
+  const pilot =
+    creditCents > 0 && studentId
+      ? await prisma.user.findUnique({ where: { id: studentId }, select: { firstName: true, lastName: true } })
+      : null;
+
   const result = await prisma.$transaction(async (db) => {
     const flight = await db.flightLog.create({
       data: {
@@ -234,6 +245,7 @@ export async function POST(req: Request) {
         totalLandings,
         aircraftCostCents,
         instructionCostCents,
+        instructorSharePct,
         remarks,
         stops: { create: stops },
         fuelRefillDone,
@@ -288,6 +300,19 @@ export async function POST(req: Request) {
           totalHours: { increment: duration },
           balanceCents: { decrement: amountCents },
         },
+      });
+    }
+
+    if (creditCents > 0 && instructorId) {
+      await createInstructorCredit(db, {
+        flightId: flight.id,
+        instructorId,
+        amountCents: creditCents,
+        sharePct: instructorSharePct ?? 0,
+        date: start,
+        duration,
+        pilotName: pilot ? `${pilot.firstName} ${pilot.lastName}` : null,
+        confirmedById: session.user.id,
       });
     }
 

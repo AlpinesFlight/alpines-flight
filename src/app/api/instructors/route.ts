@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeUserSelect } from "@/lib/selects";
+import { instructorProfileSelect, safeUserSelect } from "@/lib/selects";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { canManageSchool } from "@/lib/permissions";
+import { canManageFinance, canManageSchool } from "@/lib/permissions";
 import { sendWelcomeEmail } from "@/lib/welcome-email";
 
 export async function GET() {
@@ -18,7 +18,7 @@ export async function GET() {
   // deux choses distinctes.
   const instructors = await prisma.user.findMany({
     where: { instructorProfile: { isNot: null } },
-    select: { ...safeUserSelect, instructorProfile: true },
+    select: { ...safeUserSelect, instructorProfile: instructorProfileSelect(canManageFinance(session.user.role)) },
     orderBy: { lastName: "asc" },
   });
   return NextResponse.json(instructors);
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         create: { qualifications, hourlyRateCents, color },
       },
     },
-    select: { ...safeUserSelect, instructorProfile: true },
+    select: { ...safeUserSelect, instructorProfile: instructorProfileSelect(canManageFinance(session.user.role)) },
   });
 
   await sendWelcomeEmail(user.firstName, user.email, password ?? tempPassword!, "INSTRUCTOR");

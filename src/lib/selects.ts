@@ -43,6 +43,25 @@ export const safeReservationStudentSelect = {
   studentProfile: { select: { canGiveBaptism: true } },
 } as const;
 
+// Profil instructeur renvoyé par /api/instructors : la part de l'instruction
+// qui lui est reversée (instructionSharePct) est une donnée financière,
+// visible du Gérant seul — la liste des instructeurs, elle, est lue par
+// tout compte connecté (planning, formation...).
+export function instructorProfileSelect(withSharePct: boolean) {
+  return {
+    select: {
+      id: true,
+      userId: true,
+      qualifications: true,
+      hourlyRateCents: true,
+      color: true,
+      createdAt: true,
+      updatedAt: true,
+      instructionSharePct: withSharePct,
+    },
+  };
+}
+
 // Le `instructor` d'une InstructorAvailability — safeUserSelect, plus la
 // couleur planning de l'instructeur (InstructorProfile.color, déjà
 // utilisée pour le distinguer sur le Planning avions) pour appliquer la

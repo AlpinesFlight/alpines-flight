@@ -6,6 +6,7 @@ import { z } from "zod";
 import { safeUserSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
 import { operationDateSchema } from "@/lib/transactions";
+import { removeInstructorCredit } from "@/lib/instructor-credit";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -14,8 +15,10 @@ const actionSchema = z.object({
 });
 
 const editSchema = z.object({
-  type: z.enum(["DEPOSIT", "FLIGHT_DEBIT", "ADJUSTMENT"]).optional(),
-  amountCents: z.number().int().refine((n) => n !== 0, "Le montant ne peut pas être nul.").optional(),
+  type: z.enum(["DEPOSIT", "FLIGHT_DEBIT", "ADJUSTMENT", "INSTRUCTION_CREDIT"]).optional(),
+  // 0 accepté pour une ligne de vol (vol offert, crédit instructeur annulé...) —
+  // refusé plus bas pour un versement ou un ajustement.
+  amountCents: z.number().int().optional(),
   method: z.enum(["CARD", "TRANSFER", "CASH", "CHECK"]).nullable().optional(),
   reference: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -83,9 +86,14 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const { date, ...fields } = parsed.data;
-  // Un débit relié à un vol porte la date de ce vol : elle se corrige depuis la
-  // page Vols (PATCH /api/flights/[id]), sinon les deux divergeraient.
-  if (date !== undefined && existing.flightLogId) {
+  const finalType = fields.type ?? existing.type;
+  if (fields.amountCents === 0 && (finalType === "DEPOSIT" || finalType === "ADJUSTMENT")) {
+    return NextResponse.json({ error: "Le montant ne peut pas être nul." }, { status: 400 });
+  }
+  // Un mouvement relié à un vol (débit du pilote ou crédit de l'instructeur)
+  // porte la date de ce vol : elle se corrige depuis la page Vols (PATCH
+  // /api/flights/[id]), sinon les deux divergeraient.
+  if (date !== undefined && (existing.flightLogId || existing.instructorFlightLogId)) {
     return NextResponse.json(
       { error: "La date d'un vol est celle du vol : corrige-la depuis la page Vols." },
       { status: 400 }
@@ -144,6 +152,17 @@ export async function DELETE(_req: Request, { params }: Params) {
       await db.flightLog.update({
         where: { id: existing.flightLogId },
         data: { aircraftCostCents: 0, instructionCostCents: 0 },
+      });
+      // Plus d'instruction facturée sur ce vol : plus rien à reverser à
+      // l'instructeur non plus.
+      await removeInstructorCredit(db, existing.flightLogId);
+    }
+    // Crédit instructeur retiré à la main : part du vol mise à 0, pour
+    // qu'une correction ultérieure du vol ne le recrée pas.
+    if (existing.type === "INSTRUCTION_CREDIT" && existing.instructorFlightLogId) {
+      await db.flightLog.update({
+        where: { id: existing.instructorFlightLogId },
+        data: { instructorSharePct: 0 },
       });
     }
     await db.accountTransaction.delete({ where: { id } });

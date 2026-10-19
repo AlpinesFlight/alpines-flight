@@ -6,6 +6,12 @@ import { recalcAircraftMaintenanceStatuses } from "@/lib/maintenance";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
 import { durationHours, formatHoursMinutes } from "@/lib/format";
+import {
+  currentInstructorSharePct,
+  instructorCreditCents,
+  removeInstructorCredit,
+  syncInstructorCredit,
+} from "@/lib/instructor-credit";
 import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
@@ -92,7 +98,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const existing = await prisma.flightLog.findUnique({
     where: { id },
-    include: { trainingSession: { select: { id: true } } },
+    include: { trainingSession: { select: { id: true } }, accountTransaction: { select: { amountCents: true } } },
   });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
@@ -183,6 +189,24 @@ export async function PATCH(req: Request, { params }: Params) {
   const landingsDelta = newLandings - existing.totalLandings;
   const costDelta = newTotalCost - oldTotalCost;
 
+  // Crédit de l'instructeur (voir src/lib/instructor-credit.ts) : part figée
+  // à la clôture, sauf changement d'instructeur (on prend alors la part
+  // actuelle du nouveau) ; rien à reverser sans pilote débité.
+  const newSharePct = instructorChanged
+    ? newInstructorId
+      ? await currentInstructorSharePct(prisma, newInstructorId)
+      : null
+    : existing.instructorSharePct;
+  const oldCreditCents =
+    existing.studentId && existing.instructorId && !isBaptism
+      ? instructorCreditCents(existing.instructionCostCents, existing.instructorSharePct)
+      : 0;
+  const newCreditCents =
+    newStudentId && newInstructorId && !isBaptism ? instructorCreditCents(newInstructionCost, newSharePct) : 0;
+  const pilot = newStudentId
+    ? await prisma.user.findUnique({ where: { id: newStudentId }, select: { firstName: true, lastName: true } })
+    : null;
+
   const result = await prisma.$transaction(async (db) => {
     const flight = await db.flightLog.update({
       where: { id },
@@ -203,6 +227,7 @@ export async function PATCH(req: Request, { params }: Params) {
         remarks: data.remarks,
         aircraftCostCents: newAircraftCost,
         instructionCostCents: newInstructionCost,
+        ...(instructorChanged ? { instructorSharePct: newSharePct } : {}),
         fuelRefillDone: data.fuelRefillDone,
         fuelCard: fuelRefillDone ? data.fuelCard : null,
         fuelLiters: fuelRefillDone ? data.fuelLiters : null,
@@ -266,11 +291,15 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     } else {
       if (existing.studentId) {
+        // Rend à l'ancien pilote ce qui lui a réellement été débité — la ligne
+        // a pu être retouchée à la main (vol passé à 0 €, remise...) — pas le
+        // coût théorique du vol. Vol baptême : aucun débit, rien à rendre.
+        const refundCents = -(existing.accountTransaction?.amountCents ?? 0);
         await db.studentProfile.updateMany({
           where: { userId: existing.studentId },
           data: {
             totalHours: { decrement: existing.duration },
-            ...(isBaptism ? {} : { balanceCents: { increment: oldTotalCost } }),
+            ...(refundCents !== 0 ? { balanceCents: { increment: refundCents } } : {}),
           },
         });
       }
@@ -333,6 +362,19 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     }
 
+    await syncInstructorCredit(db, {
+      flightId: id,
+      instructorId: newInstructorId,
+      instructorChanged,
+      oldCreditCents,
+      newCreditCents,
+      sharePct: newSharePct ?? 0,
+      date: departureTime,
+      duration,
+      pilotName: pilot ? `${pilot.firstName} ${pilot.lastName}` : null,
+      confirmedById: session.user.id,
+    });
+
     // Heures et cycles de l'avion : d'un avion à l'autre s'il change.
     if (aircraftChanged) {
       await db.aircraft.update({
@@ -384,23 +426,28 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.flightLog.findUnique({ where: { id } });
+  const existing = await prisma.flightLog.findUnique({
+    where: { id },
+    include: { accountTransaction: { select: { amountCents: true } } },
+  });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   await prisma.$transaction(async (db) => {
     await db.accountTransaction.deleteMany({ where: { flightLogId: id } });
+    // Le crédit de l'instructeur disparaît avec le vol, solde compris.
+    await removeInstructorCredit(db, id);
 
     if (existing.studentId) {
+      // Rend au pilote ce qui lui a réellement été débité pour ce vol — la
+      // ligne a pu être retouchée à la main (vol passé à 0 €, remise...),
+      // ce n'est pas forcément le coût théorique du vol. Pas de débit (vol
+      // baptême, valeur déjà retirée) : rien à rendre.
+      const refundCents = -(existing.accountTransaction?.amountCents ?? 0);
       await db.studentProfile.update({
         where: { userId: existing.studentId },
         data: {
           totalHours: { decrement: existing.duration },
-          // Vol baptême : aucun débit n'a jamais eu lieu pour ce vol (voir
-          // POST .../complete), donc rien à recréditer ici — sans cette
-          // garde, supprimer un vol baptême offrirait un crédit au pilote.
-          ...(existing.isBaptism
-            ? {}
-            : { balanceCents: { increment: existing.aircraftCostCents + existing.instructionCostCents } }),
+          ...(refundCents !== 0 ? { balanceCents: { increment: refundCents } } : {}),
         },
       });
     }
