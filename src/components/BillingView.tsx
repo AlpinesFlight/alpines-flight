@@ -526,9 +526,33 @@ function PilotAccountCard({ account }: { account: PilotAccount }) {
   );
 }
 
-// Solde de chaque compte pilote (Gérant) : en rouge ceux à recréditer, en vert
-// ceux qui ont du crédit, les plus négatifs en premier. Un clic filtre la page
-// sur ce compte (re-clic : retour à tous les comptes).
+type BalanceFilter = "NEGATIVE" | "POSITIVE" | "ALL";
+type BalanceTone = "negative" | "positive" | "zero";
+type BalanceAccount = { person: UserLite; balance: number };
+
+const BALANCE_TONE: Record<BalanceTone, { heading: string; amount: string; tile: string }> = {
+  negative: {
+    heading: "text-red-600",
+    amount: "text-red-600 font-bold",
+    tile: "border-red-100 bg-red-100/40 hover:bg-red-100",
+  },
+  positive: {
+    heading: "text-green-700",
+    amount: "text-green-700 font-semibold",
+    tile: "border-navy-100 hover:bg-navy-50",
+  },
+  zero: {
+    heading: "text-navy-500",
+    amount: "text-navy-400 font-medium",
+    tile: "border-navy-100 hover:bg-navy-50",
+  },
+};
+
+// Soldes des comptes pilotes (Gérant). Par défaut, seuls les comptes négatifs
+// — ceux qui doivent recréditer — s'affichent, sur fond rouge, le plus négatif
+// en premier ; « Positifs » ou « Tous » élargissent la liste, toujours rangée
+// par groupe (négatifs, positifs, soldes nuls) plutôt que mélangée. Un clic sur
+// un compte filtre la page sur lui (re-clic : retour à tous les comptes).
 function AccountBalancesCard({
   students,
   loading,
@@ -540,59 +564,124 @@ function AccountBalancesCard({
   selectedId: string;
   onSelect: (id: string) => void;
 }) {
-  const accounts = students
-    .map((person) => ({ person, balance: person.studentProfile?.balanceCents ?? 0 }))
-    .sort((a, b) => a.balance - b.balance || a.person.lastName.localeCompare(b.person.lastName));
-  const debtors = accounts.filter((a) => a.balance < 0).length;
-  const creditors = accounts.filter((a) => a.balance > 0).length;
+  const [filter, setFilter] = useState<BalanceFilter>("NEGATIVE");
+
+  const byName = (a: BalanceAccount, b: BalanceAccount) =>
+    a.person.lastName.localeCompare(b.person.lastName) || a.person.firstName.localeCompare(b.person.firstName);
+  const accounts = students.map((person) => ({ person, balance: person.studentProfile?.balanceCents ?? 0 }));
+  const negatives = accounts.filter((a) => a.balance < 0).sort((a, b) => a.balance - b.balance || byName(a, b));
+  const positives = accounts.filter((a) => a.balance > 0).sort((a, b) => b.balance - a.balance || byName(a, b));
+  const zeros = accounts.filter((a) => a.balance === 0).sort(byName);
+  const plural = (n: number) => (n > 1 ? "s" : "");
+
+  const groups = {
+    negative: {
+      tone: "negative" as const,
+      title: `${negatives.length} compte${plural(negatives.length)} à recréditer`,
+      accounts: negatives,
+      empty: "Aucun compte négatif : tous les pilotes sont à jour.",
+    },
+    positive: {
+      tone: "positive" as const,
+      title: `${positives.length} compte${plural(positives.length)} créditeur${plural(positives.length)}`,
+      accounts: positives,
+      empty: "Aucun compte positif.",
+    },
+    zero: {
+      tone: "zero" as const,
+      title: `${zeros.length} compte${plural(zeros.length)} à 0 €`,
+      accounts: zeros,
+      empty: "",
+    },
+  };
+  const shown =
+    filter === "NEGATIVE"
+      ? [groups.negative]
+      : filter === "POSITIVE"
+        ? [groups.positive]
+        : [groups.negative, groups.positive, groups.zero].filter((g) => g.accounts.length > 0);
+
+  const tabs: { key: BalanceFilter; label: string; count: number; badge: string }[] = [
+    { key: "NEGATIVE", label: "Négatifs", count: negatives.length, badge: "bg-red-100 text-red-600" },
+    { key: "POSITIVE", label: "Positifs", count: positives.length, badge: "bg-green-100 text-green-700" },
+    { key: "ALL", label: "Tous", count: accounts.length, badge: "bg-navy-100 text-navy-600" },
+  ];
 
   return (
     <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-navy-100">
-        <h2 className="font-semibold text-navy-900">Soldes des comptes pilotes</h2>
-        <p className="text-xs">
-          <span className="font-semibold text-red-600">{debtors} à recréditer</span>
-          <span className="text-navy-600"> · </span>
-          <span className="font-semibold text-green-700">
-            {creditors} créditeur{creditors > 1 ? "s" : ""}
-          </span>
-        </p>
-      </div>
-      {!loading && accounts.length === 0 && <p className="px-5 py-6 text-sm text-navy-600">Aucun compte.</p>}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        {accounts.map(({ person, balance }) => (
-          <button
-            key={person.id}
-            type="button"
-            onClick={() => onSelect(person.id)}
-            title={balance < 0 ? "Doit recréditer son compte" : undefined}
-            className={clsx(
-              "flex items-center justify-between gap-3 px-5 py-2.5 text-left border-b border-navy-100 transition-colors",
-              balance < 0 ? "hover:bg-red-100/60" : "hover:bg-navy-50",
-              selectedId === person.id && "bg-navy-50 ring-1 ring-inset ring-navy-100"
-            )}
-          >
-            <span className="flex items-center gap-2 min-w-0">
-              <span
-                className={clsx(
-                  "w-2 h-2 rounded-full shrink-0",
-                  balance < 0 ? "bg-red-500" : balance > 0 ? "bg-green-600" : "bg-navy-100"
-                )}
-              />
-              <span className="text-sm text-navy-900 truncate">
-                {person.firstName} {person.lastName}
-              </span>
-            </span>
-            <span
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-navy-100">
+        <div>
+          <h2 className="font-semibold text-navy-900">Soldes des comptes pilotes</h2>
+          <p className="text-xs text-navy-600">Clique sur un compte pour afficher ses mouvements plus bas.</p>
+        </div>
+        <div className="flex items-center bg-navy-50 rounded-lg p-1 gap-1">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setFilter(t.key)}
+              aria-pressed={filter === t.key}
               className={clsx(
-                "text-sm font-semibold whitespace-nowrap tabular-nums",
-                balance < 0 ? "text-red-600" : balance > 0 ? "text-green-700" : "text-navy-600"
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                filter === t.key ? "bg-white text-navy-900 shadow-sm" : "text-navy-600 hover:text-navy-900"
               )}
             >
-              {signedMoney(balance)}
-            </span>
-          </button>
-        ))}
+              {t.label}
+              <span className={clsx("px-1.5 rounded-full text-[11px] leading-4 tabular-nums", t.badge)}>
+                {t.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="px-5 py-4 flex flex-col gap-5">
+        {loading && accounts.length === 0 && <p className="text-sm text-navy-600">Chargement…</p>}
+        {!loading && accounts.length === 0 && <p className="text-sm text-navy-600">Aucun compte.</p>}
+        {accounts.length > 0 &&
+          shown.map((group) =>
+            group.accounts.length === 0 ? (
+              <p key={group.tone} className="text-sm text-navy-600">
+                {group.empty}
+              </p>
+            ) : (
+              <section key={group.tone}>
+                <div className="flex items-baseline justify-between gap-3 mb-2">
+                  <h3 className={clsx("text-xs font-semibold uppercase tracking-wide", BALANCE_TONE[group.tone].heading)}>
+                    {group.title}
+                  </h3>
+                  {group.tone !== "zero" && (
+                    <p className={clsx("text-xs whitespace-nowrap tabular-nums", BALANCE_TONE[group.tone].amount)}>
+                      Total {signedMoney(group.accounts.reduce((sum, a) => sum + a.balance, 0))}
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {group.accounts.map(({ person, balance }) => (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => onSelect(person.id)}
+                      aria-pressed={selectedId === person.id}
+                      className={clsx(
+                        "flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors",
+                        BALANCE_TONE[group.tone].tile,
+                        selectedId === person.id && "ring-2 ring-navy-800"
+                      )}
+                    >
+                      <span className="text-sm font-medium text-navy-900 truncate">
+                        {person.firstName} {person.lastName}
+                      </span>
+                      <span
+                        className={clsx("text-sm whitespace-nowrap tabular-nums", BALANCE_TONE[group.tone].amount)}
+                      >
+                        {signedMoney(balance)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )
+          )}
       </div>
     </div>
   );
