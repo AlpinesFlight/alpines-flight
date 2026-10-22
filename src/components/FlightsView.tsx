@@ -1155,9 +1155,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 // Saisie directe d'un vol déjà effectué (rattrapage), sans passer par une
-// réservation sur le planning — donc sans email envoyé (voir
-// notifyReservation, déclenché uniquement à la création/modification d'une
-// Reservation). Reprend les mêmes champs et le même calcul de coût que le
+// réservation — donc sans email envoyé (voir notifyReservation). Le serveur
+// lui crée quand même son créneau, clôturé, sur le planning (voir
+// Reservation.fromFlightEntry, POST /api/flights). Reprend les mêmes champs et le même calcul de coût que le
 // compte-rendu normal d'un vol réservé (CompleteFlightPanel dans
 // ReservationModal.tsx), avec en plus ce qu'une réservation aurait fourni
 // (avion, pilote, type) puisqu'il n'y en a pas ici. Voir POST /api/flights.
@@ -1321,8 +1321,8 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         ) : (
           <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
             <p className="text-xs text-navy-600 -mt-1">
-              Pour un vol déjà effectué (rattrapage) : ne crée aucun créneau sur le planning et
-              n&apos;envoie aucun email — tout est renseigné ici comme pour un retour de vol normal.
+              Pour un vol déjà effectué (rattrapage) : il apparaît sur le planning comme un vol
+              clôturé, sans envoyer aucun email — tout est renseigné ici comme pour un retour de vol normal.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -483,6 +483,10 @@ model Reservation {
   // recopié tel quel sur FlightLog.isBaptism une fois le vol clôturé, et
   // revérifié à ce moment-là (voir /api/reservations/[id]/complete).
   isBaptism           Boolean  @default(false)
+  // Créée automatiquement (COMPLETED) pour qu'un vol saisi après coup depuis la
+  // page Vols apparaisse sur le planning comme les autres : supprimée avec le
+  // vol, et jamais d'e-mail à son sujet (ce n'est pas une vraie réservation).
+  fromFlightEntry     Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

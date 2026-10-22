@@ -170,8 +170,10 @@ export async function PATCH(req: Request, { params }: Params) {
   });
 
   // Manquait jusqu'ici : la création et l'annulation prévenaient déjà les
-  // concernés par email, pas la modification (horaire, avion...).
-  await notifyReservation(reservation, "updated");
+  // concernés par email, pas la modification (horaire, avion...). Jamais pour
+  // le créneau d'un vol saisi après coup (Reservation.fromFlightEntry) : ce
+  // n'est pas une vraie réservation, personne n'a à en être prévenu.
+  if (!existing.fromFlightEntry) await notifyReservation(reservation, "updated");
 
   return NextResponse.json(reservation);
 }
@@ -199,7 +201,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       instructor: { select: safeUserSelect },
     },
   });
-  await notifyReservation(cancelled, "cancelled");
+  if (!existing.fromFlightEntry) await notifyReservation(cancelled, "cancelled");
 
   return NextResponse.json({ ok: true });
 }

@@ -460,14 +460,18 @@ export async function DELETE(_req: Request, { params }: Params) {
       },
     });
 
+    await db.flightLog.delete({ where: { id } });
+
     if (existing.reservationId) {
+      // Réservation créée seulement pour afficher ce vol saisi après coup sur
+      // le planning (Reservation.fromFlightEntry) : elle disparaît avec lui.
+      // Une vraie réservation, elle, redevient réservée (déverrouillée).
+      await db.reservation.deleteMany({ where: { id: existing.reservationId, fromFlightEntry: true } });
       await db.reservation.updateMany({
         where: { id: existing.reservationId, status: "COMPLETED" },
         data: { status: "CONFIRMED" },
       });
     }
-
-    await db.flightLog.delete({ where: { id } });
   });
 
   await recalcAircraftMaintenanceStatuses(prisma, existing.aircraftId);

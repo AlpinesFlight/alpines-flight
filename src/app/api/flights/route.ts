@@ -115,9 +115,10 @@ const createSchema = z
 
 // Saisie directe d'un vol antérieur (rattrapage carnet de vol/comptabilité —
 // ex. vol réalisé avant la mise en place de l'appli, ou oublié), sans passer
-// par une Reservation : donc sans créneau sur le planning et surtout sans le
-// mail envoyé à la création/modification d'une réservation (voir
-// notifyReservation). Reprend exactement la même logique de calcul et de
+// par la création d'une réservation : donc sans le mail envoyé à la
+// création/modification d'une réservation (voir notifyReservation). Le vol
+// apparaît quand même sur le planning, via une réservation COMPLETED créée
+// pour lui (Reservation.fromFlightEntry). Reprend exactement la même logique de calcul et de
 // débit que la clôture normale d'un vol réservé
 // (POST /api/reservations/[id]/complete) — seule différence, tout ce qu'une
 // Reservation aurait fourni (avion, pilote, type...) est saisi ici
@@ -227,8 +228,28 @@ export async function POST(req: Request) {
       : null;
 
   const result = await prisma.$transaction(async (db) => {
+    // Le vol apparaît sur le planning comme n'importe quel vol clôturé : une
+    // réservation COMPLETED est créée pour lui, directement en base (donc sans
+    // l'e-mail que déclenche /api/reservations) — voir
+    // Reservation.fromFlightEntry, supprimée avec le vol.
+    const reservation = await db.reservation.create({
+      data: {
+        aircraftId,
+        studentId: studentId || null,
+        instructorId: instructorId || null,
+        trainingProgramId: isInstructionFlight ? trainingProgramId || null : null,
+        type,
+        status: "COMPLETED",
+        startTime: start,
+        endTime: end,
+        notes: "Vol saisi après coup (page Vols)",
+        fromFlightEntry: true,
+      },
+    });
+
     const flight = await db.flightLog.create({
       data: {
+        reservationId: reservation.id,
         aircraftId,
         studentId: studentId || null,
         // L'instructeur reste enregistré même hors vol d'instruction (ex.
