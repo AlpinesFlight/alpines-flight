@@ -7,6 +7,15 @@
   --color-navy-800: #0c2448;   /* navy principal (fond du logo) */
   --color-navy-700: #17335a;
   --color-navy-600: #2c4d74;
+  /* 200 à 500 : bleu-gris intermédiaires entre 100 et 600 (textes secondaires,
+     bordures, pastilles). Utilisées partout dans l'appli mais longtemps
+     absentes d'ici — sans elles, Tailwind ne génère aucune classe et le texte
+     retombait sur la couleur héritée. 400 est un peu plus foncé qu'une simple
+     interpolation pour rester lisible en petit texte sur fond blanc (4,5:1). */
+  --color-navy-500: #4f6b8c;
+  --color-navy-400: #5f7896;
+  --color-navy-300: #95a7bd;
+  --color-navy-200: #b8c5d6;
   --color-navy-100: #dbe3ee;
   --color-navy-50:  #f2f5f9;
 
@@ -35,6 +44,10 @@
   --color-navy-800: var(--color-navy-800);
   --color-navy-700: var(--color-navy-700);
   --color-navy-600: var(--color-navy-600);
+  --color-navy-500: var(--color-navy-500);
+  --color-navy-400: var(--color-navy-400);
+  --color-navy-300: var(--color-navy-300);
+  --color-navy-200: var(--color-navy-200);
   --color-navy-100: var(--color-navy-100);
   --color-navy-50:  var(--color-navy-50);
 
