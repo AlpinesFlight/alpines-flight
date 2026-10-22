@@ -240,6 +240,15 @@ export function BillingView() {
       </div>
 
       {canFinanceAdmin && (
+        <AccountBalancesCard
+          students={students}
+          loading={loading}
+          selectedId={filterStudentId}
+          onSelect={(id) => setFilterStudentId(id === filterStudentId ? "" : id)}
+        />
+      )}
+
+      {canFinanceAdmin && (
         <label className={clsx("flex flex-col gap-1 max-w-xs", selectedAccount ? "mb-3" : "mb-6")}>
           <span className="text-xs font-medium text-navy-600">
             Filtrer par compte pilote (versements et vols ci-dessous)
@@ -513,6 +522,78 @@ function PilotAccountCard({ account }: { account: PilotAccount }) {
           {formatMoney(pendingCents)} en attente de vérification — pas encore compté dans le solde.
         </p>
       )}
+    </div>
+  );
+}
+
+// Solde de chaque compte pilote (Gérant) : en rouge ceux à recréditer, en vert
+// ceux qui ont du crédit, les plus négatifs en premier. Un clic filtre la page
+// sur ce compte (re-clic : retour à tous les comptes).
+function AccountBalancesCard({
+  students,
+  loading,
+  selectedId,
+  onSelect,
+}: {
+  students: UserLite[];
+  loading: boolean;
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  const accounts = students
+    .map((person) => ({ person, balance: person.studentProfile?.balanceCents ?? 0 }))
+    .sort((a, b) => a.balance - b.balance || a.person.lastName.localeCompare(b.person.lastName));
+  const debtors = accounts.filter((a) => a.balance < 0).length;
+  const creditors = accounts.filter((a) => a.balance > 0).length;
+
+  return (
+    <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-navy-100">
+        <h2 className="font-semibold text-navy-900">Soldes des comptes pilotes</h2>
+        <p className="text-xs">
+          <span className="font-semibold text-red-600">{debtors} à recréditer</span>
+          <span className="text-navy-600"> · </span>
+          <span className="font-semibold text-green-700">
+            {creditors} créditeur{creditors > 1 ? "s" : ""}
+          </span>
+        </p>
+      </div>
+      {!loading && accounts.length === 0 && <p className="px-5 py-6 text-sm text-navy-600">Aucun compte.</p>}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        {accounts.map(({ person, balance }) => (
+          <button
+            key={person.id}
+            type="button"
+            onClick={() => onSelect(person.id)}
+            title={balance < 0 ? "Doit recréditer son compte" : undefined}
+            className={clsx(
+              "flex items-center justify-between gap-3 px-5 py-2.5 text-left border-b border-navy-100 transition-colors",
+              balance < 0 ? "hover:bg-red-100/60" : "hover:bg-navy-50",
+              selectedId === person.id && "bg-navy-50 ring-1 ring-inset ring-navy-100"
+            )}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span
+                className={clsx(
+                  "w-2 h-2 rounded-full shrink-0",
+                  balance < 0 ? "bg-red-500" : balance > 0 ? "bg-green-600" : "bg-navy-100"
+                )}
+              />
+              <span className="text-sm text-navy-900 truncate">
+                {person.firstName} {person.lastName}
+              </span>
+            </span>
+            <span
+              className={clsx(
+                "text-sm font-semibold whitespace-nowrap tabular-nums",
+                balance < 0 ? "text-red-600" : balance > 0 ? "text-green-700" : "text-navy-600"
+              )}
+            >
+              {signedMoney(balance)}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
