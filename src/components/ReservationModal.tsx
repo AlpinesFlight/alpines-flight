@@ -59,22 +59,26 @@ export function ReservationModal({
 }) {
   const { data: session } = useSession();
   const [aircraftId, setAircraftId] = useState(existing?.aircraftId ?? aircraftList[0]?.id ?? "");
-  // À la création (pas en édition), pré-remplit selon le compte qui réserve :
-  // un élève/pilote comme pilote, un instructeur comme instructeur — jamais
-  // le Gérant comme pilote (exclu à sa demande). Recalculé à chaque rendu
-  // tant que rien n'a été choisi à la main (choix null) : la session et les
-  // listes élèves/instructeurs arrivent parfois après l'ouverture du
-  // formulaire (planning ouvert puis créneau cliqué aussitôt, réseau lent
-  // sur mobile), et un pré-remplissage figé à l'ouverture restait vide.
-  const me = session?.user?.id;
-  const meAsPilot = !!me && session?.user?.role !== "GERANT" && students.some((s) => s.id === me);
-  const meAsInstructor = !!me && !meAsPilot && instructors.some((i) => i.id === me);
   const [studentChoice, setStudentId] = useState<string | null>(existing ? existing.studentId ?? "" : null);
   const [instructorChoice, setInstructorId] = useState<string | null>(existing ? existing.instructorId ?? "" : null);
-  const studentId = studentChoice ?? (meAsPilot && me ? me : "");
-  const instructorId = instructorChoice ?? (meAsInstructor && me ? me : "");
   const [trainingProgramId, setTrainingProgramId] = useState(existing?.trainingProgramId ?? "");
   const [type, setType] = useState<ReservationType>(existing?.type ?? "INSTRUCTION");
+  // À la création (pas en édition), pré-remplit selon le compte qui réserve :
+  // un élève/pilote comme pilote, un instructeur comme instructeur — et, en
+  // Location, toujours le compte lui-même comme pilote (celui qui loue
+  // l'avion le pilote), instructeur et Gérant compris. Hors Location, jamais
+  // le Gérant comme pilote (exclu à sa demande). Recalculé à chaque rendu
+  // tant que rien n'a été choisi à la main (choix null) : suit le type
+  // choisi, et la session et les listes élèves/instructeurs, qui arrivent
+  // parfois après l'ouverture du formulaire (réseau lent sur mobile).
+  const me = session?.user?.id;
+  const meIsStudent = !!me && students.some((s) => s.id === me);
+  const meIsInstructor = !!me && instructors.some((i) => i.id === me);
+  const meAsPilot =
+    type === "LOCATION" ? meIsStudent || meIsInstructor : meIsStudent && session?.user?.role !== "GERANT";
+  const meAsInstructor = !meAsPilot && meIsInstructor;
+  const studentId = studentChoice ?? (meAsPilot && me ? me : "");
+  const instructorId = instructorChoice ?? (meAsInstructor && me ? me : "");
   const [start, setStart] = useState(toLocalInput(existing ? new Date(existing.startTime) : initialStart));
   const [end, setEnd] = useState(toLocalInput(existing ? new Date(existing.endTime) : initialEnd));
   const [notes, setNotes] = useState(existing?.notes ?? "");
