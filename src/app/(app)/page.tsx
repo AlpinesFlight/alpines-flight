@@ -295,7 +295,7 @@ function typeLabel(type: string) {
     case "INSTRUCTION":
       return "Instruction";
     case "SOLO":
-      return "Solo";
+      return "Solo supervisé";
     case "LOCATION":
       return "Location";
     case "MAINTENANCE":

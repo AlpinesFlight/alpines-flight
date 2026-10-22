@@ -21,6 +21,9 @@ const schema = z
     instructorId: z.string().nullable().optional(),
     trainingProgramId: z.string().nullable().optional(),
     remarks: z.string().nullable().optional(),
+    // Touchés en route (tours de piste...) — facultatif : un vol direct, posé
+    // en complet à destination sans tour de piste, n'a rien à y mettre (son
+    // atterrissage à destination est compté d'office, voir totalLandings).
     stops: z
       .array(
         z.object({
@@ -28,7 +31,7 @@ const schema = z
           touchAndGo: z.number().int().positive(),
         })
       )
-      .min(1, "Au moins un terrain doit être renseigné."),
+      .default([]),
     fuelRefillDone: z.boolean().optional().default(false),
     fuelCard: z.enum(["BP", "TOTAL", "BADGE_TALLARD"]).optional().nullable(),
     fuelLiters: z.number().positive().optional().nullable(),

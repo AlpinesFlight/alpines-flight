@@ -17,7 +17,7 @@ type ReservationWithRelations = Reservation & {
 
 const TYPE_LABELS: Record<string, string> = {
   INSTRUCTION: "Vol d'instruction",
-  SOLO: "Vol solo",
+  SOLO: "Vol solo supervisé",
   LOCATION: "Location",
   MAINTENANCE: "Maintenance",
   DISCOVERY: "Vol découverte",

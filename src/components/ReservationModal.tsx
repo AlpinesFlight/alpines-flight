@@ -15,13 +15,13 @@ import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
 // clôturable ici une fois apparu sur le planning (voir isDiscovery plus bas).
 const TYPE_OPTIONS: { value: ReservationType; label: string }[] = [
   { value: "INSTRUCTION", label: "Instruction" },
-  { value: "SOLO", label: "Solo" },
+  { value: "SOLO", label: "Solo supervisé" },
   { value: "LOCATION", label: "Location" },
   { value: "MAINTENANCE", label: "Maintenance" },
 ];
 const TYPE_LABELS: Record<ReservationType, string> = {
   INSTRUCTION: "Instruction",
-  SOLO: "Solo",
+  SOLO: "Solo supervisé",
   LOCATION: "Location",
   MAINTENANCE: "Maintenance",
   DISCOVERY: "Vol découverte",
@@ -59,19 +59,20 @@ export function ReservationModal({
 }) {
   const { data: session } = useSession();
   const [aircraftId, setAircraftId] = useState(existing?.aircraftId ?? aircraftList[0]?.id ?? "");
-  const [instructorId, setInstructorId] = useState(existing?.instructorId ?? "");
-  // À la création (pas en édition), pré-remplit avec le compte qui réserve
-  // s'il apparaît dans la liste des élèves/pilotes (donc jamais pour un FI/
-  // Admin qui réserve pour quelqu'un d'autre) — sauf le Gérant, qui ne
-  // réserve jamais pour lui-même non plus, exclu explicitement à la
-  // demande même si en pratique il n'apparaît de toute façon pas dans
-  // cette liste.
-  const [studentId, setStudentId] = useState(() => {
-    if (existing) return existing.studentId ?? "";
-    if (session?.user?.role === "GERANT") return "";
-    const self = students.find((s) => s.id === session?.user?.id);
-    return self?.id ?? "";
-  });
+  // À la création (pas en édition), pré-remplit selon le compte qui réserve :
+  // un élève/pilote comme pilote, un instructeur comme instructeur — jamais
+  // le Gérant comme pilote (exclu à sa demande). Recalculé à chaque rendu
+  // tant que rien n'a été choisi à la main (choix null) : la session et les
+  // listes élèves/instructeurs arrivent parfois après l'ouverture du
+  // formulaire (planning ouvert puis créneau cliqué aussitôt, réseau lent
+  // sur mobile), et un pré-remplissage figé à l'ouverture restait vide.
+  const me = session?.user?.id;
+  const meAsPilot = !!me && session?.user?.role !== "GERANT" && students.some((s) => s.id === me);
+  const meAsInstructor = !!me && !meAsPilot && instructors.some((i) => i.id === me);
+  const [studentChoice, setStudentId] = useState<string | null>(existing ? existing.studentId ?? "" : null);
+  const [instructorChoice, setInstructorId] = useState<string | null>(existing ? existing.instructorId ?? "" : null);
+  const studentId = studentChoice ?? (meAsPilot && me ? me : "");
+  const instructorId = instructorChoice ?? (meAsInstructor && me ? me : "");
   const [trainingProgramId, setTrainingProgramId] = useState(existing?.trainingProgramId ?? "");
   const [type, setType] = useState<ReservationType>(existing?.type ?? "INSTRUCTION");
   const [start, setStart] = useState(toLocalInput(existing ? new Date(existing.startTime) : initialStart));
@@ -567,7 +568,9 @@ export function CompleteFlightPanel({
   const [arrivalAirfield, setArrivalAirfield] = useState("");
   const [instructorId, setInstructorId] = useState(reservation.instructorId ?? "");
   const [trainingProgramId, setTrainingProgramId] = useState(reservation.trainingProgramId ?? "");
-  const [stops, setStops] = useState<StopRow[]>([{ airfield: "", touchAndGo: "1" }]);
+  // Vide par défaut : un vol direct posé en complet à destination n'a aucun
+  // touché à déclarer — son atterrissage à destination est compté d'office.
+  const [stops, setStops] = useState<StopRow[]>([]);
   const [remarks, setRemarks] = useState("");
   const [fuelRefillDone, setFuelRefillDone] = useState(false);
   const [fuelCard, setFuelCard] = useState("BP");
@@ -759,7 +762,7 @@ export function CompleteFlightPanel({
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs font-medium text-navy-600">
-            Terrains posés — code OACI &amp; nombre de touchés
+            Terrains posés (optionnel — tours de piste/touchés en route)
           </span>
           <button
             type="button"
@@ -769,11 +772,17 @@ export function CompleteFlightPanel({
             <Plus size={12} /> Ajouter un terrain
           </button>
         </div>
-        <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
-          <span className="text-[11px] text-navy-500">Code OACI</span>
-          <span className="text-[11px] text-navy-500">Touchés</span>
-          <span />
-        </div>
+        {stops.length === 0 ? (
+          <p className="text-xs text-navy-500">
+            Aucun — vol direct : l&apos;atterrissage à destination est compté automatiquement.
+          </p>
+        ) : (
+          <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
+            <span className="text-[11px] text-navy-500">Code OACI</span>
+            <span className="text-[11px] text-navy-500">Touchés</span>
+            <span />
+          </div>
+        )}
         <div className="flex flex-col gap-2">
           {stops.map((s, i) => (
             <div key={i} className="grid grid-cols-[1fr_88px_auto] gap-2 items-center">
@@ -792,17 +801,13 @@ export function CompleteFlightPanel({
                 onChange={(e) => updateStop(i, { touchAndGo: e.target.value })}
                 className="input"
               />
-              {stops.length > 1 ? (
-                <button
-                  type="button"
-                  onClick={() => removeStop(i)}
-                  className="text-navy-600 hover:text-red-600"
-                >
-                  <X size={16} />
-                </button>
-              ) : (
-                <span />
-              )}
+              <button
+                type="button"
+                onClick={() => removeStop(i)}
+                className="text-navy-600 hover:text-red-600"
+              >
+                <X size={16} />
+              </button>
             </div>
           ))}
         </div>

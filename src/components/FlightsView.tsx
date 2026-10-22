@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, FlightLog, ReservationType, TrainingProgram, UserLite } from "@/types/models";
-import { durationHours, formatDate, formatHours, formatHoursMinutes, formatMoney } from "@/lib/format";
+import { durationHours, formatDate, formatHours, formatHoursMinutes, formatMoney, formatTime } from "@/lib/format";
 import { Pencil, Plus, PlaneLanding, Trash2, X } from "lucide-react";
 
 function toIsoDate(date: Date): string {
@@ -104,13 +104,12 @@ export function FlightsView() {
     return { count: flights.length, totalHours, totalLandings, totalRevenue };
   }, [flights]);
 
-  // Résumé de gestion (Gérant uniquement) — heures/CA par avion, conso
-  // carburant par type, et atterrissages par terrain (taxes d'atterrissage).
-  // Calculé uniquement à partir de ce qui est déjà chargé (flights), aucun
-  // appel supplémentaire.
+  // Résumé de gestion (Gérant uniquement) — heures/CA par avion et
+  // atterrissages par terrain (taxes d'atterrissage) ; le carburant a son
+  // propre résumé (fuelSummary ci-dessous). Calculé uniquement à partir de
+  // ce qui est déjà chargé (flights), aucun appel supplémentaire.
   const managementSummary = useMemo(() => {
     const byAircraft = new Map<string, { registration: string; hours: number; landings: number; revenueCents: number }>();
-    const fuelByType = new Map<string, number>();
     const landingsByAirfield = new Map<string, number>();
 
     for (const f of flights) {
@@ -124,10 +123,6 @@ export function FlightsView() {
       ac.landings += f.totalLandings;
       ac.revenueCents += f.aircraftCostCents + f.instructionCostCents;
       byAircraft.set(f.aircraft.registration, ac);
-
-      if (f.fuelRefillDone && f.fuelLiters && f.fuelType) {
-        fuelByType.set(f.fuelType, (fuelByType.get(f.fuelType) ?? 0) + f.fuelLiters);
-      }
 
       // Reconstruit qui a atterri où (indépendamment du seul totalLandings
       // cumulé) : l'arrivée compte pour 1 atterrissage, chaque terrain de
@@ -143,8 +138,57 @@ export function FlightsView() {
 
     return {
       byAircraft: Array.from(byAircraft.values()).sort((a, b) => b.hours - a.hours),
-      fuelByType: Array.from(fuelByType.entries()).sort((a, b) => b[1] - a[1]),
       landingsByAirfield: Array.from(landingsByAirfield.entries()).sort((a, b) => b[1] - a[1]),
+    };
+  }, [flights]);
+
+  // Carburant (Gérant) : pleins déclarés à la clôture des vols de la période,
+  // totaux par carte (rapprochement des relevés BP/Total/badge), par type et
+  // par avion, et conso moyenne par avion = litres des pleins ÷ heures de vol
+  // de l'avion sur la période — pas de calcul plein-à-plein, qui supposerait
+  // de savoir si le plein a été fait avant ou après le vol déclaré.
+  const fuelSummary = useMemo((): FuelSummary => {
+    const hoursByAircraft = new Map<string, number>();
+    for (const f of flights) {
+      hoursByAircraft.set(f.aircraft.registration, (hoursByAircraft.get(f.aircraft.registration) ?? 0) + f.duration);
+    }
+    const refills = flights
+      .filter((f) => f.fuelRefillDone && f.fuelLiters)
+      .sort((a, b) => new Date(b.departureTime).getTime() - new Date(a.departureTime).getTime());
+
+    const byType = new Map<string, number>();
+    const byCard = new Map<string, { count: number; liters: number }>();
+    const litersByAircraft = new Map<string, { count: number; liters: number }>();
+    for (const f of refills) {
+      const liters = f.fuelLiters ?? 0;
+      if (f.fuelType) byType.set(f.fuelType, (byType.get(f.fuelType) ?? 0) + liters);
+      const card = byCard.get(f.fuelCard ?? "") ?? { count: 0, liters: 0 };
+      byCard.set(f.fuelCard ?? "", { count: card.count + 1, liters: card.liters + liters });
+      const ac = litersByAircraft.get(f.aircraft.registration) ?? { count: 0, liters: 0 };
+      litersByAircraft.set(f.aircraft.registration, { count: ac.count + 1, liters: ac.liters + liters });
+    }
+
+    // Tous les avions ayant volé sur la période, même sans plein déclaré —
+    // des heures sans aucun plein, c'est justement ce qu'il faut repérer.
+    const byAircraft = Array.from(hoursByAircraft.entries())
+      .map(([registration, hours]) => {
+        const fuel = litersByAircraft.get(registration) ?? { count: 0, liters: 0 };
+        return {
+          registration,
+          hours,
+          count: fuel.count,
+          liters: fuel.liters,
+          litersPerHour: fuel.liters > 0 && hours > 0 ? fuel.liters / hours : null,
+        };
+      })
+      .sort((a, b) => b.liters - a.liters || b.hours - a.hours);
+
+    return {
+      refills,
+      totalLiters: refills.reduce((s, f) => s + (f.fuelLiters ?? 0), 0),
+      byType: Array.from(byType.entries()).sort((a, b) => b[1] - a[1]),
+      byCard: Array.from(byCard.entries()).sort((a, b) => b[1].liters - a[1].liters),
+      byAircraft,
     };
   }, [flights]);
 
@@ -188,7 +232,7 @@ export function FlightsView() {
       {canFinanceAdmin && (
         <div className="mb-6 flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-navy-900">Résumé de gestion</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white rounded-2xl border border-navy-100 p-4">
               <h3 className="text-xs font-semibold text-navy-600 mb-3">Par avion</h3>
               <div className="flex flex-col gap-2">
@@ -202,21 +246,6 @@ export function FlightsView() {
                 ))}
                 {managementSummary.byAircraft.length === 0 && (
                   <p className="text-xs text-navy-500">Aucune donnée sur cette période.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-navy-100 p-4">
-              <h3 className="text-xs font-semibold text-navy-600 mb-3">Carburant consommé</h3>
-              <div className="flex flex-col gap-2">
-                {managementSummary.fuelByType.map(([type, liters]) => (
-                  <div key={type} className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-navy-900">{FUEL_TYPE_LABEL[type] ?? type}</span>
-                    <span className="text-navy-600">{liters.toFixed(1)} L</span>
-                  </div>
-                ))}
-                {managementSummary.fuelByType.length === 0 && (
-                  <p className="text-xs text-navy-500">Aucun plein enregistré sur cette période.</p>
                 )}
               </div>
             </div>
@@ -238,6 +267,7 @@ export function FlightsView() {
               </div>
             </div>
           </div>
+          <FuelSummaryCard summary={fuelSummary} />
         </div>
       )}
 
@@ -248,9 +278,10 @@ export function FlightsView() {
             <tr className="text-left text-navy-600 border-b border-navy-100">
               <th className="px-5 py-3 font-medium">Date</th>
               <th className="px-5 py-3 font-medium">Avion</th>
-              <th className="px-5 py-3 font-medium">Élève</th>
+              <th className="px-5 py-3 font-medium">Pilote</th>
               <th className="px-5 py-3 font-medium">Instructeur</th>
-              <th className="px-5 py-3 font-medium">Formation</th>
+              <th className="px-5 py-3 font-medium">Départ</th>
+              <th className="px-5 py-3 font-medium">Arrivée</th>
               <th className="px-5 py-3 font-medium">Trajet</th>
               <th className="px-5 py-3 font-medium text-right">Durée</th>
               <th className="px-5 py-3 font-medium text-right">Att.</th>
@@ -269,7 +300,8 @@ export function FlightsView() {
                 <td className="px-5 py-3 text-navy-700">
                   {f.instructor ? `${f.instructor.firstName} ${f.instructor.lastName}` : "—"}
                 </td>
-                <td className="px-5 py-3 text-navy-500 text-xs">{f.trainingProgram?.title ?? "—"}</td>
+                <td className="px-5 py-3 text-navy-700 tabular-nums whitespace-nowrap">{formatTime(f.departureTime)}</td>
+                <td className="px-5 py-3 text-navy-700 tabular-nums whitespace-nowrap">{formatTime(f.arrivalTime)}</td>
                 <td className="px-5 py-3 text-navy-700 text-xs whitespace-nowrap">
                   {f.departureAirfield && f.arrivalAirfield
                     ? `${f.departureAirfield} → ${f.arrivalAirfield}`
@@ -314,7 +346,7 @@ export function FlightsView() {
             ))}
             {!loading && flights.length === 0 && (
               <tr>
-                <td colSpan={canFinanceAdmin ? 10 : 9} className="px-5 py-8 text-center text-navy-600">
+                <td colSpan={canFinanceAdmin ? 11 : 10} className="px-5 py-8 text-center text-navy-600">
                   Aucun vol sur cette période.
                 </td>
               </tr>
@@ -344,6 +376,143 @@ export function FlightsView() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+interface FuelSummary {
+  refills: FlightLog[];
+  totalLiters: number;
+  byType: [string, number][];
+  byCard: [string, { count: number; liters: number }][];
+  byAircraft: { registration: string; hours: number; count: number; liters: number; litersPerHour: number | null }[];
+}
+
+const FUEL_CARD_LABEL: Record<string, string> = Object.fromEntries(
+  FUEL_CARD_OPTIONS.map((o) => [o.value, o.label])
+);
+
+function formatLiters(liters: number) {
+  return `${liters.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} L`;
+}
+
+// Résumé carburant du Gérant — voir fuelSummary dans FlightsView.
+function FuelSummaryCard({ summary }: { summary: FuelSummary }) {
+  const { refills, totalLiters, byType, byCard, byAircraft } = summary;
+  return (
+    <div className="bg-white rounded-2xl border border-navy-100 p-4 flex flex-col gap-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold text-navy-600">Carburant — pleins déclarés</h3>
+        <p className="text-sm text-navy-700">
+          <span className="font-semibold text-navy-900">
+            {refills.length} plein{refills.length > 1 ? "s" : ""} · {formatLiters(totalLiters)}
+          </span>
+          {byType.length > 0 && (
+            <span className="text-navy-500">
+              {" "}
+              ({byType.map(([type, liters]) => `${FUEL_TYPE_LABEL[type] ?? type} ${formatLiters(liters)}`).join(" · ")})
+            </span>
+          )}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
+        <div>
+          <h4 className="text-[11px] font-semibold text-navy-500 uppercase tracking-wide mb-2">Par avion</h4>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-navy-500">
+                  <th className="pb-1.5 font-medium">Avion</th>
+                  <th className="pb-1.5 font-medium text-right">Pleins</th>
+                  <th className="pb-1.5 font-medium text-right">Litres</th>
+                  <th className="pb-1.5 font-medium text-right">Heures</th>
+                  <th className="pb-1.5 font-medium text-right">Conso moy.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-50">
+                {byAircraft.map((a) => (
+                  <tr key={a.registration}>
+                    <td className="py-1.5 font-medium text-navy-900 whitespace-nowrap">{a.registration}</td>
+                    <td className="py-1.5 text-right text-navy-700">{a.count}</td>
+                    <td className="py-1.5 text-right text-navy-700 whitespace-nowrap">{formatLiters(a.liters)}</td>
+                    <td className="py-1.5 text-right text-navy-700 whitespace-nowrap">{formatHoursMinutes(a.hours)}</td>
+                    <td className="py-1.5 text-right font-semibold text-navy-900 whitespace-nowrap">
+                      {a.litersPerHour !== null
+                        ? `${a.litersPerHour.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} L/h`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {byAircraft.length === 0 && <p className="text-xs text-navy-500">Aucun vol sur cette période.</p>}
+        </div>
+
+        <div>
+          <h4 className="text-[11px] font-semibold text-navy-500 uppercase tracking-wide mb-2">Par carte</h4>
+          <div className="flex flex-col gap-1.5">
+            {byCard.map(([card, c]) => (
+              <div key={card || "none"} className="flex items-center justify-between gap-2 text-sm">
+                <span className="font-medium text-navy-900">{FUEL_CARD_LABEL[card] ?? "Non précisée"}</span>
+                <span className="text-navy-600 whitespace-nowrap">
+                  {c.count} plein{c.count > 1 ? "s" : ""} · {formatLiters(c.liters)}
+                </span>
+              </div>
+            ))}
+            {byCard.length === 0 && <p className="text-xs text-navy-500">Aucun plein déclaré sur cette période.</p>}
+          </div>
+        </div>
+      </div>
+
+      {refills.length > 0 && (
+        <div>
+          <h4 className="text-[11px] font-semibold text-navy-500 uppercase tracking-wide mb-2">Détail des pleins</h4>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="text-left text-xs text-navy-500">
+                  <th className="pb-1.5 pr-3 font-medium">Date</th>
+                  <th className="pb-1.5 pr-3 font-medium">Avion</th>
+                  <th className="pb-1.5 pr-3 font-medium">Pilote</th>
+                  <th className="pb-1.5 pr-3 font-medium">Terrain</th>
+                  <th className="pb-1.5 pr-3 font-medium">Carte</th>
+                  <th className="pb-1.5 pr-3 font-medium">Carburant</th>
+                  <th className="pb-1.5 font-medium text-right">Litres</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-50">
+                {refills.map((f) => {
+                  const pilot = f.student ?? f.instructor;
+                  return (
+                    <tr key={f.id}>
+                      <td className="py-1.5 pr-3 text-navy-600 whitespace-nowrap">{formatDate(f.departureTime)}</td>
+                      <td className="py-1.5 pr-3 font-medium text-navy-900 whitespace-nowrap">{f.aircraft.registration}</td>
+                      <td className="py-1.5 pr-3 text-navy-700 whitespace-nowrap">
+                        {pilot ? `${pilot.firstName} ${pilot.lastName}` : "—"}
+                      </td>
+                      <td className="py-1.5 pr-3 text-navy-700">{f.fuelAirfield ?? "—"}</td>
+                      <td className="py-1.5 pr-3 text-navy-700">{f.fuelCard ? FUEL_CARD_LABEL[f.fuelCard] ?? f.fuelCard : "—"}</td>
+                      <td className="py-1.5 pr-3 text-navy-700 whitespace-nowrap">
+                        {f.fuelType ? FUEL_TYPE_LABEL[f.fuelType] ?? f.fuelType : "—"}
+                      </td>
+                      <td className="py-1.5 text-right font-medium text-navy-900 whitespace-nowrap">
+                        {formatLiters(f.fuelLiters ?? 0)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-navy-500">
+        Conso moyenne = litres des pleins déclarés ÷ heures de vol de l&apos;avion sur la période — plus
+        fiable sur une période longue (un plein fait juste avant ou après la période fausse un mois isolé).
+      </p>
     </div>
   );
 }
@@ -650,7 +819,7 @@ function EditFlightModal({
               <Field label="Pilote (compte débité)">
                 <select value={studentId} onChange={(e) => handlePilotChange(e.target.value)} className="input">
                   <option value="">— aucun (ex. vol maintenance) —</option>
-                  <optgroup label="Élèves">
+                  <optgroup label="Élèves & pilotes">
                     {students.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.firstName} {s.lastName}
@@ -971,7 +1140,7 @@ interface StopRow {
 // compte ; même choix que le formulaire de réservation (ReservationModal).
 const FLIGHT_TYPE_OPTIONS: { value: ReservationType; label: string }[] = [
   { value: "INSTRUCTION", label: "Instruction" },
-  { value: "SOLO", label: "Solo" },
+  { value: "SOLO", label: "Solo supervisé" },
   { value: "LOCATION", label: "Location" },
   { value: "MAINTENANCE", label: "Maintenance" },
 ];
@@ -1189,7 +1358,7 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
             <Field label="Pilote (compte débité)">
               <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
                 <option value="">— aucun (ex. vol maintenance) —</option>
-                <optgroup label="Élèves">
+                <optgroup label="Élèves & pilotes">
                   {students.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.firstName} {s.lastName}
