@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
 import { auth } from "@/lib/auth";
@@ -34,8 +35,51 @@ export default async function DashboardPage() {
   // de bord ; tout autre compte voit à la place le bloc "Retour
   // maintenance" (signaler/suivre un défaut, voir MaintenanceIssuesCard).
   const isGerant = session?.user?.role === "GERANT";
-
   const now = new Date();
+
+  return (
+    <div>
+      <PageHeader
+        title="Tableau de bord"
+        subtitle={now.toLocaleDateString("fr-FR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+      />
+
+      {/* Les chiffres, le planning du jour et les alertes attendent la base —
+          et, sur le plan gratuit Neon, son réveil après 5 min sans activité.
+          En Suspense, le menu, l'en-tête et les blocs chargés par le
+          navigateur (signalements, annonces) s'affichent tout de suite, au
+          lieu d'un écran vide jusqu'à la réponse complète. */}
+      <Suspense fallback={<DashboardSkeleton />}>
+        <DashboardContent isGerant={isGerant} userId={session?.user?.id} now={now} />
+      </Suspense>
+
+      {isGerant && (
+        <div className="px-4 md:px-8 pb-6">
+          <MaintenanceIssuesCard />
+        </div>
+      )}
+
+      <div className="px-4 md:px-8 pb-8">
+        <AnnouncementsCard />
+      </div>
+    </div>
+  );
+}
+
+async function DashboardContent({
+  isGerant,
+  userId,
+  now,
+}: {
+  isGerant: boolean;
+  userId: string | undefined;
+  now: Date;
+}) {
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const monthStart = startOfMonth(now);
@@ -61,10 +105,10 @@ export default async function DashboardPage() {
             include: { aircraft: { select: safeAircraftSelect } },
           })
         : Promise.resolve([]),
-      isGerant || !session
+      isGerant || !userId
         ? Promise.resolve(0)
         : prisma.maintenanceIssue.count({
-            where: { reportedById: session.user.id, status: "OPEN" },
+            where: { reportedById: userId, status: "OPEN" },
           }),
       // Seul le compte (.length) est utilisé plus bas — count() plutôt que
       // findMany({ include: { user: true } }), qui aurait à la fois envoyé
@@ -84,17 +128,7 @@ export default async function DashboardPage() {
   const doneToday = todayReservations.filter((r) => r.status === "COMPLETED");
 
   return (
-    <div>
-      <PageHeader
-        title="Tableau de bord"
-        subtitle={now.toLocaleDateString("fr-FR", {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })}
-      />
-
+    <>
       <div className="p-4 md:p-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           icon={CalendarDays}
@@ -233,15 +267,30 @@ export default async function DashboardPage() {
           <MaintenanceIssuesCard />
         )}
       </div>
+    </>
+  );
+}
 
-      {isGerant && (
-        <div className="px-4 md:px-8 pb-6">
-          <MaintenanceIssuesCard />
-        </div>
-      )}
-
-      <div className="px-4 md:px-8 pb-8">
-        <AnnouncementsCard />
+// Même gabarit que DashboardContent (4 chiffres, puis 2 blocs) pour que la
+// page ne saute pas à l'arrivée des données.
+function DashboardSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Chargement du tableau de bord">
+      <div className="p-4 md:p-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="bg-white rounded-2xl border border-navy-100 p-5 flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl bg-navy-100 animate-pulse" />
+            <div className="flex flex-col gap-2">
+              <div className="h-6 w-12 rounded bg-navy-100 animate-pulse" />
+              <div className="h-3 w-28 rounded bg-navy-50 animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 md:px-8 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {[0, 1].map((i) => (
+          <div key={i} className="bg-white rounded-2xl border border-navy-100 h-48 animate-pulse" />
+        ))}
       </div>
     </div>
   );
