@@ -710,6 +710,11 @@ export function CompleteFlightPanel({
           />
         </Field>
       </div>
+      {durationMs <= 0 && (
+        <p className="text-xs font-medium text-red-600 -mt-1.5">
+          L&apos;heure d&apos;arrivée doit être après l&apos;heure de départ.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Terrain de départ (OACI)">

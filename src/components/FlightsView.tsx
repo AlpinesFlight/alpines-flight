@@ -916,7 +916,13 @@ function EditFlightModal({
                 />
               </Field>
             </div>
-            <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHoursMinutes(duration)}</p>
+            {durationMs <= 0 ? (
+              <p className="text-xs font-medium text-red-600 -mt-1.5">
+                L&apos;heure d&apos;arrivée doit être après l&apos;heure de départ.
+              </p>
+            ) : (
+              <p className="text-xs text-navy-500 -mt-1.5">Durée recalculée : {formatHoursMinutes(duration)}</p>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Terrain de départ (OACI)">
@@ -1428,7 +1434,15 @@ function AddFlightModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                 />
               </Field>
             </div>
-            <p className="text-xs text-navy-500 -mt-1.5">Durée : {formatHoursMinutes(duration)}</p>
+            {/* Sans ce message, le bouton restait grisé sans explication (les
+                deux champs démarrent à l'heure actuelle, durée 0). */}
+            {durationMs <= 0 ? (
+              <p className="text-xs font-medium text-red-600 -mt-1.5">
+                L&apos;heure d&apos;arrivée doit être après l&apos;heure de départ.
+              </p>
+            ) : (
+              <p className="text-xs text-navy-500 -mt-1.5">Durée : {formatHoursMinutes(duration)}</p>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Terrain de départ (OACI)">
