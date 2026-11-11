@@ -76,7 +76,7 @@ export const QUALIFICATION_KINDS: QualificationKind[] = [
   },
   {
     key: "FI",
-    label: "FI(A) — instructeur",
+    label: "Instructeur FI(A)",
     short: "FI",
     category: "INSTRUCTOR_PRIV",
     hasExpiry: true,
@@ -85,7 +85,7 @@ export const QUALIFICATION_KINDS: QualificationKind[] = [
   },
   {
     key: "CRI",
-    label: "CRI(A) — instructeur de qualification de classe",
+    label: "Instructeur CRI(A)",
     short: "CRI",
     category: "INSTRUCTOR_PRIV",
     hasExpiry: true,
@@ -94,7 +94,7 @@ export const QUALIFICATION_KINDS: QualificationKind[] = [
   },
   {
     key: "MI",
-    label: "MI — instructeur montagne",
+    label: "Instructeur montagne (MI)",
     short: "MI",
     category: "INSTRUCTOR_PRIV",
     hasExpiry: false,
@@ -103,7 +103,7 @@ export const QUALIFICATION_KINDS: QualificationKind[] = [
   },
   {
     key: "FE",
-    label: "FE(A) — examinateur",
+    label: "Examinateur FE(A)",
     short: "FE",
     category: "EXAMINER_PRIV",
     hasExpiry: true,
@@ -111,7 +111,7 @@ export const QUALIFICATION_KINDS: QualificationKind[] = [
   },
   {
     key: "IR",
-    label: "IR(A) — vol aux instruments",
+    label: "Vol aux instruments IR(A)",
     short: "IR",
     category: "ADDITIONAL",
     hasExpiry: true,
@@ -195,18 +195,24 @@ export function kindOrder(key: string | null | undefined): number {
 
 // Types de justificatif (PilotDocument.category).
 export const DOCUMENT_CATEGORIES = [
-  { key: "LICENCE", label: "Licence", defaultKinds: ["LICENCE"] },
-  { key: "MEDICAL", label: "Certificat médical", defaultKinds: ["MEDICAL"] },
-  { key: "ATTESTATION", label: "Attestation, formulaire (prorogation, contrôle, examen…)", defaultKinds: [] },
-  { key: "LOGBOOK", label: "Carnet de vol", defaultKinds: [] },
-  { key: "OTHER", label: "Autre", defaultKinds: [] },
+  { key: "LICENCE", label: "Licence" },
+  { key: "MEDICAL", label: "Certificat médical" },
+  { key: "ATTESTATION", label: "Attestation" },
+  { key: "LOGBOOK", label: "Carnet de vol" },
+  { key: "OTHER", label: "Autre document" },
 ] as const;
 
 export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number]["key"];
 
 export function documentCategoryLabel(key: string): string {
-  return DOCUMENT_CATEGORIES.find((c) => c.key === key)?.label.split(",")[0] ?? "Document";
+  return DOCUMENT_CATEGORIES.find((c) => c.key === key)?.label ?? "Document";
 }
+
+// Qualifications proposées à cocher quand on ajoute une licence (ce qui est
+// inscrit dessus) ou un autre document (attestation de prorogation...) — les
+// plus courantes à l'école d'abord, le reste derrière "Plus de choix".
+export const RATING_KINDS = ["SEP", "FI", "FE", "NIGHT", "MOUNTAIN", "LANG_EN", "MEP", "CRI", "MI", "IR", "TW", "LANG_FR", "THEORY"];
+export const COMMON_RATING_KINDS = ["SEP", "FI", "FE", "NIGHT", "MOUNTAIN", "LANG_EN"];
 
 // ---------- Personnes et qualifications obligatoires ----------
 

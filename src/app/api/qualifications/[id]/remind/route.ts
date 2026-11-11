@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMail, isMailerConfigured } from "@/lib/mailer";
 import { composeReminderEmail } from "@/lib/qualifications";
 import { canManageSchool } from "@/lib/permissions";
+import { kindOf } from "@/lib/qualification-catalog";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -32,7 +33,11 @@ export async function POST(_req: Request, { params }: Params) {
   });
   const recipients = Array.from(new Set([qualification.user.email, ...admins.map((a) => a.email)]));
 
-  const { subject, text } = composeReminderEmail(qualification);
+  // Libellé du catalogue quand il y en a un : c'est celui qu'affiche l'appli.
+  const { subject, text } = composeReminderEmail({
+    ...qualification,
+    label: kindOf(qualification.kind)?.label ?? qualification.label,
+  });
 
   const result = await sendMail({ to: recipients, subject, text });
 

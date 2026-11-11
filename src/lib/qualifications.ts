@@ -189,8 +189,31 @@ export async function addValidities(
   args: { userId: string; inputs: ValidityInput[]; documentIds: string[]; actorId: string; validated: boolean }
 ): Promise<string[]> {
   const ids: string[] = [];
+  const sameDay = (a: Date | null, b: Date | null) => (a?.toISOString().slice(0, 10) ?? null) === (b?.toISOString().slice(0, 10) ?? null);
   for (const input of args.inputs) {
     const slot = await resolveSlot(db, args.userId, input);
+    // Rien de changé par rapport à la validité en cours (même licence
+    // renvoyée avec un nouveau scan, même date de fin...) : le document y est
+    // simplement rattaché, sans créer de doublon dans l'historique.
+    const current = slot.currentValidityId
+      ? await db.qualificationValidity.findUnique({ where: { id: slot.currentValidityId } })
+      : null;
+    if (
+      current &&
+      (current.variant ?? null) === (input.variant || null) &&
+      (current.number ?? null) === (input.number || null) &&
+      sameDay(current.expiresAt, toDate(input.expiresAt)) &&
+      (!input.issuedAt || sameDay(current.issuedAt, toDate(input.issuedAt)))
+    ) {
+      if (args.documentIds.length > 0) {
+        await db.qualificationValidity.update({
+          where: { id: current.id },
+          data: { documents: { connect: args.documentIds.map((id) => ({ id })) } },
+        });
+      }
+      ids.push(current.id);
+      continue;
+    }
     const validity = await db.qualificationValidity.create({
       data: {
         qualificationId: slot.id,
