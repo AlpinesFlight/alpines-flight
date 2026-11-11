@@ -18,11 +18,10 @@ export async function POST(_req: Request, { params }: Params) {
   const qualification = await prisma.qualification.findUnique({
     where: { id },
     // select plutôt que true : composeReminderEmail n'a besoin que de ces
-    // champs — évite d'aller chercher le passwordHash de l'utilisateur et,
-    // surtout, le scan/PDF potentiellement volumineux du document courant.
+    // champs — évite d'aller chercher le passwordHash de l'utilisateur.
     include: {
       user: { select: { firstName: true, lastName: true, email: true } },
-      currentDocument: { select: { expiresAt: true } },
+      currentValidity: { select: { expiresAt: true } },
     },
   });
   if (!qualification) return NextResponse.json({ error: "not found" }, { status: 404 });

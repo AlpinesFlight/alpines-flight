@@ -38,6 +38,7 @@ export async function GET() {
     flightsAsInstructor,
     transactions,
     qualifications,
+    licenceDocuments,
     enrollments,
     announcementsCreated,
     schoolDocumentsUploaded,
@@ -51,21 +52,26 @@ export async function GET() {
       where: { userId },
       select: {
         id: true,
-        type: true,
+        kind: true,
         label: true,
         reminderDaysBefore: true,
-        documents: {
+        validities: {
           select: {
             id: true,
+            variant: true,
             number: true,
             issuedAt: true,
             expiresAt: true,
             status: true,
-            fileName: true,
             uploadedAt: true,
+            documents: { select: { id: true, fileName: true } },
           },
         },
       },
+    }),
+    prisma.pilotDocument.findMany({
+      where: { userId },
+      select: { id: true, category: true, title: true, fileName: true, fileSize: true, uploadedAt: true },
     }),
     prisma.enrollment.findMany({
       where: { studentId: userId },
@@ -99,6 +105,7 @@ export async function GET() {
     flightsAsInstructor,
     accountTransactions: transactions,
     qualifications,
+    licenceDocuments,
     enrollments,
     announcementsCreated,
     schoolDocumentsUploaded,

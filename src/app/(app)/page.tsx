@@ -7,6 +7,10 @@ import { AnnouncementsCard } from "@/components/AnnouncementsCard";
 import { MaintenanceIssuesCard } from "@/components/MaintenanceIssuesCard";
 import { formatDateTime, formatHoursMinutes } from "@/lib/format";
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
+import { canManageSchool } from "@/lib/permissions";
+import { loadLicencesData } from "@/lib/qualifications";
+import { linesByPerson } from "@/lib/licence-lines";
+import { personGroup, stateDetail } from "@/lib/qualification-catalog";
 import Link from "next/link";
 import {
   CalendarDays,
@@ -15,6 +19,7 @@ import {
   PlaneTakeoff,
   Plane,
   Wrench,
+  ShieldAlert,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +54,10 @@ export default async function DashboardPage() {
         })}
       />
 
+      <Suspense fallback={null}>
+        <LicenceAlert role={session?.user?.role} userId={session?.user?.id} />
+      </Suspense>
+
       {/* Les chiffres, le planning du jour et les alertes attendent la base —
           et, sur le plan gratuit Neon, son réveil après 5 min sans activité.
           En Suspense, le menu, l'en-tête et les blocs chargés par le
@@ -67,6 +76,75 @@ export default async function DashboardPage() {
       <div className="px-4 md:px-8 pb-8">
         <AnnouncementsCard />
       </div>
+    </div>
+  );
+}
+
+// Licences et qualifications à traiter — Gérant/Admin : toute l'école ; tout
+// autre compte : son propre dossier. Rien n'est affiché quand tout est en
+// règle. Suspense à part : ne retarde jamais le reste du tableau de bord.
+async function LicenceAlert({ role, userId }: { role?: string; userId?: string }) {
+  if (!userId) return null;
+  const schoolWide = canManageSchool(role);
+  const data = await loadLicencesData(schoolWide ? {} : { onlyUserId: userId });
+  const lines = linesByPerson(data.people, data.qualifications);
+
+  let title: string;
+  let detail: string;
+  let urgent: boolean;
+  if (schoolWide) {
+    const all = data.people.flatMap((p) => (lines.get(p.id) ?? []).map((line) => ({ person: p, line })));
+    const count = (states: string[]) => all.filter((r) => states.includes(r.line.state)).length;
+    const parts = (
+      [
+        [count(["expired"]), "échéance(s) dépassée(s)"],
+        [count(["missing"]), "manquante(s)"],
+        [count(["dateMissing"]), "date(s) à renseigner"],
+        [count(["due"]), "à renouveler bientôt"],
+      ] as const
+    ).filter(([n]) => n > 0);
+    if (parts.length === 0) return null;
+    const instructors = new Set(
+      all
+        .filter(
+          (r) =>
+            personGroup(r.person) === "INSTRUCTOR" && ["expired", "missing", "dateMissing"].includes(r.line.state)
+        )
+        .map((r) => r.person.id)
+    ).size;
+    title = `Licences et qualifications : ${parts.map(([n, label]) => `${n} ${label}`).join(", ")}`;
+    detail =
+      (instructors > 0 ? `Dont ${instructors} instructeur(s) au dossier incomplet ou expiré — ` : "") +
+      "voir le tableau des échéances";
+    urgent = count(["expired", "missing"]) > 0;
+  } else {
+    const mine = (lines.get(userId) ?? []).filter((l) =>
+      ["expired", "missing", "dateMissing", "due"].includes(l.state)
+    );
+    if (mine.length === 0) return null;
+    title = "Ton dossier licences demande ton attention";
+    detail = mine
+      .map((l) => `${l.label} : ${l.state === "missing" ? "non renseigné" : stateDetail(l.state, l.days).toLowerCase()}`)
+      .join(" · ");
+    urgent = mine.some((l) => l.state === "expired" || l.state === "missing");
+  }
+
+  return (
+    <div className="px-4 md:px-8 pt-4 md:pt-8 -mb-2 md:-mb-4">
+      <Link
+        href="/licences"
+        className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${
+          urgent
+            ? "border-red-100 bg-red-100/40 hover:bg-red-100/70"
+            : "border-sunset-100 bg-sunset-100/40 hover:bg-sunset-100/70"
+        }`}
+      >
+        <ShieldAlert size={18} className={`mt-0.5 shrink-0 ${urgent ? "text-red-600" : "text-sunset-600"}`} />
+        <div className="text-sm">
+          <p className="font-semibold text-navy-900">{title}</p>
+          <p className="text-xs text-navy-600">{detail}</p>
+        </div>
+      </Link>
     </div>
   );
 }

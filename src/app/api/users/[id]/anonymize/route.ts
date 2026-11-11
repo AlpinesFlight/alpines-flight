@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect } from "@/lib/selects";
 import { isGerant } from "@/lib/permissions";
+import { del } from "@vercel/blob";
 import crypto from "crypto";
 
 type Params = { params: Promise<{ id: string }> };
@@ -43,6 +44,18 @@ export async function POST(_req: Request, { params }: Params) {
   // définitivement impossible pour ce compte.
   const unusablePasswordHash = crypto.randomBytes(32).toString("hex");
 
+  // Fichiers à effacer du stockage une fois les fiches supprimées : les
+  // justificatifs, et les anciennes validités qui portaient encore leur
+  // propre fichier (voir la migration licences_justificatifs).
+  const [documentBlobs, legacyBlobs] = await Promise.all([
+    prisma.pilotDocument.findMany({ where: { userId: id, blobUrl: { not: null } }, select: { blobUrl: true } }),
+    prisma.qualificationValidity.findMany({
+      where: { qualification: { userId: id }, blobUrl: { not: null } },
+      select: { blobUrl: true },
+    }),
+  ]);
+  const blobUrls = [...new Set([...documentBlobs, ...legacyBlobs].map((b) => b.blobUrl!))];
+
   const user = await prisma.$transaction(async (db) => {
     if (existing.studentProfile) {
       await db.studentProfile.update({
@@ -52,12 +65,14 @@ export async function POST(_req: Request, { params }: Params) {
     }
 
     // Scans de licence/médicale : aucune obligation de conservation propre
-    // à ces documents une fois la personne anonymisée — supprimés avec leur
-    // créneau de qualification (détache d'abord le pointeur document
-    // courant pour éviter le conflit de clé étrangère, même logique que
-    // DELETE /api/qualifications/[id]).
-    await db.qualification.updateMany({ where: { userId: id }, data: { currentDocumentId: null } });
+    // à ces documents une fois la personne anonymisée — supprimés avec les
+    // qualifications (détache d'abord le pointeur validité courante pour
+    // éviter le conflit de clé étrangère, même logique que DELETE
+    // /api/qualifications/[id]), fichiers compris (plus bas, hors
+    // transaction).
+    await db.qualification.updateMany({ where: { userId: id }, data: { currentValidityId: null } });
     await db.qualification.deleteMany({ where: { userId: id } });
+    await db.pilotDocument.deleteMany({ where: { userId: id } });
 
     return db.user.update({
       where: { id },
@@ -71,6 +86,14 @@ export async function POST(_req: Request, { params }: Params) {
       select: safeUserSelect,
     });
   });
+
+  for (const url of blobUrls) {
+    try {
+      await del(url);
+    } catch (err) {
+      console.error(`Suppression d'un justificatif (anonymisation de ${id}) échouée :`, err);
+    }
+  }
 
   return NextResponse.json(user);
 }

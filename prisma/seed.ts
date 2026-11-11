@@ -28,7 +28,7 @@ async function createValidatedQualification(
   const qualification = await prisma.qualification.create({
     data: { userId, type, label, reminderDaysBefore: opts.reminderDaysBefore ?? 45 },
   });
-  const doc = await prisma.qualificationDocument.create({
+  const doc = await prisma.qualificationValidity.create({
     data: {
       qualificationId: qualification.id,
       number: opts.number ?? null,
@@ -41,7 +41,7 @@ async function createValidatedQualification(
   });
   await prisma.qualification.update({
     where: { id: qualification.id },
-    data: { currentDocumentId: doc.id },
+    data: { currentValidityId: doc.id },
   });
   return qualification;
 }
@@ -57,8 +57,8 @@ async function main() {
   // Casse d'abord le pointeur "document courant" pour éviter un conflit de
   // clé étrangère entre Qualification et QualificationDocument (référence
   // mutuelle) avant de tout supprimer.
-  await prisma.qualification.updateMany({ data: { currentDocumentId: null } });
-  await prisma.qualificationDocument.deleteMany();
+  await prisma.qualification.updateMany({ data: { currentValidityId: null } });
+  await prisma.qualificationValidity.deleteMany();
   await prisma.qualification.deleteMany();
   await prisma.accountTransaction.deleteMany();
   await prisma.flightLog.deleteMany();
@@ -243,9 +243,9 @@ async function main() {
   const nathanMedical = await prisma.qualification.findFirst({
     where: { userId: nathan.id, type: "MEDICAL" },
   });
-  if (nathanMedical?.currentDocumentId) {
-    await prisma.qualificationDocument.update({
-      where: { id: nathanMedical.currentDocumentId },
+  if (nathanMedical?.currentValidityId) {
+    await prisma.qualificationValidity.update({
+      where: { id: nathanMedical.currentValidityId },
       data: { expiresAt: addDays(new Date(), 20) },
     });
   }
@@ -256,7 +256,7 @@ async function main() {
     where: { userId: lea.id, type: "MEDICAL" },
   });
   if (leaMedical) {
-    await prisma.qualificationDocument.create({
+    await prisma.qualificationValidity.create({
       data: {
         qualificationId: leaMedical.id,
         expiresAt: addDays(new Date(), 730),

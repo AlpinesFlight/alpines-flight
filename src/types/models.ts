@@ -326,6 +326,9 @@ export interface AccountTransaction {
 }
 
 // ---------- Licences, qualifications, médicales ----------
+//
+// Forme renvoyée par GET /api/qualifications (voir loadLicencesData dans
+// src/lib/qualifications.ts) — dates en chaînes ISO.
 
 export type QualificationType =
   | "LICENSE"
@@ -339,37 +342,67 @@ export type QualificationType =
 
 export type DocumentStatus = "PENDING" | "VALIDATED" | "REJECTED" | "ARCHIVED";
 
-export interface QualificationDocument {
+export interface LicencesPerson {
   id: string;
-  qualificationId: string;
+  firstName: string;
+  lastName: string;
+  role: Role;
+  isPilot: boolean;
+  isInstructor: boolean;
+}
+
+export interface PersonName {
+  firstName: string;
+  lastName: string;
+}
+
+export interface QualificationValidity {
+  id: string;
+  status: DocumentStatus;
+  variant: string | null;
   number: string | null;
   issuedAt: string | null;
   expiresAt: string | null;
   notes: string | null;
-  fileName: string | null;
-  fileMimeType: string | null;
-  fileSize: number | null;
-  status: DocumentStatus;
   rejectionReason: string | null;
   uploadedAt: string;
   uploadedById: string | null;
-  uploadedBy?: UserLite | null;
+  uploadedBy: PersonName | null;
   validatedAt: string | null;
-  validatedById: string | null;
-  validatedBy?: UserLite | null;
+  validatedBy: PersonName | null;
+  documentIds: string[];
 }
 
 export interface Qualification {
   id: string;
   userId: string;
-  user: UserLite;
+  kind: string | null;
   type: QualificationType;
   label: string;
   reminderDaysBefore: number;
   lastReminderSentAt: string | null;
-  currentDocumentId: string | null;
-  currentDocument: QualificationDocument | null;
-  documents: QualificationDocument[];
+  currentValidityId: string | null;
+  validities: QualificationValidity[]; // de la plus récente à la plus ancienne
+}
+
+export interface PilotDocument {
+  id: string;
+  userId: string;
+  category: string;
+  title: string | null;
+  fileName: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+  uploadedById: string | null;
+  uploadedBy: PersonName | null;
+  validityIds: string[];
+}
+
+export interface LicencesData {
+  people: LicencesPerson[];
+  qualifications: Qualification[];
+  documents: PilotDocument[];
 }
 
 // ---------- Suivi de formation ----------

@@ -69,8 +69,10 @@ model User {
 
   // Licences, qualifications, médicales... (élèves ET instructeurs)
   qualifications          Qualification[]         @relation("QualificationHolder")
-  documentsUploaded       QualificationDocument[]  @relation("DocumentUploadedBy")
-  documentsValidated      QualificationDocument[]  @relation("DocumentValidatedBy")
+  documentsUploaded       QualificationValidity[]  @relation("DocumentUploadedBy")
+  documentsValidated      QualificationValidity[]  @relation("DocumentValidatedBy")
+  pilotDocuments          PilotDocument[]          @relation("PilotDocumentOwner")
+  pilotDocumentsUploaded  PilotDocument[]          @relation("PilotDocumentUploadedBy")
 
   // Suivi de formation (livrets de progression)
   enrollmentsAsStudent    Enrollment[]       @relation("EnrollmentStudent")
@@ -661,16 +663,24 @@ model AccountTransaction {
 
 // ---------- Licences, qualifications, médicales ----------
 //
-// S'applique à n'importe qui (élève ou instructeur) : licence, classe
-// médicale (1, 2 ou LAPL), qualification de classe/type, variante,
-// qualification additionnelle (montagne...), privilège FI/FE...
+// S'applique à n'importe qui (élève, pilote, instructeur) : licence,
+// certificat médical, qualification de classe (SEP, MEP), privilèges
+// FI/FE, mentions linguistiques... — liste de référence dans
+// src/lib/qualification-catalog.ts (Qualification.kind).
 //
-// Modèle à deux niveaux : Qualification est le "créneau" stable (ex. "Classe
-// 2" de tel pilote), QualificationDocument est chaque version/scan importé
-// pour ce créneau (renouvellement). Un nouveau document importé reste
-// PENDING tant que l'admin ne l'a pas validé ; à la validation, il devient
-// le document courant (Qualification.currentDocument) et l'ancien courant
-// passe en ARCHIVED — jamais supprimé, toujours consultable.
+// Trois niveaux :
+// - Qualification : le "créneau" stable d'une personne pour une
+//   qualification donnée (ex. le SEP de tel pilote) ;
+// - QualificationValidity : chaque période de validité de ce créneau
+//   (délivrance, renouvellement, prorogation) — n°, dates, variante. Une
+//   validité déclarée par le pilote lui-même reste PENDING tant que le
+//   staff ne l'a pas validée ; à la validation elle devient la validité
+//   courante (Qualification.currentValidity) et l'ancienne passe en
+//   ARCHIVED — jamais supprimée, toujours consultable ;
+// - PilotDocument : le justificatif (scan/photo/PDF). Un même document peut
+//   justifier plusieurs validités — la licence porte à elle seule le SEP,
+//   le FI, la mention d'anglais... — et une validité peut s'appuyer sur
+//   plusieurs documents.
 
 enum QualificationType {
   LICENSE        // LAPL(A), PPL(A)...
@@ -684,42 +694,51 @@ enum QualificationType {
 }
 
 enum DocumentStatus {
-  PENDING   // importé, en attente de validation admin
-  VALIDATED // validé par l'admin : c'est le document courant
-  REJECTED  // refusé par l'admin, n'a jamais été pris en compte
-  ARCHIVED  // a été le document courant, remplacé depuis par un plus récent
+  PENDING   // déclarée par le pilote, en attente de validation par le staff
+  VALIDATED // validée : c'est la validité courante
+  REJECTED  // refusée, n'a jamais été prise en compte
+  ARCHIVED  // a été la validité courante, remplacée depuis par une plus récente
 }
 
 model Qualification {
   id                 String            @id @default(cuid())
   userId             String
   user               User              @relation("QualificationHolder", fields: [userId], references: [id], onDelete: Cascade)
+  // Clé du catalogue (SEP, MEDICAL, FI... — voir qualification-catalog.ts) ;
+  // null = qualification hors catalogue, décrite par label seul.
+  kind               String?
   type               QualificationType
-  label              String            // ex: "SEP (terre)", "Classe 2", "FI(A)" — stable d'un renouvellement à l'autre
+  label              String            // libellé affiché, celui du catalogue quand kind est renseigné
   reminderDaysBefore Int               @default(45) // butée de rappel, définissable
   lastReminderSentAt DateTime?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  documents         QualificationDocument[] @relation("QualificationDocuments")
-  currentDocumentId String?                 @unique
-  currentDocument   QualificationDocument?  @relation("CurrentDocument", fields: [currentDocumentId], references: [id])
+  validities        QualificationValidity[] @relation("QualificationDocuments")
+  currentValidityId String?                 @unique @map("currentDocumentId")
+  currentValidity   QualificationValidity?  @relation("CurrentDocument", fields: [currentValidityId], references: [id])
+
+  @@index([userId])
 }
 
-model QualificationDocument {
+// Table historique "QualificationDocument" : jusqu'au 2026-11-11, chaque
+// ligne était à la fois la validité ET son fichier (un fichier par
+// qualification). Les fichiers ont été repris dans PilotDocument (même id) ;
+// les colonnes fichier ci-dessous ne sont plus ni lues ni écrites.
+model QualificationValidity {
   id              String         @id @default(cuid())
   qualificationId String
   qualification   Qualification  @relation("QualificationDocuments", fields: [qualificationId], references: [id], onDelete: Cascade)
+  variant         String?        // ex. "Classe 2", "PPL(A)", "Niveau 4" — peut changer d'une validité à l'autre
   number          String?        // n° de licence/qualification si applicable
   issuedAt        DateTime?
   expiresAt       DateTime?      // null = pas d'échéance
   notes           String?
-  fileName        String?
-  fileMimeType    String?
-  fileSize        Int?
-  fileData        Bytes?         // ancien stockage en base (avant migration Vercel Blob, 2026-09-28) ; nul pour tout nouveau document, voir blobUrl
-  // URL du fichier dans Vercel Blob (accès "private") — voir AdminDocument.blobUrl.
-  blobUrl         String?
+  fileName        String?        // ancien stockage, voir plus haut
+  fileMimeType    String?        // ancien stockage
+  fileSize        Int?           // ancien stockage
+  fileData        Bytes?         // ancien stockage
+  blobUrl         String?        // ancien stockage
   status          DocumentStatus @default(PENDING)
   rejectionReason String?
   uploadedAt      DateTime       @default(now())
@@ -729,7 +748,33 @@ model QualificationDocument {
   validatedById   String?
   validatedBy     User?          @relation("DocumentValidatedBy", fields: [validatedById], references: [id])
 
-  qualificationCurrent Qualification? @relation("CurrentDocument")
+  documents            PilotDocument[] @relation("ValidityDocuments")
+  qualificationCurrent Qualification?  @relation("CurrentDocument")
+
+  @@map("QualificationDocument")
+}
+
+// Justificatif d'une personne (licence, certificat médical, attestation de
+// prorogation, carnet de vol...) — fichier dans Vercel Blob (accès privé),
+// servi uniquement par /api/qualifications/documents/[id]/file.
+model PilotDocument {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation("PilotDocumentOwner", fields: [userId], references: [id], onDelete: Cascade)
+  category     String   // LICENCE | MEDICAL | ATTESTATION | LOGBOOK | OTHER (voir qualification-catalog.ts)
+  title        String?
+  fileName     String
+  fileMimeType String
+  fileSize     Int
+  blobUrl      String?
+  fileData     Bytes?   // uniquement des fichiers repris de l'ancien stockage en base
+  uploadedAt   DateTime @default(now())
+  uploadedById String?
+  uploadedBy   User?    @relation("PilotDocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  validities QualificationValidity[] @relation("ValidityDocuments")
+
+  @@index([userId])
 }
 
 // ---------- Suivi de formation ----------

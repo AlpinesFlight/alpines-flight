@@ -71,35 +71,10 @@ export const safeAvailabilityInstructorSelect = {
   instructorProfile: { select: { color: true } },
 } as const;
 
-// Champs d'un QualificationDocument à renvoyer au client — exclut
-// systématiquement fileData (le contenu binaire, potentiellement volumineux,
-// ne doit transiter que par la route de streaming dédiée
-// /api/qualifications/documents/[id]/file, jamais dans une réponse JSON).
-// À utiliser partout où un document est select/update-select-retourné.
-export const safeDocumentSelect = {
-  id: true,
-  qualificationId: true,
-  number: true,
-  issuedAt: true,
-  expiresAt: true,
-  notes: true,
-  fileName: true,
-  fileMimeType: true,
-  fileSize: true,
-  status: true,
-  rejectionReason: true,
-  uploadedAt: true,
-  uploadedById: true,
-  uploadedBy: { select: safeUserSelect },
-  validatedAt: true,
-  validatedById: true,
-  validatedBy: { select: safeUserSelect },
-} as const;
-
 // Champs d'une AnnouncementAttachment à renvoyer au client — exclut
-// systématiquement fileData, voir même logique que safeDocumentSelect. Le
-// fichier ne transite que par
-// /api/announcements/[id]/attachments/[attachmentId].
+// systématiquement fileData (le contenu binaire, potentiellement
+// volumineux, ne doit jamais transiter dans une réponse JSON). Le fichier ne
+// transite que par /api/announcements/[id]/attachments/[attachmentId].
 export const safeAnnouncementAttachmentSelect = {
   id: true,
   announcementId: true,
@@ -110,7 +85,7 @@ export const safeAnnouncementAttachmentSelect = {
 } as const;
 
 // Champs d'un SchoolDocument (page Documentation) à renvoyer au client —
-// exclut systématiquement fileData, même logique que safeDocumentSelect. Le
+// exclut systématiquement fileData, même logique que ci-dessus. Le
 // fichier ne transite que par /api/documents/[id]/file, qui réapplique aussi
 // la règle de visibilité (ALL vs FI_ONLY) avant de servir le binaire.
 export const safeSchoolDocumentSelect = {

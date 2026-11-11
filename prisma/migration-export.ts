@@ -46,10 +46,10 @@ async function main() {
   // une fois les QualificationDocument insérés (référence circulaire).
   const qualifications = (await prisma.qualification.findMany()).map((q) => ({
     ...q,
-    currentDocumentId: null,
-    _originalCurrentDocumentId: q.currentDocumentId,
+    currentValidityId: null,
+    _originalCurrentDocumentId: q.currentValidityId,
   }));
-  const qualificationDocuments = (await prisma.qualificationDocument.findMany()).map((d) => ({
+  const qualificationDocuments = (await prisma.qualificationValidity.findMany()).map((d) => ({
     ...d,
     fileData: toBase64(d.fileData),
   }));

@@ -91,7 +91,7 @@ async function main() {
   await prisma.qualification.createMany({
     data: dump.qualifications.map(({ _originalCurrentDocumentId, ...q }) => q),
   });
-  await prisma.qualificationDocument.createMany({
+  await prisma.qualificationValidity.createMany({
     data: dump.qualificationDocuments.map((d) => ({
       ...d,
       fileData: fromBase64(d.fileData as string | null),
@@ -101,7 +101,7 @@ async function main() {
     if (q._originalCurrentDocumentId) {
       await prisma.qualification.update({
         where: { id: q.id as string },
-        data: { currentDocumentId: q._originalCurrentDocumentId as string },
+        data: { currentValidityId: q._originalCurrentDocumentId as string },
       });
     }
   }
@@ -126,7 +126,7 @@ async function main() {
     flightLogs: await prisma.flightLog.count(),
     accountTransactions: await prisma.accountTransaction.count(),
     qualifications: await prisma.qualification.count(),
-    qualificationDocuments: await prisma.qualificationDocument.count(),
+    qualificationDocuments: await prisma.qualificationValidity.count(),
   });
 }
 

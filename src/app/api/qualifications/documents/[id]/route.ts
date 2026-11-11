@@ -1,89 +1,56 @@
 import { NextResponse } from "next/server";
-import { zodErrorMessage } from "@/lib/api-errors";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { safeDocumentSelect } from "@/lib/selects";
 import { canManageSchool } from "@/lib/permissions";
 import { del } from "@vercel/blob";
-import { z } from "zod";
 
 type Params = { params: Promise<{ id: string }> };
 
-const patchSchema = z.object({
-  number: z.string().nullable().optional(),
-  issuedAt: z.string().nullable().optional(),
-  expiresAt: z.string().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-// Corrige les infos d'un document déjà importé (n° de licence, dates,
-// notes) — une erreur de saisie (date tapée à côté, numéro mal recopié...)
-// n'exige pas de tout ré-importer. Volontairement PAS le statut ni le
-// fichier lui-même : ça reste le rôle du circuit valider/rejeter (voir
-// .../validate) et d'un nouveau renouvellement, pour ne pas court-circuiter
-// cet historique. Admin/Gérant uniquement, quel que soit le statut du
-// document (courant, archivé, rejeté...) — une correction peut concerner
-// n'importe lequel.
-export async function PATCH(req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session || !canManageSchool(session.user.role))
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  const body = await req.json();
-  const parsed = patchSchema.safeParse(body);
-  if (!parsed.success)
-    return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
-
-  const existing = await prisma.qualificationDocument.findUnique({ where: { id } });
-  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-  // "" traité comme null (champ vidé) — un input date/text vidé côté
-  // client envoie souvent une chaîne vide plutôt que null explicitement.
-  const normalizeDate = (v: string | null | undefined) =>
-    v === undefined ? undefined : v ? new Date(v) : null;
-  const normalizeText = (v: string | null | undefined) => (v === undefined ? undefined : v || null);
-
-  const document = await prisma.qualificationDocument.update({
-    where: { id },
-    data: {
-      number: normalizeText(parsed.data.number),
-      issuedAt: normalizeDate(parsed.data.issuedAt),
-      expiresAt: normalizeDate(parsed.data.expiresAt),
-      notes: normalizeText(parsed.data.notes),
-    },
-    select: safeDocumentSelect,
-  });
-  return NextResponse.json(document);
-}
-
-// Retire un document importé par erreur. Autorisé pour l'admin, ou pour
-// celui qui l'a importé tant qu'il n'a pas encore été validé/rejeté (une
-// fois traité, seul l'admin peut le retirer, pour garder la trace).
+// Retire un justificatif (mauvais fichier, doublon...). Les qualifications
+// qu'il justifiait restent au dossier, simplement sans ce document.
+// Autorisé pour le staff, ou pour la personne qui l'a importé tant que rien
+// de ce qu'il justifie n'a encore été validé (une fois pris en compte, seul
+// le staff peut le retirer, pour garder la trace).
 export async function DELETE(_req: Request, { params }: Params) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const doc = await prisma.qualificationDocument.findUnique({ where: { id } });
+  const doc = await prisma.pilotDocument.findUnique({
+    where: { id },
+    include: { validities: { select: { status: true } } },
+  });
   if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const isUploader = doc.uploadedById === session.user.id;
-  const canDelete = canManageSchool(session.user.role) || (isUploader && doc.status === "PENDING");
-  if (!canDelete) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const onlyPending = doc.validities.every((v) => v.status === "PENDING" || v.status === "REJECTED");
+  if (!canManageSchool(session.user.role)) {
+    if (!isUploader) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    if (!onlyPending) {
+      return NextResponse.json(
+        { error: "Ce document justifie une qualification déjà validée : seule l'école peut le retirer." },
+        { status: 403 }
+      );
+    }
+  }
 
-  // Si c'était le document courant, détache le pointeur avant suppression.
-  await prisma.qualification.updateMany({
-    where: { currentDocumentId: id },
-    data: { currentDocumentId: null },
-  });
-  await prisma.qualificationDocument.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.pilotDocument.delete({ where: { id } }),
+    // Fichiers repris de l'ancien stockage (voir la migration
+    // licences_justificatifs) : la validité d'origine — même id — en garde
+    // une copie dans ses anciennes colonnes, plus utilisées. Vidées aussi,
+    // pour que le document disparaisse vraiment.
+    prisma.qualificationValidity.updateMany({
+      where: { OR: [{ id }, ...(doc.blobUrl ? [{ blobUrl: doc.blobUrl }] : [])] },
+      data: { fileName: null, fileMimeType: null, fileSize: null, fileData: null, blobUrl: null },
+    }),
+  ]);
 
-  if (doc.blobUrl) {
+  if (doc.blobUrl && (await prisma.pilotDocument.count({ where: { blobUrl: doc.blobUrl } })) === 0) {
     try {
       await del(doc.blobUrl);
     } catch (err) {
-      console.error(`Suppression du fichier Blob de QualificationDocument ${id} échouée :`, err);
+      console.error(`Suppression du fichier Blob du justificatif ${id} échouée :`, err);
     }
   }
 

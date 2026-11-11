@@ -976,9 +976,6 @@ function EditStudentModal({
   const [phone, setPhone] = useState(student.phone ?? "");
   const [licenseType, setLicenseType] = useState(student.studentProfile?.licenseType ?? "");
   const [licenseNumber, setLicenseNumber] = useState(student.studentProfile?.licenseNumber ?? "");
-  const [medicalExpiry, setMedicalExpiry] = useState(
-    student.studentProfile?.medicalExpiry ? student.studentProfile.medicalExpiry.slice(0, 10) : ""
-  );
   const [notes, setNotes] = useState(student.studentProfile?.notes ?? "");
   const [isPilot, setIsPilot] = useState(student.studentProfile?.isPilot ?? false);
   const [error, setError] = useState<string | null>(null);
@@ -997,7 +994,6 @@ function EditStudentModal({
           phone: phone || null,
           licenseType: licenseType || null,
           licenseNumber: licenseNumber || null,
-          medicalExpiry: medicalExpiry || null,
           notes: notes || null,
           isPilot,
         }),
@@ -1057,15 +1053,15 @@ function EditStudentModal({
             onChange={(e) => setLicenseNumber(e.target.value)}
             className="input"
           />
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-navy-600">Échéance certificat médical</span>
-            <input
-              type="date"
-              value={medicalExpiry}
-              onChange={(e) => setMedicalExpiry(e.target.value)}
-              className="input"
-            />
-          </label>
+          {/* Certificat médical, licence et qualifications (avec leurs dates de
+              fin) : rubrique Licences uniquement, pour qu'il n'y ait qu'un
+              seul endroit où les saisir et les vérifier. */}
+          <Link
+            href={`/licences?person=${student.id}`}
+            className="flex items-center gap-1.5 text-xs text-sunset-600 hover:underline w-fit"
+          >
+            <ShieldCheck size={13} /> Certificat médical et qualifications : rubrique Licences
+          </Link>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-navy-600">Notes internes</span>
             <textarea

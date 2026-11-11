@@ -1,72 +1,281 @@
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { prisma } from "./prisma";
+import { daysLeft, kindOf } from "./qualification-catalog";
+import type { LicencesData } from "@/types/models";
 
-// Une qualification est "due" pour relance si son document courant validé a
-// une échéance, que l'on est entré dans sa fenêtre de rappel (butée
-// définissable par qualification), et qu'aucun rappel n'a été envoyé
-// récemment (pour ne pas relancer tous les jours tant que rien n'a changé).
-export async function findDueQualifications() {
-  const all = await prisma.qualification.findMany({
-    where: { currentDocument: { expiresAt: { not: null } } },
-    include: {
-      user: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
-      // select plutôt que true : cette liste part telle quelle en JSON vers
-      // le tableau de bord (GET /api/qualifications/due) — currentDocument
-      // complet aurait envoyé le scan/PDF de licence de chaque élève à
-      // chaque chargement du tableau de bord.
-      currentDocument: { select: { expiresAt: true } },
+type Db = Prisma.TransactionClient;
+
+const nameSelect = { select: { firstName: true, lastName: true } } as const;
+const iso = (d: Date | null) => (d ? d.toISOString() : null);
+
+// Tout ce qu'affiche la rubrique Licences, en une fois : les personnes
+// suivies (élèves, pilotes, instructeurs — Gérant/Admin compris s'ils
+// instruisent ou ont des qualifications au dossier), leurs qualifications
+// avec tout l'historique, et leurs justificatifs (jamais le contenu des
+// fichiers, servi seulement par .../documents/[id]/file). onlyUserId : la
+// fiche d'une seule personne (compte élève/pilote).
+export async function loadLicencesData(opts: { onlyUserId?: string } = {}): Promise<LicencesData> {
+  const people = await prisma.user.findMany({
+    where: opts.onlyUserId
+      ? { id: opts.onlyUserId }
+      : {
+          NOT: { email: { endsWith: "@deleted.local" } },
+          OR: [{ role: "STUDENT" }, { instructorProfile: { isNot: null } }, { qualifications: { some: {} } }],
+        },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      studentProfile: { select: { isPilot: true } },
+      instructorProfile: { select: { id: true } },
     },
-    orderBy: { currentDocument: { expiresAt: "asc" } },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
+  const userIds = people.map((p) => p.id);
+
+  const [slots, documents] = await Promise.all([
+    prisma.qualification.findMany({
+      where: { userId: { in: userIds } },
+      select: {
+        id: true,
+        userId: true,
+        kind: true,
+        type: true,
+        label: true,
+        reminderDaysBefore: true,
+        lastReminderSentAt: true,
+        currentValidityId: true,
+        validities: {
+          select: {
+            id: true,
+            status: true,
+            variant: true,
+            number: true,
+            issuedAt: true,
+            expiresAt: true,
+            notes: true,
+            rejectionReason: true,
+            uploadedAt: true,
+            uploadedById: true,
+            uploadedBy: nameSelect,
+            validatedAt: true,
+            validatedBy: nameSelect,
+            documents: { select: { id: true } },
+          },
+          orderBy: { uploadedAt: "desc" },
+        },
+      },
+    }),
+    prisma.pilotDocument.findMany({
+      where: { userId: { in: userIds } },
+      select: {
+        id: true,
+        userId: true,
+        category: true,
+        title: true,
+        fileName: true,
+        fileMimeType: true,
+        fileSize: true,
+        uploadedAt: true,
+        uploadedById: true,
+        uploadedBy: nameSelect,
+        validities: { select: { id: true } },
+      },
+      orderBy: { uploadedAt: "desc" },
+    }),
+  ]);
+
+  return {
+    people: people.map((p) => ({
+      id: p.id,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      role: p.role,
+      isPilot: p.studentProfile?.isPilot ?? false,
+      isInstructor: !!p.instructorProfile,
+    })),
+    qualifications: slots.map((q) => ({
+      ...q,
+      lastReminderSentAt: iso(q.lastReminderSentAt),
+      validities: q.validities.map(({ documents: docs, ...v }) => ({
+        ...v,
+        issuedAt: iso(v.issuedAt),
+        expiresAt: iso(v.expiresAt),
+        uploadedAt: v.uploadedAt.toISOString(),
+        validatedAt: iso(v.validatedAt),
+        documentIds: docs.map((d) => d.id),
+      })),
+    })),
+    documents: documents.map(({ validities, ...d }) => ({
+      ...d,
+      uploadedAt: d.uploadedAt.toISOString(),
+      validityIds: validities.map((v) => v.id),
+    })),
+  };
+}
+
+// Une qualification justifiée — par un document importé à l'instant ou
+// par des documents déjà au dossier : soit un créneau existant
+// (qualificationId), soit une clé du catalogue (kind), soit une
+// qualification hors catalogue (label).
+export const validityInputSchema = z
+  .object({
+    qualificationId: z.string().optional().nullable(),
+    kind: z.string().optional().nullable(),
+    label: z.string().trim().optional().nullable(),
+    variant: z.string().trim().optional().nullable(),
+    number: z.string().trim().optional().nullable(),
+    issuedAt: z.string().optional().nullable(),
+    expiresAt: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  })
+  .refine((v) => !!v.qualificationId || !!kindOf(v.kind) || !!v.label, {
+    message: "Chaque ligne doit indiquer une qualification.",
+  })
+  .refine((v) => !v.issuedAt || !v.expiresAt || v.expiresAt >= v.issuedAt, {
+    message: "La fin de validité ne peut pas précéder la date de délivrance.",
   });
 
-  const now = Date.now();
-  const RESEND_AFTER_DAYS = 14;
+export type ValidityInput = z.infer<typeof validityInputSchema>;
 
-  return all.filter((q) => {
-    const expiresAt = q.currentDocument?.expiresAt;
-    if (!expiresAt) return false;
-    const windowStart = expiresAt.getTime() - q.reminderDaysBefore * 86_400_000;
-    if (now < windowStart) return false; // pas encore dans la fenêtre
-    if (!q.lastReminderSentAt) return true;
-    const daysSinceLastReminder = (now - q.lastReminderSentAt.getTime()) / 86_400_000;
-    return daysSinceLastReminder >= RESEND_AFTER_DAYS;
+const toDate = (v: string | null | undefined) => (v ? new Date(v) : null);
+
+async function resolveSlot(db: Db, userId: string, input: ValidityInput) {
+  if (input.qualificationId) {
+    const slot = await db.qualification.findUnique({ where: { id: input.qualificationId } });
+    if (!slot || slot.userId !== userId) throw new QualificationError("Qualification introuvable.", 404);
+    return slot;
+  }
+  const kind = kindOf(input.kind);
+  if (kind) {
+    const existing = await db.qualification.findFirst({ where: { userId, kind: kind.key } });
+    if (existing) return existing;
+    return db.qualification.create({
+      data: { userId, kind: kind.key, type: kind.category, label: kind.label, reminderDaysBefore: kind.reminderDays },
+    });
+  }
+  const label = input.label!.trim();
+  const existing = await db.qualification.findFirst({
+    where: { userId, kind: null, label: { equals: label, mode: "insensitive" } },
+  });
+  if (existing) return existing;
+  return db.qualification.create({ data: { userId, kind: null, type: "OTHER", label, reminderDaysBefore: 45 } });
+}
+
+// La validité devient la validité courante de son créneau ; l'ancienne
+// courante passe en ARCHIVED (jamais supprimée).
+export async function makeCurrent(db: Db, qualificationId: string, validityId: string, validatedById: string) {
+  const slot = await db.qualification.findUniqueOrThrow({ where: { id: qualificationId } });
+  if (slot.currentValidityId && slot.currentValidityId !== validityId) {
+    await db.qualificationValidity.update({ where: { id: slot.currentValidityId }, data: { status: "ARCHIVED" } });
+  }
+  await db.qualificationValidity.update({
+    where: { id: validityId },
+    data: { status: "VALIDATED", validatedAt: new Date(), validatedById, rejectionReason: null },
+  });
+  await db.qualification.update({
+    where: { id: qualificationId },
+    data: { currentValidityId: validityId, lastReminderSentAt: null },
   });
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  LICENSE: "Licence",
-  MEDICAL: "Certificat médical",
-  CLASS_RATING: "Qualification de classe",
-  VARIANT: "Variante",
-  ADDITIONAL: "Qualification additionnelle",
-  INSTRUCTOR_PRIV: "Privilège instructeur",
-  EXAMINER_PRIV: "Privilège examinateur",
-  OTHER: "Document",
-};
+// Crée une validité par ligne, reliée aux documents donnés. validated :
+// saisie du staff, prise en compte immédiatement ; sinon (le pilote pour
+// lui-même) elle attend la validation du staff.
+export async function addValidities(
+  db: Db,
+  args: { userId: string; inputs: ValidityInput[]; documentIds: string[]; actorId: string; validated: boolean }
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (const input of args.inputs) {
+    const slot = await resolveSlot(db, args.userId, input);
+    const validity = await db.qualificationValidity.create({
+      data: {
+        qualificationId: slot.id,
+        variant: input.variant || null,
+        number: input.number || null,
+        issuedAt: toDate(input.issuedAt),
+        expiresAt: toDate(input.expiresAt),
+        notes: input.notes || null,
+        status: "PENDING",
+        uploadedById: args.actorId,
+        documents: { connect: args.documentIds.map((id) => ({ id })) },
+      },
+    });
+    if (args.validated) await makeCurrent(db, slot.id, validity.id, args.actorId);
+    ids.push(validity.id);
+  }
+  return ids;
+}
+
+// Après le retrait de la validité courante : la plus récente des anciennes
+// (archivées) reprend sa place, sinon le créneau n'a plus de validité en
+// cours. Un créneau devenu complètement vide est supprimé.
+export async function settleAfterRemoval(db: Db, qualificationId: string) {
+  const slot = await db.qualification.findUnique({
+    where: { id: qualificationId },
+    include: { validities: { select: { id: true, status: true, expiresAt: true, issuedAt: true, uploadedAt: true } } },
+  });
+  if (!slot) return;
+  if (slot.validities.length === 0) {
+    await db.qualification.delete({ where: { id: qualificationId } });
+    return;
+  }
+  if (slot.currentValidityId && slot.validities.some((v) => v.id === slot.currentValidityId)) return;
+  const time = (d: Date | null) => d?.getTime() ?? 0;
+  const previous = slot.validities
+    .filter((v) => v.status === "ARCHIVED" || v.status === "VALIDATED")
+    .sort(
+      (a, b) =>
+        time(b.expiresAt) - time(a.expiresAt) ||
+        time(b.issuedAt) - time(a.issuedAt) ||
+        time(b.uploadedAt) - time(a.uploadedAt)
+    )[0];
+  if (previous) {
+    await db.qualificationValidity.update({ where: { id: previous.id }, data: { status: "VALIDATED" } });
+  }
+  await db.qualification.update({
+    where: { id: qualificationId },
+    data: { currentValidityId: previous?.id ?? null },
+  });
+}
+
+export class QualificationError extends Error {
+  constructor(
+    message: string,
+    public status: number = 400
+  ) {
+    super(message);
+  }
+}
 
 export function composeReminderEmail(q: {
   label: string;
-  type: string;
-  currentDocument: { expiresAt: Date | null } | null;
+  currentValidity: { expiresAt: Date | null } | null;
   user: { firstName: string; lastName: string };
 }) {
-  const expiresAt = q.currentDocument?.expiresAt ?? null;
+  const expiresAt = q.currentValidity?.expiresAt ?? null;
+  // Dates de fin enregistrées à minuit UTC du jour saisi : affichées en UTC
+  // pour retomber exactement sur ce jour.
   const dateStr = expiresAt
-    ? expiresAt.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "long", year: "numeric" })
+    ? expiresAt.toLocaleDateString("fr-FR", { timeZone: "UTC", day: "2-digit", month: "long", year: "numeric" })
     : "date inconnue";
-  const isPast = expiresAt ? expiresAt.getTime() < Date.now() : false;
+  const isPast = expiresAt ? daysLeft(expiresAt) < 0 : false;
 
   const subject = isPast
-    ? `[Alpines Flight] ${TYPE_LABEL[q.type] ?? q.type} expiré(e) — ${q.label}`
-    : `[Alpines Flight] ${TYPE_LABEL[q.type] ?? q.type} à renouveler bientôt — ${q.label}`;
+    ? `[Alpines Flight] Échéance dépassée — ${q.label}`
+    : `[Alpines Flight] Échéance à renouveler bientôt — ${q.label}`;
 
   const text = `Bonjour ${q.user.firstName},
 
-${isPast ? "Votre document suivant est arrivé à expiration" : "Votre document suivant arrive bientôt à expiration"} :
+${isPast ? "L'échéance suivante est dépassée" : "L'échéance suivante arrive bientôt"} :
 
-  ${TYPE_LABEL[q.type] ?? q.type} — ${q.label}
-  ${isPast ? "Expiré le" : "Expire le"} : ${dateStr}
+  ${q.label}
+  Fin de validité : ${dateStr}
 
-Merci de transmettre le document de renouvellement (photo ou scan) via l'application dès que possible, afin qu'il soit vérifié et pris en compte.
+Merci de transmettre le justificatif de renouvellement (photo ou scan) via l'application, rubrique Licences, dès que possible, afin qu'il soit vérifié et pris en compte.
 
 Alpines Flight`;
 
