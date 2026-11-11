@@ -13,7 +13,7 @@
 // 3. Fusionne les justificatifs importés deux fois à l'identique (même
 //    personne, même nom, même taille, même contenu) : un seul document,
 //    relié à toutes les qualifications qu'il justifiait. Aucun fichier n'est
-//    supprimé du stockage.
+//    supprimé du stockage ; la copie en double n'est plus référencée.
 //
 // Usage : npx tsx prisma/migrate-licences-catalog.ts          (à blanc)
 //         npx tsx prisma/migrate-licences-catalog.ts --apply  (écrit)
@@ -200,6 +200,14 @@ async function main() {
             data: { validities: { connect: dupes.flatMap((d) => d.validities.map((v) => ({ id: v.id }))) } },
           }),
         () => prisma.pilotDocument.deleteMany({ where: { id: { in: dupes.map((d) => d.id) } } }),
+        // La validité d'origine du doublon (même id) garde sa copie du
+        // fichier dans les anciennes colonnes : vidée, sinon rejouer la
+        // reprise de la migration recréerait le doublon.
+        () =>
+          prisma.qualificationValidity.updateMany({
+            where: { id: { in: dupes.map((d) => d.id) } },
+            data: { fileName: null, fileMimeType: null, fileSize: null, fileData: null, blobUrl: null },
+          }),
       ],
     });
   }
