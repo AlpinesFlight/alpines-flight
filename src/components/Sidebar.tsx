@@ -24,10 +24,12 @@ import {
   Settings,
   Menu,
   Briefcase,
+  Eye,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { clsx } from "clsx";
 import { apiFetch } from "@/lib/api";
+import { PreviewPickerModal, leavePreview } from "@/components/PreviewBanner";
 
 const NAV_ITEMS = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
@@ -66,13 +68,21 @@ export function Sidebar({
   userName,
   userRole,
   isPilot,
+  canPreview = false,
+  previewing = false,
 }: {
   userName: string;
   userRole: string;
   isPilot?: boolean;
+  // Gérant (hors aperçu) : peut afficher l'appli comme un autre compte —
+  // voir PreviewBanner.tsx et src/lib/auth.ts.
+  canPreview?: boolean;
+  // Aperçu en cours : userName/userRole sont ceux du compte affiché.
+  previewing?: boolean;
 }) {
   const pathname = usePathname();
   const [showPassword, setShowPassword] = useState(false);
+  const [showPreviewPicker, setShowPreviewPicker] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Referme le tiroir mobile à chaque changement de page — sans ça il reste
@@ -106,6 +116,15 @@ export function Sidebar({
             Alpines Flight
           </span>
         </Link>
+        {previewing && (
+          <button
+            type="button"
+            onClick={() => leavePreview()}
+            className="ml-auto flex items-center gap-1 rounded-full bg-sunset-500 px-2.5 py-1 text-[11px] font-semibold text-white"
+          >
+            <Eye size={12} /> Quitter l&apos;aperçu
+          </button>
+        )}
       </div>
 
       {/* Fond assombri derrière le tiroir ouvert — seulement en dessous de
@@ -209,23 +228,47 @@ export function Sidebar({
       <div className="px-5 py-4 border-t border-navy-700">
         <p className="text-sm font-medium truncate">{userName}</p>
         <p className="text-[11px] text-navy-100 mb-3">{roleLabel(userRole, isPilot)}</p>
-        {/* Droit d'accès/portabilité RGPD : chaque compte peut exporter ses
-            propres données en un clic — voir /api/me/export et
-            /confidentialite. */}
-        <a
-          href="/api/me/export"
-          className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors mb-2"
-        >
-          <Download size={14} />
-          Exporter mes données
-        </a>
-        <button
-          onClick={() => setShowPassword(true)}
-          className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors mb-2"
-        >
-          <Lock size={14} />
-          Changer mon mot de passe
-        </button>
+        {previewing ? (
+          // Pendant un aperçu, export et mot de passe seraient ceux du compte
+          // affiché : remplacés par la sortie de l'aperçu.
+          <button
+            type="button"
+            onClick={() => leavePreview()}
+            className="w-full flex items-center justify-center gap-2 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-xs font-semibold px-3 py-2 transition-colors mb-3"
+          >
+            <Eye size={14} />
+            Revenir à mon compte
+          </button>
+        ) : (
+          <>
+            {canPreview && (
+              <button
+                onClick={() => setShowPreviewPicker(true)}
+                className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors mb-2"
+              >
+                <Eye size={14} />
+                Voir en tant que…
+              </button>
+            )}
+            {/* Droit d'accès/portabilité RGPD : chaque compte peut exporter ses
+                propres données en un clic — voir /api/me/export et
+                /confidentialite. */}
+            <a
+              href="/api/me/export"
+              className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors mb-2"
+            >
+              <Download size={14} />
+              Exporter mes données
+            </a>
+            <button
+              onClick={() => setShowPassword(true)}
+              className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors mb-2"
+            >
+              <Lock size={14} />
+              Changer mon mot de passe
+            </button>
+          </>
+        )}
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="flex items-center gap-2 text-xs text-navy-100 hover:text-sunset-500 transition-colors"
@@ -235,8 +278,13 @@ export function Sidebar({
         </button>
       </div>
 
-      {showPassword && <ChangePasswordModal onClose={() => setShowPassword(false)} />}
       </aside>
+
+      {/* Hors de <aside> : son transform (tiroir mobile) ferait de lui le
+          repère des éléments fixed, et la fenêtre resterait coincée dans la
+          largeur du menu au lieu de couvrir l'écran. */}
+      {showPassword && <ChangePasswordModal onClose={() => setShowPassword(false)} />}
+      {showPreviewPicker && <PreviewPickerModal onClose={() => setShowPreviewPicker(false)} />}
     </>
   );
 }
