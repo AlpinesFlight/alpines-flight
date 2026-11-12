@@ -68,7 +68,23 @@ export async function GET(req: Request) {
     },
     orderBy: { lastName: "asc" },
   });
-  return NextResponse.json(students);
+
+  // Formation en cours de chaque pilote (inscription "en cours" la plus
+  // récente) — pré-remplit le tarif d'instruction quand on choisit un
+  // instructeur à la réservation et au compte-rendu (voir
+  // ReservationModal.tsx). Toutes pour le staff ; un élève/pilote ne reçoit
+  // que la sienne (il ne réserve que pour lui-même).
+  const enrollments = await prisma.enrollment.findMany({
+    where: {
+      status: "IN_PROGRESS",
+      studentId: staff ? { in: students.map((s) => s.id) } : session.user.id,
+    },
+    orderBy: { startedAt: "asc" },
+    select: { studentId: true, programId: true },
+  });
+  const currentProgram = new Map(enrollments.map((e) => [e.studentId, e.programId]));
+
+  return NextResponse.json(students.map((s) => ({ ...s, currentProgramId: currentProgram.get(s.id) ?? null })));
 }
 
 const createSchema = z.object({

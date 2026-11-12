@@ -4,9 +4,17 @@ import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { PlaneTakeoff, PlaneLanding, Plus, X, Fuel } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { Reservation, TrainingProgram, UserLite } from "@/types/models";
+import { Reservation, TrainingProgram, TrainingProgramLite, UserLite } from "@/types/models";
 import { formatMoney, formatHoursMinutes, durationHours } from "@/lib/format";
-import { combineDateTime, toDateInput, toTimeInput, personName } from "@/lib/reservation-form";
+import {
+  INSTRUCTOR_RATE,
+  combineDateTime,
+  instructionRateFor,
+  personName,
+  programIdToSave,
+  toDateInput,
+  toTimeInput,
+} from "@/lib/reservation-form";
 import { Field, SheetFooter } from "./Sheet";
 
 // Départ et retour d'un vol réservé — utilisés par le planning
@@ -93,6 +101,49 @@ export function DepartPanel({
   );
 }
 
+// Choix du tarif d'instruction, partagé par la réservation et le
+// compte-rendu : chaque formation avec son tarif, plus le tarif propre de
+// l'instructeur choisi s'il en a un. Valeur "" = rien de connu, à choisir.
+export function InstructionRateSelect({
+  value,
+  onChange,
+  programs,
+  extraProgram,
+  instructor,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  programs: TrainingProgram[];
+  // Formation déjà enregistrée sur la réservation, gardée dans la liste
+  // même si elle n'est plus proposée (désactivée depuis).
+  extraProgram?: TrainingProgramLite | null;
+  instructor: UserLite | null;
+}) {
+  const instructorRate = instructor?.instructorProfile?.hourlyRateCents ?? null;
+  const options: { id: string; title: string; instructionRateCents: number | null }[] = [...programs];
+  if (extraProgram && !options.some((p) => p.id === extraProgram.id)) options.push(extraProgram);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="input h-10">
+      {value === "" && (
+        <option value="" disabled>
+          Choisir…
+        </option>
+      )}
+      {options.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.title}
+          {p.instructionRateCents ? ` — ${formatMoney(p.instructionRateCents)}/h` : ""}
+        </option>
+      ))}
+      {instructorRate ? (
+        <option value={INSTRUCTOR_RATE}>
+          Tarif de {instructor?.firstName} — {formatMoney(instructorRate)}/h
+        </option>
+      ) : null}
+    </select>
+  );
+}
+
 interface StopRow {
   airfield: string;
   touchAndGo: string;
@@ -112,12 +163,16 @@ export function CompleteFlightPanel({
   reservation,
   instructors,
   programs,
+  pilotProgramId = null,
   onCancel,
   onCompleted,
 }: {
   reservation: Reservation;
   instructors: UserLite[];
   programs: TrainingProgram[];
+  // Formation en cours du pilote (inscription), pour proposer son tarif
+  // d'instruction si un instructeur est ajouté au compte-rendu.
+  pilotProgramId?: string | null;
   onCancel: () => void;
   onCompleted: () => void;
 }) {
@@ -141,11 +196,18 @@ export function CompleteFlightPanel({
   // des vols partent de la base de l'école, simple gain de temps, modifiable.
   const [departureAirfield, setDepartureAirfield] = useState("LFNA");
   const [arrivalAirfield, setArrivalAirfield] = useState("");
-  const [instructorId, setInstructorId] = useState(reservation.instructorId ?? "");
-  const [trainingProgramId, setTrainingProgramId] = useState(reservation.trainingProgramId ?? "");
-  // Instructeur et formation sont déjà connus depuis la réservation :
-  // résumés sur une ligne, dépliés seulement pour les corriger (ou d'office
-  // s'il manque l'instructeur d'un vol d'instruction).
+  // Instructeur À BORD (c'est lui qui déclenche la facturation de
+  // l'instruction), distinct du FI qui supervise un solo depuis le sol :
+  // choisir un instructeur ici facture l'instruction, même si le vol avait
+  // été réservé comme solo ou location (vol finalement fait en double).
+  const isDiscovery = reservation.type === "DISCOVERY";
+  const supervisor = reservation.type === "SOLO" ? reservation.instructor : null;
+  const [onBoardId, setOnBoardId] = useState(reservation.type === "SOLO" ? "" : reservation.instructorId ?? "");
+  // null = pas touché : tarif proposé d'office (voir autoRate plus bas).
+  const [rateChoice, setRateChoice] = useState<string | null>(null);
+  // Instructeur et tarif sont déjà connus depuis la réservation : résumés
+  // sur une ligne, dépliés pour les corriger (ou d'office s'il manque le
+  // tarif d'un vol avec instructeur).
   const [crewOpen, setCrewOpen] = useState(reservation.type === "INSTRUCTION" && !reservation.instructorId);
   // Vide par défaut : un vol direct posé en complet à destination n'a aucun
   // touché à déclarer — son atterrissage à destination est compté d'office.
@@ -192,23 +254,39 @@ export function CompleteFlightPanel({
   const duration = durationMs > 0 && departure && arrival ? durationHours(departure, arrival) : 0;
   const aircraftCostCents = duration > 0 ? Math.round(duration * aircraftRateCents) : 0;
 
-  const selectedInstructor = instructors.find((i) => i.id === instructorId);
-  const selectedProgram = programs.find((p) => p.id === trainingProgramId);
-  // Priorité au tarif de la formation visée (ex: PPL 25€/h, Montagne
-  // 40€/h) ; à défaut, tarif horaire par défaut de l'instructeur.
-  const programRateCents = selectedProgram?.instructionRateCents ?? null;
-  const instructorRateCents = selectedInstructor?.instructorProfile?.hourlyRateCents ?? null;
-  const instructionRateCents = programRateCents ?? instructorRateCents;
-  const isInstructionFlight = reservation.type === "INSTRUCTION" && !!instructorId;
+  const onBoard = instructors.find((i) => i.id === onBoardId);
+  // Un vol découverte n'a pas de compte élève à débiter : pas d'instruction.
+  const isInstructionFlight = !isDiscovery && !!onBoardId;
+  const instructorRateCents = onBoard?.instructorProfile?.hourlyRateCents ?? null;
+  // Tarif proposé d'office : celui fixé à la réservation, sinon la
+  // formation en cours du pilote, sinon le tarif propre de l'instructeur —
+  // la plupart des instructeurs n'en ayant pas, sans formation le choix
+  // devient obligatoire plutôt que de facturer l'instruction 0 €.
+  const autoRate =
+    reservation.trainingProgramId ||
+    (reservation.type === "INSTRUCTION" && instructorRateCents ? INSTRUCTOR_RATE : "") ||
+    pilotProgramId ||
+    (instructorRateCents ? INSTRUCTOR_RATE : "");
+  const rawRate = rateChoice ?? autoRate;
+  const rateValue = rawRate === INSTRUCTOR_RATE && !instructorRateCents ? "" : rawRate;
+  // + la formation de la réservation, au cas où elle ne serait plus proposée
+  // dans la liste (formation désactivée depuis).
+  const ratePrograms = reservation.trainingProgram ? [...programs, reservation.trainingProgram] : programs;
+  const instructionRateCents = isInstructionFlight
+    ? instructionRateFor(rateValue, ratePrograms, instructorRateCents)
+    : null;
+  const missingRate = isInstructionFlight && !instructionRateCents;
   const instructionCostCents =
     isInstructionFlight && instructionRateCents && duration > 0 ? Math.round(duration * instructionRateCents) : 0;
   const totalCostCents = aircraftCostCents + instructionCostCents;
+  const crewExpanded = crewOpen || missingRate;
 
-  const rateText = programRateCents
-    ? `${selectedProgram!.title} (${formatMoney(programRateCents)}/h)`
-    : instructorRateCents
-    ? `tarif de l'instructeur (${formatMoney(instructorRateCents)}/h)`
-    : "aucun tarif renseigné (ni formation, ni instructeur)";
+  const selectedProgram = programs.find((p) => p.id === rateValue) ?? (reservation.trainingProgram?.id === rateValue ? reservation.trainingProgram : null);
+  const rateText = !instructionRateCents
+    ? null
+    : rateValue === INSTRUCTOR_RATE || !selectedProgram
+    ? `tarif de ${onBoard?.firstName ?? "l'instructeur"}, ${formatMoney(instructionRateCents)}/h`
+    : `${selectedProgram.title}, ${formatMoney(instructionRateCents)}/h`;
 
   function updateStop(index: number, patch: Partial<StopRow>) {
     setStops((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -236,8 +314,11 @@ export function CompleteFlightPanel({
           arrivalTime: arrival.toISOString(),
           departureAirfield: departureAirfield.trim().toUpperCase(),
           arrivalAirfield: arrivalAirfield.trim().toUpperCase(),
-          instructorId: instructorId || null,
-          trainingProgramId: reservation.type === "INSTRUCTION" ? trainingProgramId || null : null,
+          // L'instructeur à bord, sinon (solo) celui qui supervise — il reste
+          // rattaché au vol comme avant, sans instruction facturée.
+          instructorId: onBoardId || supervisor?.id || null,
+          instructionFlight: isInstructionFlight,
+          trainingProgramId: isInstructionFlight ? programIdToSave(rateValue) : null,
           remarks: remarks.trim() || null,
           stops: stops
             .filter((s) => s.airfield.trim())
@@ -385,33 +466,41 @@ export function CompleteFlightPanel({
           )}
         </div>
 
-        {crewOpen ? (
-          <div className="flex flex-col gap-3">
-            <Field label="Instructeur">
-              <select value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input h-10">
-                <option value="">Aucun — vol seul</option>
-                {instructors.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {personName(i)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {reservation.type === "INSTRUCTION" && programs.length > 0 && (
-              <Field label="Tarif d'instruction (formation)">
-                <select
-                  value={trainingProgramId}
-                  onChange={(e) => setTrainingProgramId(e.target.value)}
-                  className="input h-10"
-                >
-                  <option value="">Tarif par défaut de l&apos;instructeur</option>
-                  {programs.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title}
-                      {p.instructionRateCents ? ` — ${formatMoney(p.instructionRateCents)}/h` : ""}
+        {crewExpanded ? (
+          <div className="grid gap-3">
+            <Field label={isDiscovery ? "Instructeur" : "Instructeur à bord"}>
+              <select
+                value={onBoardId}
+                onChange={(e) => {
+                  setOnBoardId(e.target.value);
+                  setCrewOpen(true);
+                }}
+                className="input h-10"
+              >
+                <option value="">
+                  {supervisor ? `Aucun — solo supervisé par ${supervisor.firstName}` : "Aucun — vol seul"}
+                </option>
+                {instructors
+                  .filter((i) => i.id !== reservation.studentId)
+                  .map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {personName(i)}
                     </option>
                   ))}
-                </select>
+              </select>
+            </Field>
+            {isInstructionFlight && (
+              <Field label="Tarif d'instruction">
+                <InstructionRateSelect
+                  value={rateValue}
+                  onChange={(v) => {
+                    setRateChoice(v);
+                    setCrewOpen(true);
+                  }}
+                  programs={programs}
+                  extraProgram={reservation.trainingProgram ?? null}
+                  instructor={onBoard ?? null}
+                />
               </Field>
             )}
           </div>
@@ -419,15 +508,22 @@ export function CompleteFlightPanel({
           <div className="flex items-start justify-between gap-3 rounded-xl bg-navy-50/80 px-3.5 py-2.5">
             <div className="text-sm text-navy-700 min-w-0">
               <p>
-                {selectedInstructor ? (
+                {onBoard ? (
                   <>
-                    Instructeur : <span className="font-semibold text-navy-900">{personName(selectedInstructor)}</span>
+                    {isDiscovery ? "Instructeur" : "Instructeur à bord"} :{" "}
+                    <span className="font-semibold text-navy-900">{personName(onBoard)}</span>
+                  </>
+                ) : supervisor ? (
+                  <>
+                    Solo supervisé par <span className="font-semibold text-navy-900">{personName(supervisor)}</span>
                   </>
                 ) : (
                   "Vol sans instructeur"
                 )}
               </p>
-              {isInstructionFlight && <p className="text-xs text-navy-500 mt-0.5">Tarif d&apos;instruction : {rateText}</p>}
+              {isInstructionFlight && rateText && (
+                <p className="text-xs text-navy-500 mt-0.5">Instruction : {rateText}</p>
+              )}
             </div>
             <button
               type="button"
@@ -537,6 +633,12 @@ export function CompleteFlightPanel({
           </div>
         )}
 
+        {missingRate && (
+          <p className="text-sm rounded-xl px-3 py-2 text-navy-600 bg-navy-50">
+            Choisis le tarif d&apos;instruction : {onBoard?.firstName ?? "cet instructeur"} n&apos;a pas de tarif propre
+            renseigné.
+          </p>
+        )}
         <ErrorLine message={error} />
       </div>
 
@@ -546,7 +648,7 @@ export function CompleteFlightPanel({
         </button>
         <button
           type="submit"
-          disabled={saving || duration <= 0}
+          disabled={saving || duration <= 0 || missingRate}
           className="ml-auto flex items-center gap-2 rounded-xl bg-navy-800 hover:bg-navy-900 text-white font-semibold px-4 h-10 text-sm transition-colors disabled:opacity-60"
         >
           <PlaneLanding size={16} />

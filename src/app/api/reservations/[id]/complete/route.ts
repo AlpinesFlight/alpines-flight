@@ -19,6 +19,11 @@ const schema = z
     departureAirfield: z.string().min(1, "Terrain de départ requis."),
     arrivalAirfield: z.string().min(1, "Terrain de destination requis."),
     instructorId: z.string().nullable().optional(),
+    // true = l'instructeur était À BORD (instruction facturée), même si le
+    // vol avait été réservé comme solo ou location ; false = vol seul (un
+    // instructorId est alors celui qui a supervisé un solo depuis le sol).
+    // Absent = comme à la réservation (instruction si type INSTRUCTION).
+    instructionFlight: z.boolean().optional(),
     trainingProgramId: z.string().nullable().optional(),
     remarks: z.string().nullable().optional(),
     // Touchés en route (tours de piste...) — facultatif : un vol direct, posé
@@ -71,6 +76,7 @@ export async function POST(req: Request, { params }: Params) {
     departureAirfield,
     arrivalAirfield,
     instructorId,
+    instructionFlight,
     trainingProgramId,
     remarks,
     stops,
@@ -96,7 +102,11 @@ export async function POST(req: Request, { params }: Params) {
     include: {
       aircraft: { select: safeAircraftSelect },
       student: {
-        select: { firstName: true, lastName: true, studentProfile: { select: { canGiveBaptism: true } } },
+        select: {
+          firstName: true,
+          lastName: true,
+          studentProfile: { select: { canGiveBaptism: true, isPilot: true } },
+        },
       },
     },
   });
@@ -151,11 +161,32 @@ export async function POST(req: Request, { params }: Params) {
   );
   const aircraftCostCents = Math.round(duration * effectiveRateCents);
 
+  // Vol d'instruction = instructeur à bord, tel que déclaré au compte-rendu
+  // (un vol réservé en location peut finalement se faire en double, et
+  // inversement) — jamais pour un vol découverte (pas de compte élève).
+  const isInstruction =
+    reservation.type !== "DISCOVERY" &&
+    reservation.type !== "MAINTENANCE" &&
+    !!finalInstructorId &&
+    (instructionFlight ?? reservation.type === "INSTRUCTION");
+  // La réservation prend le type du vol réellement effectué, pour que le
+  // planning et le carnet concordent avec ce qui a été facturé.
+  const flownType =
+    reservation.type === "DISCOVERY" || reservation.type === "MAINTENANCE"
+      ? reservation.type
+      : isInstruction
+      ? "INSTRUCTION"
+      : reservation.type === "INSTRUCTION"
+      ? reservation.student?.studentProfile?.isPilot === false
+        ? "SOLO"
+        : "LOCATION"
+      : reservation.type;
+
   // Tarif d'instruction : priorité au tarif propre à la formation visée
   // (ex: PPL 25€/h, Montagne 40€/h — voir TrainingProgram.instructionRateCents),
   // sinon repli sur le tarif horaire par défaut de l'instructeur.
   let instructionCostCents = 0;
-  if (reservation.type === "INSTRUCTION" && finalInstructorId) {
+  if (isInstruction && finalInstructorId) {
     let rateCents: number | null = null;
     if (finalTrainingProgramId) {
       const program = await prisma.trainingProgram.findUnique({
@@ -292,7 +323,16 @@ export async function POST(req: Request, { params }: Params) {
       // (départ/arrivée saisis au compte-rendu), pas l'horaire initialement
       // réservé — pour que la case sur le planning corresponde à ce qui
       // s'est vraiment passé.
-      data: { status: "COMPLETED", startTime: start, endTime: end },
+      // Avec le type, l'instructeur et la formation réellement retenus au
+      // compte-rendu (voir flownType plus haut).
+      data: {
+        status: "COMPLETED",
+        startTime: start,
+        endTime: end,
+        type: flownType,
+        instructorId: finalInstructorId,
+        trainingProgramId: isInstruction ? finalTrainingProgramId : null,
+      },
     });
 
     await recalcAircraftMaintenanceStatuses(db, reservation.aircraftId);

@@ -27,6 +27,9 @@ export interface UserLite {
     soloGrassCleared?: boolean;
     soloPavedCleared?: boolean;
   } | null;
+  // Formation en cours (GET /api/students uniquement) — pré-remplit le
+  // tarif d'instruction à la réservation et au compte-rendu.
+  currentProgramId?: string | null;
 }
 
 export type AircraftStatus = "AVAILABLE" | "MAINTENANCE" | "GROUNDED" | "RETIRED";

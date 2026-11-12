@@ -1,4 +1,4 @@
-import type { Aircraft, Reservation, ReservationType, UserLite } from "@/types/models";
+import type { Aircraft, Reservation, ReservationType, TrainingProgram, UserLite } from "@/types/models";
 import { nightWindowsOverlapping } from "@/lib/sun-times";
 import { isOccupyingType } from "@/lib/reservation-rules";
 
@@ -116,6 +116,31 @@ export function deriveReservationType(p: {
   if (p.kind === "MAINTENANCE") return "MAINTENANCE";
   if (p.instructorId) return p.pilotIsTrainee && p.soloSupervised ? "SOLO" : "INSTRUCTION";
   return p.pilotIsTrainee ? "SOLO" : "LOCATION";
+}
+
+// ---------- Tarif d'instruction ----------
+// Choix du tarif quand un instructeur est à bord : l'id d'une formation
+// (tarif de la formation), INSTRUCTOR_RATE (tarif propre de l'instructeur,
+// Reservation.trainingProgramId à null) ou "" (rien de connu : à choisir —
+// sans quoi l'instruction serait facturée 0 €, la plupart des instructeurs
+// n'ayant pas de tarif propre renseigné).
+export const INSTRUCTOR_RATE = "instructor";
+
+// Même priorité que le calcul serveur à la clôture
+// (/api/reservations/[id]/complete) : tarif de la formation, à défaut celui
+// de l'instructeur.
+export function instructionRateFor(
+  choice: string,
+  programs: Pick<TrainingProgram, "id" | "instructionRateCents">[],
+  instructorRateCents: number | null | undefined
+): number | null {
+  if (!choice) return null;
+  if (choice === INSTRUCTOR_RATE) return instructorRateCents ?? null;
+  return programs.find((p) => p.id === choice)?.instructionRateCents ?? instructorRateCents ?? null;
+}
+
+export function programIdToSave(choice: string): string | null {
+  return choice && choice !== INSTRUCTOR_RATE ? choice : null;
 }
 
 export const TYPE_LABELS: Record<ReservationType, string> = {
