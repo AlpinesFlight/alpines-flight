@@ -6,7 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { Aircraft, Reservation, UserLite } from "@/types/models";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { isInstructorOrAbove } from "@/lib/permissions";
-import { DepartPanel, CompleteFlightPanel } from "./ReservationModal";
+import { DepartPanel, CompleteFlightPanel } from "./FlightReportPanels";
 import { Plus, X, Phone, Mail, PlaneTakeoff, PlaneLanding, Trash2, ShieldAlert, Compass } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -402,18 +402,24 @@ function DetailModal({
           </button>
         </div>
 
+        {/* pt-4 : ces panneaux (partagés avec le planning) commencent sans
+            marge haute, prévue pour l'en-tête sans bordure de Sheet.tsx. */}
         {panel === "depart" && (
-          <DepartPanel reservation={reservation} onCancel={() => setPanel("view")} onDeparted={onChanged} />
+          <div className="pt-4">
+            <DepartPanel reservation={reservation} onCancel={() => setPanel("view")} onDeparted={onChanged} />
+          </div>
         )}
 
         {panel === "complete" && (
-          <CompleteFlightPanel
-            reservation={reservation}
-            instructors={instructors}
-            programs={[]}
-            onCancel={() => setPanel("view")}
-            onCompleted={onChanged}
-          />
+          <div className="pt-4">
+            <CompleteFlightPanel
+              reservation={reservation}
+              instructors={instructors}
+              programs={[]}
+              onCancel={() => setPanel("view")}
+              onCompleted={onChanged}
+            />
+          </div>
         )}
 
         {panel === "edit" && (

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { safeUserSelect, safeAircraftSelect, safeReservationStudentSelect } from "@/lib/selects";
 import { isInstructorOrAbove } from "@/lib/permissions";
-import { OCCUPYING_RESERVATION_TYPES, nightViolationMessage } from "@/lib/reservations";
+import { OCCUPYING_RESERVATION_TYPES, currentTrainingProgramId, nightViolationMessage } from "@/lib/reservations";
 import { notifyReservation } from "@/lib/reservation-emails";
 
 export async function GET(req: Request) {
@@ -77,11 +77,30 @@ export async function POST(req: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
+  const isStaff = isInstructorOrAbove(session.user.role);
+
   // Vol découverte/baptême : gestion interne, réservée au staff pédagogique
   // (FI et au-dessus) — un client de passage n'a pas de compte pour se le
   // réserver lui-même (voir Q3 : "gestion interne").
-  if (parsed.data.type === "DISCOVERY" && !isInstructorOrAbove(session.user.role)) {
+  if (parsed.data.type === "DISCOVERY" && !isStaff) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // Un élève/pilote réserve pour lui-même (voir permissions.ts : "réserver/
+  // annuler ses propres vols") — il est toujours le pilote de sa
+  // réservation, quoi que le client envoie, et ne bloque pas un avion pour
+  // maintenance (réservé au staff).
+  if (!isStaff) {
+    if (parsed.data.type === "MAINTENANCE") {
+      return NextResponse.json(
+        { error: "Seuls les instructeurs et la gestion peuvent bloquer un avion pour maintenance." },
+        { status: 403 }
+      );
+    }
+    if (parsed.data.studentId && parsed.data.studentId !== session.user.id) {
+      return NextResponse.json({ error: "Tu ne peux réserver que pour toi-même." }, { status: 403 });
+    }
+    parsed.data.studentId = session.user.id;
   }
 
   const { aircraftId, instructorId, studentId, startTime, endTime, isBaptism: requestedBaptism } = parsed.data;
@@ -156,9 +175,24 @@ export async function POST(req: Request) {
     isBaptism = profile?.canGiveBaptism === true;
   }
 
+  // Formation (tarif d'instruction) : plus demandée à la réservation — prise
+  // d'office dans l'inscription en cours du pilote, modifiable au
+  // compte-rendu de vol. Une valeur envoyée explicitement reste respectée
+  // (null compris = "tarif par défaut de l'instructeur").
+  let trainingProgramId: string | null = null;
+  if (parsed.data.type === "INSTRUCTION") {
+    trainingProgramId =
+      parsed.data.trainingProgramId !== undefined
+        ? parsed.data.trainingProgramId
+        : studentId
+        ? await currentTrainingProgramId(studentId)
+        : null;
+  }
+
   const reservation = await prisma.reservation.create({
     data: {
       ...parsed.data,
+      trainingProgramId,
       startTime: start,
       endTime: end,
       isBaptism,

@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { safeUserSelect, safeAircraftSelect, safeReservationStudentSelect } from "@/lib/selects";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
-import { OCCUPYING_RESERVATION_TYPES, nightViolationMessage } from "@/lib/reservations";
+import { OCCUPYING_RESERVATION_TYPES, currentTrainingProgramId, nightViolationMessage } from "@/lib/reservations";
 import { notifyReservation } from "@/lib/reservation-emails";
 import { z } from "zod";
 
@@ -52,13 +52,31 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!parsed.success)
     return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 400 });
 
+  const isStaff = isInstructorOrAbove(session.user.role);
+
   // Vol découverte/baptême : gestion interne réservée au staff pédagogique
   // (voir POST ci-dessus pour le détail).
   if (
     (parsed.data.type === "DISCOVERY" || (parsed.data.type === undefined && existing.type === "DISCOVERY")) &&
-    !isInstructorOrAbove(session.user.role)
+    !isStaff
   ) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // Un élève/pilote ne modifie que SES réservations (voir permissions.ts),
+  // sans pouvoir en changer le pilote, bloquer l'avion pour maintenance ni
+  // forcer un statut (départ/retour/annulation ont leurs propres routes).
+  if (!isStaff) {
+    if (existing.studentId !== session.user.id) {
+      return NextResponse.json({ error: "Tu ne peux modifier que tes propres réservations." }, { status: 403 });
+    }
+    if (
+      (parsed.data.studentId !== undefined && parsed.data.studentId !== session.user.id) ||
+      parsed.data.type === "MAINTENANCE" ||
+      parsed.data.status !== undefined
+    ) {
+      return NextResponse.json({ error: "Modification non autorisée." }, { status: 403 });
+    }
   }
 
   const { startTime, endTime, isBaptism: requestedBaptism, ...rest } = parsed.data;
@@ -153,10 +171,27 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
+  // Formation (tarif d'instruction), plus demandée à la réservation (voir
+  // POST) : retirée si le vol n'est plus une instruction, reprise de
+  // l'inscription en cours du pilote s'il devient une instruction ou change
+  // de pilote — sauf valeur envoyée explicitement, toujours respectée.
+  let programUpdate: { trainingProgramId?: string | null } = {};
+  if (effectiveType !== "INSTRUCTION") {
+    if (existing.trainingProgramId || parsed.data.trainingProgramId) programUpdate = { trainingProgramId: null };
+  } else if (
+    parsed.data.trainingProgramId === undefined &&
+    (existing.type !== "INSTRUCTION" || effectiveStudentId !== existing.studentId)
+  ) {
+    programUpdate = {
+      trainingProgramId: effectiveStudentId ? await currentTrainingProgramId(effectiveStudentId) : null,
+    };
+  }
+
   const reservation = await prisma.reservation.update({
     where: { id },
     data: {
       ...rest,
+      ...programUpdate,
       ...(startTime ? { startTime: new Date(startTime) } : {}),
       ...(endTime ? { endTime: new Date(endTime) } : {}),
       ...isBaptismUpdate,
@@ -190,6 +225,10 @@ export async function DELETE(_req: Request, { params }: Params) {
       { error: "Ce vol est clôturé et verrouillé. Seul le Gérant peut l'annuler." },
       { status: 403 }
     );
+  }
+  // Un élève/pilote n'annule que SES réservations (voir permissions.ts).
+  if (!isInstructorOrAbove(session.user.role) && existing.studentId !== session.user.id) {
+    return NextResponse.json({ error: "Tu ne peux annuler que tes propres réservations." }, { status: 403 });
   }
 
   const cancelled = await prisma.reservation.update({

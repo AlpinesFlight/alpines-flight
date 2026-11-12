@@ -1,54 +1,67 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { X, Trash2, PlaneTakeoff, PlaneLanding, Plus, Lock } from "lucide-react";
+import { clsx } from "clsx";
+import {
+  CalendarClock,
+  GraduationCap,
+  Lock,
+  Pencil,
+  Plane,
+  PlaneLanding,
+  PlaneTakeoff,
+  StickyNote,
+  Trash2,
+  UserRound,
+  Wrench,
+} from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Aircraft, Reservation, ReservationType, TrainingProgram, UserLite } from "@/types/models";
-import { formatMoney, formatHoursMinutes, durationHours } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { canManageFinance, isInstructorOrAbove } from "@/lib/permissions";
+import { nightViolationMessage } from "@/lib/reservation-rules";
+import {
+  BookingKind,
+  TYPE_LABELS,
+  aeronauticalDay,
+  bookableAircraft,
+  combineDateTime,
+  deriveReservationType,
+  findAircraftConflict,
+  findInstructorConflict,
+  formatClock,
+  formatDurationMs,
+  formatSlot,
+  isTraineePilot,
+  personName,
+  pickDefaultAircraft,
+  toDateInput,
+  toTimeInput,
+} from "@/lib/reservation-form";
+import { CompleteFlightPanel, DepartPanel } from "./FlightReportPanels";
+import { Field, Sheet, SheetFooter, SheetSection } from "./Sheet";
 
-// Types proposés à la création/édition depuis ce formulaire générique —
-// DISCOVERY n'y figure pas volontairement : un vol découverte se crée et se
-// modifie (coordonnées client, tarif) depuis la page dédiée /decouverte,
-// pour ne pas dupliquer ce formulaire-ci. Il reste néanmoins visible et
-// clôturable ici une fois apparu sur le planning (voir isDiscovery plus bas).
-const TYPE_OPTIONS: { value: ReservationType; label: string }[] = [
-  { value: "INSTRUCTION", label: "Instruction" },
-  { value: "SOLO", label: "Solo supervisé" },
-  { value: "LOCATION", label: "Location" },
-  { value: "MAINTENANCE", label: "Maintenance" },
-];
-const TYPE_LABELS: Record<ReservationType, string> = {
-  INSTRUCTION: "Instruction",
-  SOLO: "Solo supervisé",
-  LOCATION: "Location",
-  MAINTENANCE: "Maintenance",
-  DISCOVERY: "Vol découverte",
-};
+// Réservation d'un avion, sur le modèle des logiciels d'aéroclub type
+// Aerogest : on choisit l'avion, le créneau, et l'instructeur s'il y en a un
+// — c'est tout. Le type de vol (instruction, solo supervisé, location) n'est
+// plus demandé, il se déduit de qui vole (voir deriveReservationType) ; la
+// formation (tarif d'instruction) non plus, elle vient de l'inscription en
+// cours du pilote (voir /api/reservations) et reste modifiable au
+// compte-rendu. Un élève/pilote réserve pour lui-même : il n'a pas à se
+// choisir dans une liste.
 
-function toLocalInput(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`;
-}
+type Panel = "summary" | "edit" | "depart" | "complete";
 
-export function ReservationModal({
-  initialStart,
-  initialEnd,
-  existing,
-  aircraftList,
-  instructors,
-  students,
-  programs,
-  onClose,
-  onSaved,
-  onDeleted,
-}: {
+interface ReservationModalProps {
   initialStart: Date;
   initialEnd: Date;
+  // Avion de la colonne cliquée sur le planning (vue Jour), s'il y en a une.
+  initialAircraftId?: string;
   existing?: Reservation | null;
+  // Toutes les réservations chargées par le planning — pour signaler un
+  // avion ou un instructeur déjà pris AVANT l'envoi (le serveur revérifie).
+  reservations: Reservation[];
   aircraftList: Aircraft[];
   instructors: UserLite[];
   students: UserLite[];
@@ -56,86 +69,541 @@ export function ReservationModal({
   onClose: () => void;
   onSaved: () => void;
   onDeleted?: () => void;
-}) {
+}
+
+export function ReservationModal(props: ReservationModalProps) {
+  const { existing, onClose, onSaved } = props;
   const { data: session } = useSession();
-  const [aircraftId, setAircraftId] = useState(existing?.aircraftId ?? aircraftList[0]?.id ?? "");
-  const [studentChoice, setStudentId] = useState<string | null>(existing ? existing.studentId ?? "" : null);
-  const [instructorChoice, setInstructorId] = useState<string | null>(existing ? existing.instructorId ?? "" : null);
-  const [trainingProgramId, setTrainingProgramId] = useState(existing?.trainingProgramId ?? "");
-  const [type, setType] = useState<ReservationType>(existing?.type ?? "INSTRUCTION");
-  // À la création (pas en édition), pré-remplit selon le compte qui réserve :
-  // un élève/pilote comme pilote, un instructeur comme instructeur — et, en
-  // Location, toujours le compte lui-même comme pilote (celui qui loue
-  // l'avion le pilote), instructeur et Gérant compris. Hors Location, jamais
-  // le Gérant comme pilote (exclu à sa demande). Recalculé à chaque rendu
-  // tant que rien n'a été choisi à la main (choix null) : suit le type
-  // choisi, et la session et les listes élèves/instructeurs, qui arrivent
-  // parfois après l'ouverture du formulaire (réseau lent sur mobile).
-  const me = session?.user?.id;
-  const meIsStudent = !!me && students.some((s) => s.id === me);
-  const meIsInstructor = !!me && instructors.some((i) => i.id === me);
-  const meAsPilot =
-    type === "LOCATION" ? meIsStudent || meIsInstructor : meIsStudent && session?.user?.role !== "GERANT";
-  const meAsInstructor = !meAsPilot && meIsInstructor;
-  const studentId = studentChoice ?? (meAsPilot && me ? me : "");
-  const instructorId = instructorChoice ?? (meAsInstructor && me ? me : "");
-  const [start, setStart] = useState(toLocalInput(existing ? new Date(existing.startTime) : initialStart));
-  const [end, setEnd] = useState(toLocalInput(existing ? new Date(existing.endTime) : initialEnd));
-  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const me = session?.user?.id ?? "";
+  const role = session?.user?.role;
+  const isStaff = isInstructorOrAbove(role);
+  const isOwner = !!existing && !!me && existing.studentId === me;
+  const isDiscovery = existing?.type === "DISCOVERY";
+  // Vol clôturé = verrouillé, sauf pour le Gérant (correction exceptionnelle
+  // — ça touche au débit déjà comptabilisé, donc réservé aux finances).
+  const isLocked = !!existing && existing.status === "COMPLETED" && !canManageFinance(role);
+  // Un élève/pilote ne modifie et n'annule que SES réservations (règle aussi
+  // appliquée par /api/reservations/[id]) ; un vol découverte se gère côté
+  // staff (coordonnées client, tarif : page Vol découverte).
+  const canEdit = !existing || (!isLocked && (isStaff || (isOwner && !isDiscovery)));
+  const canAct = !!existing && (isStaff || isOwner);
+
+  const [panel, setPanel] = useState<Panel>(existing ? "summary" : "edit");
+
+  const title =
+    panel === "depart"
+      ? "Valider le départ"
+      : panel === "complete"
+      ? "Compte-rendu de vol"
+      : !existing
+      ? "Réserver un avion"
+      : panel === "edit"
+      ? "Modifier la réservation"
+      : TYPE_LABELS[existing.type];
+  // Rappel de l'avion et du créneau sur les écrans départ/retour — la fiche
+  // et le formulaire les affichent déjà en clair.
+  const subtitle =
+    existing && (panel === "depart" || panel === "complete")
+      ? `${existing.aircraft.registration} · ${formatSlot(new Date(existing.startTime), new Date(existing.endTime))}`
+      : undefined;
+
+  return (
+    <Sheet title={title} subtitle={subtitle} onClose={onClose}>
+      {panel === "summary" && existing && (
+        <ReservationSummary
+          reservation={existing}
+          canEdit={canEdit}
+          canAct={canAct}
+          isStaff={isStaff}
+          isLocked={isLocked}
+          onEdit={() => setPanel("edit")}
+          onDepart={() => setPanel("depart")}
+          onComplete={() => setPanel("complete")}
+          onCancelled={props.onDeleted ?? onSaved}
+        />
+      )}
+      {panel === "edit" && canEdit && (
+        <ReservationForm
+          {...props}
+          me={me}
+          isStaff={isStaff}
+          onBack={existing ? () => setPanel("summary") : undefined}
+        />
+      )}
+      {panel === "depart" && existing && (
+        <DepartPanel reservation={existing} onCancel={() => setPanel("summary")} onDeparted={onSaved} />
+      )}
+      {panel === "complete" && existing && (
+        <CompleteFlightPanel
+          reservation={existing}
+          instructors={props.instructors}
+          programs={props.programs}
+          onCancel={() => setPanel("summary")}
+          onCompleted={onSaved}
+        />
+      )}
+    </Sheet>
+  );
+}
+
+// ---------- Fiche d'une réservation existante ----------
+
+const STATUS_CHIP: Record<string, { label: string; className: string }> = {
+  CONFIRMED: { label: "Réservé", className: "bg-navy-50 text-navy-700" },
+  IN_FLIGHT: { label: "En vol", className: "bg-sunset-100 text-sunset-600" },
+  COMPLETED: { label: "Vol effectué", className: "bg-green-100 text-green-700" },
+  CANCELLED: { label: "Annulé", className: "bg-navy-50 text-navy-500" },
+};
+
+function SummaryRow({ icon: Icon, children }: { icon: typeof Plane; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 px-3.5 py-2.5">
+      <Icon size={16} className="text-navy-400 mt-0.5 shrink-0" />
+      <div className="text-sm text-navy-800 min-w-0 break-words">{children}</div>
+    </div>
+  );
+}
+
+function ReservationSummary({
+  reservation: r,
+  canEdit,
+  canAct,
+  isStaff,
+  isLocked,
+  onEdit,
+  onDepart,
+  onComplete,
+  onCancelled,
+}: {
+  reservation: Reservation;
+  canEdit: boolean;
+  canAct: boolean;
+  isStaff: boolean;
+  isLocked: boolean;
+  onEdit: () => void;
+  onDepart: () => void;
+  onComplete: () => void;
+  onCancelled: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const start = new Date(r.startTime);
+  const end = new Date(r.endTime);
+  const flies = r.type !== "MAINTENANCE";
+  const canDepart = canAct && flies && r.status === "CONFIRMED";
+  const canComplete = canAct && flies && (r.status === "IN_FLIGHT" || (isStaff && r.status === "CONFIRMED"));
+  const chip = STATUS_CHIP[r.status] ?? STATUS_CHIP.CONFIRMED;
+
+  const pilotLine =
+    r.type === "DISCOVERY"
+      ? [r.clientName, r.clientPhone, r.priceCents != null ? formatMoney(r.priceCents) : null].filter(Boolean).join(" · ")
+      : r.type === "MAINTENANCE"
+      ? null
+      : r.student
+      ? personName(r.student)
+      : "Pilote à définir";
+  const instructorLine = r.instructor
+    ? r.type === "SOLO"
+      ? `Solo supervisé par ${personName(r.instructor)}`
+      : `Avec ${personName(r.instructor)}`
+    : null;
+
+  async function handleCancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/reservations/${r.id}`, { method: "DELETE" });
+      onCancelled();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="px-5 pb-5 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={clsx(
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
+              chip.className
+            )}
+          >
+            {r.status === "IN_FLIGHT" && (
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sunset-500 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-sunset-500" />
+              </span>
+            )}
+            {chip.label}
+          </span>
+          {r.isBaptism && (
+            <span className="rounded-full bg-cream-100 text-navy-700 px-2.5 py-1 text-xs font-semibold">Vol baptême</span>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-navy-100 divide-y divide-navy-100">
+          <SummaryRow icon={Plane}>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.aircraft.color }} />
+              <span className="font-semibold text-navy-900">{r.aircraft.registration}</span>
+              <span className="text-navy-500">{r.aircraft.type}</span>
+            </span>
+          </SummaryRow>
+          <SummaryRow icon={CalendarClock}>
+            <span className="first-letter:uppercase inline-block">{formatSlot(start, end)}</span>{" "}
+            <span className="text-navy-500">({formatDurationMs(end.getTime() - start.getTime())})</span>
+          </SummaryRow>
+          {pilotLine && <SummaryRow icon={UserRound}>{pilotLine}</SummaryRow>}
+          {instructorLine && (
+            <SummaryRow icon={GraduationCap}>
+              {instructorLine}
+              {r.type === "INSTRUCTION" && r.trainingProgram && (
+                <span className="block text-xs text-navy-500 mt-0.5">{r.trainingProgram.title}</span>
+              )}
+            </SummaryRow>
+          )}
+          {r.notes && <SummaryRow icon={StickyNote}>{r.notes}</SummaryRow>}
+        </div>
+
+        {(canDepart || canComplete) && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            {canDepart && (
+              <button
+                type="button"
+                onClick={onDepart}
+                className="flex-1 h-11 rounded-xl bg-navy-800 hover:bg-navy-900 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+              >
+                <PlaneTakeoff size={17} /> Valider le départ
+              </button>
+            )}
+            {canComplete && (
+              <button
+                type="button"
+                onClick={onComplete}
+                className={clsx(
+                  "flex-1 h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors",
+                  r.status === "IN_FLIGHT"
+                    ? "bg-sunset-500 hover:bg-sunset-600 text-white"
+                    : "border border-navy-200 text-navy-800 hover:bg-navy-50"
+                )}
+              >
+                <PlaneLanding size={17} /> Valider le retour
+              </button>
+            )}
+          </div>
+        )}
+
+        {isLocked && (
+          <p className="text-sm text-navy-500 flex items-center gap-2">
+            <Lock size={14} className="shrink-0" /> Vol clôturé : seul le Gérant peut encore le modifier.
+          </p>
+        )}
+        {r.type === "DISCOVERY" && isStaff && (
+          <p className="text-xs text-navy-500">
+            Coordonnées du client et tarif :{" "}
+            <a href="/decouverte" className="font-medium text-sunset-600 hover:underline">
+              page Vol découverte
+            </a>
+            .
+          </p>
+        )}
+        {error && <p className="text-sm text-red-600 bg-red-100/70 rounded-xl px-3 py-2">{error}</p>}
+      </div>
+
+      {canEdit && (
+        <SheetFooter>
+          {confirming ? (
+            <>
+              <span className="mr-auto text-sm font-medium text-navy-800">Annuler cette réservation ?</span>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                className="text-sm font-medium text-navy-600 hover:text-navy-900 px-2"
+              >
+                Non
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={busy}
+                className="h-10 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors disabled:opacity-60"
+              >
+                {busy ? "Annulation…" : "Oui, annuler"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirming(true)}
+                className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-500"
+              >
+                <Trash2 size={15} /> Annuler la réservation
+              </button>
+              <button
+                type="button"
+                onClick={onEdit}
+                className="ml-auto h-10 px-4 rounded-xl border border-navy-200 text-navy-800 hover:bg-navy-50 text-sm font-semibold flex items-center gap-2 transition-colors"
+              >
+                <Pencil size={15} /> Modifier
+              </button>
+            </>
+          )}
+        </SheetFooter>
+      )}
+    </div>
+  );
+}
+
+// ---------- Formulaire (création / modification) ----------
+
+const DURATIONS = [
+  { minutes: 60, label: "1h" },
+  { minutes: 90, label: "1h30" },
+  { minutes: 120, label: "2h" },
+  { minutes: 180, label: "3h" },
+];
+
+const AIRCRAFT_STATUS_LABEL: Record<string, string> = {
+  MAINTENANCE: "En maintenance",
+  GROUNDED: "Immobilisé",
+  RETIRED: "Retiré de la flotte",
+};
+
+// "de 10:00 à 11:00" si l'autre réservation tient dans la journée choisie,
+// sinon avec les dates (réservation sur plusieurs jours).
+function describeRange(r: Reservation, day: string): string {
+  const s = new Date(r.startTime);
+  const e = new Date(r.endTime);
+  if (toDateInput(s) === day && toDateInput(e) === day) return `de ${formatClock(s)} à ${formatClock(e)}`;
+  const d = (x: Date) => x.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  return `du ${d(s)} ${formatClock(s)} au ${d(e)} ${formatClock(e)}`;
+}
+
+function segmentClass(active: boolean) {
+  return clsx(
+    "flex items-center gap-1.5 rounded-lg px-3 h-8 text-sm font-medium transition-colors",
+    active ? "bg-white text-navy-900 shadow-sm" : "text-navy-500 hover:text-navy-800"
+  );
+}
+
+function ReservationForm({
+  existing,
+  initialStart,
+  initialEnd,
+  initialAircraftId,
+  reservations,
+  aircraftList,
+  instructors,
+  students,
+  me,
+  isStaff,
+  onBack,
+  onSaved,
+}: ReservationModalProps & { me: string; isStaff: boolean; onBack?: () => void }) {
+  const isDiscovery = existing?.type === "DISCOVERY";
+  const fleet = useMemo(() => bookableAircraft(aircraftList, existing?.aircraftId), [aircraftList, existing?.aircraftId]);
+
+  const [initial] = useState(() => ({
+    start: existing ? new Date(existing.startTime) : initialStart,
+    end: existing ? new Date(existing.endTime) : initialEnd,
+  }));
+  const [date, setDate] = useState(() => toDateInput(initial.start));
+  const [startClock, setStartClock] = useState(() => toTimeInput(initial.start));
+  const [endDate, setEndDate] = useState(() => toDateInput(initial.end));
+  const [endClock, setEndClock] = useState(() => toTimeInput(initial.end));
+  const [multiDay, setMultiDay] = useState(() => toDateInput(initial.start) !== toDateInput(initial.end));
+  // null = rien choisi à la main : valeur par défaut recalculée à chaque
+  // rendu (suit le créneau, et les listes qui arrivent parfois après
+  // l'ouverture du formulaire sur un réseau mobile lent).
+  const [aircraftChoice, setAircraftChoice] = useState<string | null>(existing?.aircraftId ?? initialAircraftId ?? null);
+  const [kind, setKind] = useState<BookingKind>(existing?.type === "MAINTENANCE" ? "MAINTENANCE" : "FLIGHT");
+  const [pilotChoice, setPilotChoice] = useState<string | null>(existing ? existing.studentId ?? "" : null);
+  const [instructorChoice, setInstructorChoice] = useState<string | null>(
+    existing ? existing.instructorId ?? "none" : null
+  );
+  const [soloSupervised, setSoloSupervised] = useState(existing?.type === "SOLO" && !!existing.instructorId);
   // Choisi ici, à la réservation — pas à la clôture (demande explicite :
   // "faux vol baptême" facturé après coup, alors qu'aucune case n'était
-  // proposée avant le vol). Revérifié de toute façon côté serveur contre
+  // proposée avant le vol). Revérifié côté serveur contre
   // StudentProfile.canGiveBaptism.
   const [isBaptism, setIsBaptism] = useState(existing?.isBaptism ?? false);
+  const [notes, setNotes] = useState(existing?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [panel, setPanel] = useState<"form" | "depart" | "complete">("form");
 
-  const selectedStudent = students.find((s) => s.id === studentId);
-  // N'a de sens que pour un vol solo/location d'un pilote autorisé — un vol
-  // d'instruction facture déjà l'instructeur séparément.
+  const start = combineDateTime(date, startClock);
+  const end = combineDateTime(multiDay ? endDate : date, endClock);
+  const range = start && end && end > start ? { start, end } : null;
+
+  const aircraftId =
+    aircraftChoice ?? (range ? pickDefaultAircraft(fleet, reservations, range.start, range.end) : fleet[0]?.id ?? "");
+  const aircraft = aircraftList.find((a) => a.id === aircraftId);
+
+  // Pilote : un élève/pilote réserve pour lui-même ; le staff choisit (ou
+  // laisse "à définir").
+  const pilotId = isStaff ? pilotChoice ?? "" : me;
+  const pilotIsTrainee = isTraineePilot(pilotId, students);
+  const pilot = students.find((s) => s.id === pilotId) ?? instructors.find((i) => i.id === pilotId);
+  // Instructeur : "none" = sans instructeur, "" = pas encore choisi. Un FI
+  // qui réserve est proposé d'office ; un élève doit choisir explicitement
+  // (sinon un oubli transformerait une leçon en vol solo).
+  const meIsInstructor = !!me && instructors.some((i) => i.id === me);
+  const defaultInstructor = isStaff && meIsInstructor && pilotId !== me ? me : pilotIsTrainee ? "" : "none";
+  const instructorValue = instructorChoice ?? defaultInstructor;
+  const instructorId = instructorValue && instructorValue !== "none" ? instructorValue : "";
+  const instructor = instructors.find((i) => i.id === instructorId);
+
+  const isFlight = isDiscovery || kind === "FLIGHT";
+  const type: ReservationType = isDiscovery
+    ? "DISCOVERY"
+    : deriveReservationType({ kind, pilotIsTrainee, instructorId, soloSupervised });
+
+  // Vol baptême : seulement un vol seul (solo/location) d'un pilote autorisé
+  // — un vol d'instruction facture déjà l'instructeur séparément.
   const canBeBaptism =
-    !!studentId &&
-    selectedStudent?.studentProfile?.canGiveBaptism === true &&
+    !isDiscovery &&
+    !!pilotId &&
+    students.find((s) => s.id === pilotId)?.studentProfile?.canGiveBaptism === true &&
     (type === "SOLO" || type === "LOCATION");
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+  const aircraftConflict = range
+    ? findAircraftConflict(reservations, aircraftId, range.start, range.end, existing?.id)
+    : null;
+  const instructorConflict =
+    range && isFlight
+      ? findInstructorConflict(reservations, instructorId, type, range.start, range.end, existing?.id)
+      : null;
+  const nightError = range ? nightViolationMessage(type, range.start, range.end) : null;
+  const aeroDay = start && isFlight ? aeronauticalDay(start) : null;
+
+  // Ce qui empêche d'enregistrer, dans l'ordre où on le corrige : une
+  // indication neutre tant que la saisie est incomplète, en rouge pour un
+  // vrai conflit — toujours une phrase, jamais un bouton grisé muet.
+  let blocker: { text: string; tone: "hint" | "error" } | null = null;
+  if (!start || !end) blocker = { text: "Indique la date et les heures.", tone: "hint" };
+  else if (end <= start) blocker = { text: "L'heure de fin doit être après l'heure de début.", tone: "error" };
+  else if (!aircraftId) blocker = { text: "Choisis un avion.", tone: "hint" };
+  else if (nightError) blocker = { text: nightError, tone: "error" };
+  else if (aircraftConflict)
+    blocker = {
+      text: `${aircraft?.registration ?? "Cet avion"} est déjà réservé ${describeRange(aircraftConflict, date)}${
+        aircraftConflict.student ? ` (${personName(aircraftConflict.student)})` : ""
+      }.`,
+      tone: "error",
+    };
+  else if (isFlight && !isDiscovery && pilotIsTrainee && instructorValue === "")
+    blocker = {
+      text: `Choisis ${isStaff ? "l'" : "ton "}instructeur, ou « Sans instructeur » pour un vol solo.`,
+      tone: "hint",
+    };
+  else if (instructorConflict)
+    blocker = {
+      text: `${personName(instructor)} est déjà à bord d'un autre vol ${describeRange(instructorConflict, date)}.`,
+      tone: "error",
+    };
+  else if (isStaff && kind === "FLIGHT" && !isDiscovery && !pilotId && !instructorId)
+    blocker = { text: "Indique le pilote, ou au moins l'instructeur.", tone: "hint" };
+  else if (pilotId && instructorId && pilotId === instructorId)
+    blocker = { text: "Le pilote et l'instructeur ne peuvent pas être la même personne.", tone: "error" };
+
+  const studentIdToSave = isDiscovery ? existing?.studentId ?? null : kind === "MAINTENANCE" ? null : pilotId || null;
+  const instructorIdToSave = kind === "MAINTENANCE" && !isDiscovery ? null : instructorId || null;
+  const baptismToSave = canBeBaptism && isBaptism;
+  const notesToSave = notes.trim() || null;
+
+  const dirty =
+    !existing ||
+    !range ||
+    aircraftId !== existing.aircraftId ||
+    range.start.getTime() !== new Date(existing.startTime).getTime() ||
+    range.end.getTime() !== new Date(existing.endTime).getTime() ||
+    type !== existing.type ||
+    studentIdToSave !== existing.studentId ||
+    instructorIdToSave !== existing.instructorId ||
+    notesToSave !== (existing.notes ?? null) ||
+    (!isDiscovery && baptismToSave !== existing.isBaptism);
+
+  function changeStartClock(value: string) {
+    // Déplacer l'heure de début garde la durée choisie (la fin suit).
+    if (!multiDay && range) {
+      const next = combineDateTime(date, value);
+      if (next) {
+        const shiftedEnd = new Date(next.getTime() + (range.end.getTime() - range.start.getTime()));
+        if (toDateInput(shiftedEnd) === date) setEndClock(toTimeInput(shiftedEnd));
+      }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    setStartClock(value);
+  }
+
+  function changeDate(value: string) {
+    setDate(value);
+    if (multiDay && endDate < value) setEndDate(value);
+  }
+
+  function applyDuration(minutes: number) {
+    if (!start) return;
+    const nextEnd = new Date(start.getTime() + minutes * 60_000);
+    if (toDateInput(nextEnd) !== date) {
+      setMultiDay(true);
+      setEndDate(toDateInput(nextEnd));
+    }
+    setEndClock(toTimeInput(nextEnd));
+  }
+
+  function toggleMultiDay() {
+    if (multiDay) {
+      setMultiDay(false);
+      setEndDate(date);
+      const sameDayEnd = combineDateTime(date, endClock);
+      if (start && (!sameDayEnd || sameDayEnd <= start)) {
+        setEndClock(toTimeInput(new Date(start.getTime() + 60 * 60_000)));
+      }
+    } else {
+      setMultiDay(true);
+      setEndDate(date);
+    }
+  }
+
+  function changePilot(value: string) {
+    setPilotChoice(value);
+    // Le pilote ne peut pas être son propre instructeur : on revient au
+    // choix par défaut plutôt que de garder une combinaison impossible.
+    if (value && value === instructorId) setInstructorChoice(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (blocker || !range) return;
     setSaving(true);
     setError(null);
     try {
-      const showsInstructor = type === "INSTRUCTION" || type === "SOLO" || isDiscovery;
-      const payload = {
-        aircraftId,
-        instructorId: showsInstructor ? instructorId || null : null,
-        studentId: studentId || null,
-        trainingProgramId: type === "INSTRUCTION" ? trainingProgramId || null : null,
-        type,
-        startTime: new Date(start).toISOString(),
-        endTime: new Date(end).toISOString(),
-        notes: notes || null,
-        isBaptism: canBeBaptism && isBaptism,
-      };
-
-      if (existing) {
-        await apiFetch(`/api/reservations/${existing.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await apiFetch(`/api/reservations`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      }
+      const payload = isDiscovery
+        ? {
+            aircraftId,
+            instructorId: instructorIdToSave,
+            startTime: range.start.toISOString(),
+            endTime: range.end.toISOString(),
+            notes: notesToSave,
+          }
+        : {
+            aircraftId,
+            type,
+            studentId: studentIdToSave,
+            instructorId: instructorIdToSave,
+            startTime: range.start.toISOString(),
+            endTime: range.end.toISOString(),
+            notes: notesToSave,
+            isBaptism: baptismToSave,
+          };
+      await apiFetch(existing ? `/api/reservations/${existing.id}` : "/api/reservations", {
+        method: existing ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
@@ -144,818 +612,317 @@ export function ReservationModal({
     }
   }
 
-  async function handleDelete() {
-    if (!existing) return;
-    setSaving(true);
-    try {
-      await apiFetch(`/api/reservations/${existing.id}`, { method: "DELETE" });
-      onDeleted?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const durationMinutes = range ? Math.round((range.end.getTime() - range.start.getTime()) / 60_000) : 0;
+  const trainees = students.filter((s) => s.studentProfile?.isPilot !== true);
+  const licensed = students.filter((s) => s.studentProfile?.isPilot === true);
 
-  const role = session?.user?.role;
-  const isStaff = isInstructorOrAbove(role);
-  const isOwner = !!existing && existing.studentId === session?.user?.id;
-  const canAct = isStaff || isOwner;
-  const isDiscovery = existing?.type === "DISCOVERY";
-
-  // Vol clôturé = verrouillé, sauf pour le Gérant (correction exceptionnelle
-  // — ça touche au débit déjà comptabilisé, donc réservé aux finances).
-  const isLocked = !!existing && existing.status === "COMPLETED" && !canManageFinance(role);
-
-  const canDepart = canAct && !!existing && existing.status === "CONFIRMED" && existing.type !== "MAINTENANCE";
-  const canComplete =
-    canAct &&
-    !!existing &&
-    existing.type !== "MAINTENANCE" &&
-    (existing.status === "IN_FLIGHT" || (isStaff && existing.status === "CONFIRMED"));
+  const recap = !isFlight
+    ? "Avion bloqué pour maintenance"
+    : type === "DISCOVERY"
+    ? `Vol découverte${existing?.clientName ? ` — ${existing.clientName}` : ""}`
+    : type === "INSTRUCTION"
+    ? `Vol d'instruction avec ${personName(instructor)}`
+    : type === "SOLO"
+    ? instructor
+      ? `Solo supervisé par ${personName(instructor)}`
+      : "Vol solo"
+    : "Location — vol seul";
 
   return (
-    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100 sticky top-0 bg-white">
-          <h2 className="font-semibold text-navy-900">
-            {panel === "depart"
-              ? "Validation du départ"
-              : panel === "complete"
-              ? "Compte-rendu de vol"
-              : existing
-              ? "Modifier la réservation"
-              : "Nouvelle réservation"}
-          </h2>
-          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
-            <X size={20} />
-          </button>
-        </div>
-
-        {panel === "depart" && existing && (
-          <DepartPanel
-            reservation={existing}
-            onCancel={() => setPanel("form")}
-            onDeparted={onSaved}
-          />
-        )}
-
-        {panel === "complete" && existing && (
-          <CompleteFlightPanel
-            reservation={existing}
-            instructors={instructors}
-            programs={programs}
-            onCancel={() => setPanel("form")}
-            onCompleted={onSaved}
-          />
-        )}
-
-        {panel === "form" && isLocked && existing && <LockedSummary reservation={existing} />}
-
-        {panel === "form" && !isLocked && (
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
-          {existing && existing.status === "IN_FLIGHT" && (
-            <div className="rounded-lg bg-sunset-100 text-sunset-600 text-sm font-medium px-3 py-2 flex items-center gap-2">
-              <PlaneTakeoff size={16} /> Vol en cours — départ validé
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Début">
-              <input
-                type="datetime-local"
-                required
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className="input"
-              />
-            </Field>
-            <Field label="Fin">
-              <input
-                type="datetime-local"
-                required
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                className="input"
-              />
-            </Field>
-          </div>
-
-          <Field label="Avion">
-            <select
-              required
-              value={aircraftId}
-              onChange={(e) => setAircraftId(e.target.value)}
-              className="input"
-            >
-              {aircraftList.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.registration} — {a.type}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Type">
-            {isDiscovery ? (
-              <p className="input bg-navy-50 text-navy-600">Vol découverte</p>
-            ) : (
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as ReservationType)}
-                className="input"
-              >
-                {TYPE_OPTIONS.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
-
-          {isDiscovery ? (
-            <Field label="Client">
-              <p className="input bg-navy-50 text-navy-700">
-                {existing?.clientName}
-                {existing?.clientPhone ? ` · ${existing.clientPhone}` : ""}
-                {existing?.priceCents != null ? ` · ${formatMoney(existing.priceCents)}` : ""}
-              </p>
-              <p className="text-[11px] text-navy-500 mt-1">
-                Coordonnées et tarif modifiables depuis la page{" "}
-                <a href="/decouverte" className="text-sunset-600 hover:underline">
-                  Vol découverte
-                </a>
-                .
-              </p>
-            </Field>
-          ) : (
-            // Une location est prise par un pilote déjà breveté, pas un
-            // élève en formation — même distinction que partout ailleurs
-            // dans l'appli (voir StudentProfile.isPilot).
-            <Field label={type === "LOCATION" ? "Pilote" : "Élève"}>
-              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
-                <option value="">—</option>
-                <optgroup label="Élèves">
-                  {students.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.firstName} {s.lastName}
-                    </option>
-                  ))}
-                </optgroup>
-                {/* Un FI peut lui-même être le pilote débité (ex. deux FI qui
-                    volent ensemble, l'un en instruction/contrôle de l'autre) —
-                    voir StudentProfile créé à la volée pour lui dans ce cas,
-                    /api/reservations/[id]/complete. */}
-                <optgroup label="Instructeurs">
-                  {instructors.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.firstName} {i.lastName}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </Field>
-          )}
-
-          {canBeBaptism && (
-            <label className="flex items-center gap-2 text-sm text-navy-700 rounded-lg border border-navy-100 px-3 py-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isBaptism}
-                onChange={(e) => setIsBaptism(e.target.checked)}
-              />
-              Vol baptême — {selectedStudent?.firstName} est autorisé(e), aucun débit sur son compte
-            </label>
-          )}
-
-          {type === "INSTRUCTION" && (
-            <Field label="Formation (détermine le tarif d'instruction)">
-              <select
-                value={trainingProgramId}
-                onChange={(e) => setTrainingProgramId(e.target.value)}
-                className="input"
-              >
-                <option value="">— tarif par défaut de l&apos;instructeur —</option>
-                {programs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                    {p.instructionRateCents ? ` — ${formatMoney(p.instructionRateCents)}/h` : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-
-          {(type === "INSTRUCTION" || type === "SOLO" || isDiscovery) && (
-            <Field label="Instructeur">
-              <select
-                value={instructorId}
-                onChange={(e) => setInstructorId(e.target.value)}
-                className="input"
-              >
-                <option value="">—</option>
-                {instructors.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.firstName} {i.lastName}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-
-          <Field label="Notes">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="input min-h-16"
-            />
-          </Field>
-
-          {error && (
-            <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          <div className="flex items-center justify-between mt-1">
-            {existing ? (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={saving}
-                className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
-              >
-                <Trash2 size={16} /> Annuler la réservation
-              </button>
-            ) : (
-              <span />
-            )}
+    <form onSubmit={handleSubmit}>
+      <div className="px-5 pb-5 flex flex-col gap-5">
+        {isStaff && !isDiscovery && (
+          <div className="inline-flex self-start rounded-xl bg-navy-50 p-1" role="group" aria-label="Nature">
+            <button type="button" onClick={() => setKind("FLIGHT")} className={segmentClass(kind === "FLIGHT")}>
+              <Plane size={14} /> Vol
+            </button>
             <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
+              type="button"
+              onClick={() => setKind("MAINTENANCE")}
+              className={segmentClass(kind === "MAINTENANCE")}
             >
-              {saving ? "Enregistrement..." : existing ? "Enregistrer" : "Créer"}
+              <Wrench size={14} /> Maintenance
             </button>
           </div>
-
-          {(canDepart || canComplete) && (
-            <div className="flex items-center gap-2 border-t border-navy-100 pt-3 mt-1">
-              {canDepart && (
-                <button
-                  type="button"
-                  onClick={() => setPanel("depart")}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 font-semibold px-3.5 py-2 text-sm transition-colors"
-                >
-                  <PlaneTakeoff size={16} /> Valider le départ
-                </button>
-              )}
-              {canComplete && (
-                <button
-                  type="button"
-                  onClick={() => setPanel("complete")}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 font-semibold px-3.5 py-2 text-sm transition-colors"
-                >
-                  <PlaneLanding size={16} /> Valider le retour
-                </button>
-              )}
-            </div>
-          )}
-        </form>
         )}
-      </div>
-    </div>
-  );
-}
 
-function LockedSummary({ reservation }: { reservation: Reservation }) {
-  return (
-    <div className="p-5 flex flex-col gap-4">
-      <div className="rounded-lg bg-green-100 text-green-700 text-sm font-medium px-3 py-2 flex items-center gap-2">
-        <Lock size={16} /> Vol clôturé — verrouillé. Seul le Gérant peut le modifier.
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-        <Field label="Avion">
-          <p className="text-navy-800">{reservation.aircraft.registration}</p>
-        </Field>
-        <Field label="Type">
-          <p className="text-navy-800">{TYPE_LABELS[reservation.type]}</p>
-        </Field>
-        <Field label={reservation.type === "DISCOVERY" ? "Client" : "Élève"}>
-          <p className="text-navy-800">
-            {reservation.student
-              ? `${reservation.student.firstName} ${reservation.student.lastName}`
-              : reservation.clientName ?? "—"}
-          </p>
-        </Field>
-        <Field label="Instructeur">
-          <p className="text-navy-800">
-            {reservation.instructor
-              ? `${reservation.instructor.firstName} ${reservation.instructor.lastName}`
-              : "—"}
-          </p>
-        </Field>
-        {reservation.trainingProgram && (
-          <Field label="Formation">
-            <p className="text-navy-800">{reservation.trainingProgram.title}</p>
-          </Field>
-        )}
-      </div>
-      {reservation.notes && (
-        <Field label="Notes">
-          <p className="text-navy-700">{reservation.notes}</p>
-        </Field>
-      )}
-    </div>
-  );
-}
-
-// Exporté : réutilisé tel quel par la page Vol découverte (/decouverte),
-// dont les réservations passent par le même cycle départ/retour.
-export function DepartPanel({
-  reservation,
-  onCancel,
-  onDeparted,
-}: {
-  reservation: Reservation;
-  onCancel: () => void;
-  onDeparted: () => void;
-}) {
-  const [departureTime, setDepartureTime] = useState(toLocalInput(new Date()));
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/reservations/${reservation.id}/depart`, {
-        method: "POST",
-        body: JSON.stringify({ departureTime: new Date(departureTime).toISOString() }),
-      });
-      onDeparted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
-      <p className="text-sm text-navy-600">
-        {reservation.aircraft.registration} — confirme l&apos;heure de départ réelle. Le
-        vol apparaîtra comme « en cours » jusqu&apos;au compte-rendu de retour.
-      </p>
-      <Field label="Heure de départ">
-        <input
-          type="datetime-local"
-          required
-          value={departureTime}
-          onChange={(e) => setDepartureTime(e.target.value)}
-          className="input"
-        />
-      </Field>
-      {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
-      <div className="flex items-center justify-between mt-1">
-        <button type="button" onClick={onCancel} className="text-sm text-navy-600 hover:text-navy-900">
-          Retour
-        </button>
-        <button
-          type="submit"
-          disabled={saving}
-          className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-900 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
-        >
-          <PlaneTakeoff size={16} /> {saving ? "Validation..." : "Valider le départ"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-interface StopRow {
-  airfield: string;
-  touchAndGo: string;
-}
-
-const FUEL_CARD_OPTIONS: { value: string; label: string }[] = [
-  { value: "BP", label: "BP" },
-  { value: "TOTAL", label: "Total" },
-  { value: "BADGE_TALLARD", label: "Badge Tallard" },
-];
-const FUEL_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "AVGAS_100LL", label: "Avgas 100LL" },
-  { value: "SP98", label: "SP98" },
-];
-
-// Exporté : réutilisé tel quel par la page Vol découverte (/decouverte).
-export function CompleteFlightPanel({
-  reservation,
-  instructors,
-  programs,
-  onCancel,
-  onCompleted,
-}: {
-  reservation: Reservation;
-  instructors: UserLite[];
-  programs: TrainingProgram[];
-  onCancel: () => void;
-  onCompleted: () => void;
-}) {
-  const [departureTime, setDepartureTime] = useState(
-    toLocalInput(reservation.actualDepartureTime ? new Date(reservation.actualDepartureTime) : new Date(reservation.startTime))
-  );
-  const [arrivalTime, setArrivalTime] = useState(toLocalInput(new Date()));
-  // LFNA (Gap-Tallard) pré-rempli par défaut au départ — la grande majorité
-  // des vols partent de la base de l'école, simple gain de temps, modifiable.
-  const [departureAirfield, setDepartureAirfield] = useState("LFNA");
-  const [arrivalAirfield, setArrivalAirfield] = useState("");
-  const [instructorId, setInstructorId] = useState(reservation.instructorId ?? "");
-  const [trainingProgramId, setTrainingProgramId] = useState(reservation.trainingProgramId ?? "");
-  // Vide par défaut : un vol direct posé en complet à destination n'a aucun
-  // touché à déclarer — son atterrissage à destination est compté d'office.
-  const [stops, setStops] = useState<StopRow[]>([]);
-  const [remarks, setRemarks] = useState("");
-  const [fuelRefillDone, setFuelRefillDone] = useState(false);
-  const [fuelCard, setFuelCard] = useState("BP");
-  const [fuelLiters, setFuelLiters] = useState("");
-  const [fuelType, setFuelType] = useState("AVGAS_100LL");
-  const [fuelAirfield, setFuelAirfield] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Tarif avion réellement appliqué à la clôture — peut différer du tarif
-  // standard de l'avion si ce pilote a une dérogation (voir
-  // PilotAircraftRate, réglable par le Gérant uniquement). Le calcul final
-  // se fait de toute façon côté serveur (jamais transmis dans le POST
-  // ci-dessous) ; ceci ne sert qu'à afficher une estimation juste pendant
-  // la saisie plutôt que de laisser croire au tarif standard par défaut.
-  const [aircraftRateCents, setAircraftRateCents] = useState(reservation.aircraft.hourlyRateCents);
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch<{ rateCents: number }>(`/api/reservations/${reservation.id}/effective-rate`)
-      .then((r) => {
-        if (!cancelled) setAircraftRateCents(r.rateCents);
-      })
-      .catch(() => {
-        // Best-effort : en cas d'échec, on garde le tarif standard déjà
-        // affiché plutôt que de bloquer la saisie du compte-rendu.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reservation.id]);
-
-  // Décidé à la réservation (Reservation.isBaptism), pas ici — voir
-  // ReservationModal ci-dessus. Revérifié de toute façon côté serveur au
-  // moment de la clôture (l'autorisation du pilote a pu être retirée
-  // depuis).
-  const isBaptism = reservation.isBaptism;
-
-  const durationMs = new Date(arrivalTime).getTime() - new Date(departureTime).getTime();
-  const duration = durationMs > 0 ? durationHours(new Date(departureTime), new Date(arrivalTime)) : 0;
-  const aircraftCostCents = duration > 0 ? Math.round(duration * aircraftRateCents) : 0;
-
-  const selectedInstructor = instructors.find((i) => i.id === instructorId);
-  const selectedProgram = programs.find((p) => p.id === trainingProgramId);
-  // Priorité au tarif de la formation visée (ex: PPL 25€/h, Montagne
-  // 40€/h) ; à défaut, tarif horaire par défaut de l'instructeur.
-  const programRateCents = selectedProgram?.instructionRateCents ?? null;
-  const instructorRateCents = selectedInstructor?.instructorProfile?.hourlyRateCents ?? null;
-  const instructionRateCents = programRateCents ?? instructorRateCents;
-  const isInstructionFlight = reservation.type === "INSTRUCTION" && !!instructorId;
-  const instructionCostCents =
-    isInstructionFlight && instructionRateCents && duration > 0
-      ? Math.round(duration * instructionRateCents)
-      : 0;
-  const totalCostCents = aircraftCostCents + instructionCostCents;
-
-  function updateStop(index: number, patch: Partial<StopRow>) {
-    setStops((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
-  }
-  function addStop() {
-    setStops((prev) => [...prev, { airfield: "", touchAndGo: "1" }]);
-  }
-  function removeStop(index: number) {
-    setStops((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/reservations/${reservation.id}/complete`, {
-        method: "POST",
-        body: JSON.stringify({
-          departureTime: new Date(departureTime).toISOString(),
-          arrivalTime: new Date(arrivalTime).toISOString(),
-          departureAirfield: departureAirfield.trim().toUpperCase(),
-          arrivalAirfield: arrivalAirfield.trim().toUpperCase(),
-          instructorId: instructorId || null,
-          trainingProgramId: reservation.type === "INSTRUCTION" ? trainingProgramId || null : null,
-          remarks: remarks || null,
-          stops: stops
-            .filter((s) => s.airfield.trim())
-            .map((s) => ({ airfield: s.airfield.trim().toUpperCase(), touchAndGo: parseInt(s.touchAndGo, 10) || 1 })),
-          fuelRefillDone,
-          ...(fuelRefillDone
-            ? {
-                fuelCard,
-                fuelLiters: parseFloat(fuelLiters) || null,
-                fuelType,
-                fuelAirfield: fuelAirfield.trim().toUpperCase() || null,
-              }
-            : {}),
-        }),
-      });
-      onCompleted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
-      <p className="text-sm text-navy-600">
-        {reservation.aircraft.registration}
-        {reservation.studentId && isBaptism
-          ? " — vol baptême (choisi à la réservation) : les heures comptent, mais rien ne sera débité."
-          : reservation.studentId
-          ? " — le compte du pilote sera débité automatiquement."
-          : reservation.priceCents != null
-          ? ` — forfait de ${formatMoney(reservation.priceCents)} à encaisser sur place (aucun compte à débiter).`
-          : " — vol sans compte pilote associé (aucun débit)."}
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Heure de départ">
-          <input
-            type="datetime-local"
-            required
-            value={departureTime}
-            onChange={(e) => setDepartureTime(e.target.value)}
-            className="input"
-          />
-        </Field>
-        <Field label="Heure d'arrivée">
-          <input
-            type="datetime-local"
-            required
-            value={arrivalTime}
-            onChange={(e) => setArrivalTime(e.target.value)}
-            className="input"
-          />
-        </Field>
-      </div>
-      {durationMs <= 0 && (
-        <p className="text-xs font-medium text-red-600 -mt-1.5">
-          L&apos;heure d&apos;arrivée doit être après l&apos;heure de départ.
-        </p>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Terrain de départ (OACI)">
-          <input
-            required
-            placeholder="ex : LFNA"
-            value={departureAirfield}
-            onChange={(e) => setDepartureAirfield(e.target.value.toUpperCase())}
-            maxLength={12}
-            className="input uppercase tracking-wide"
-          />
-        </Field>
-        <Field label="Terrain de destination (OACI)">
-          <input
-            required
-            placeholder="ex : LFNA"
-            value={arrivalAirfield}
-            onChange={(e) => setArrivalAirfield(e.target.value.toUpperCase())}
-            maxLength={12}
-            className="input uppercase tracking-wide"
-          />
-        </Field>
-      </div>
-
-      <Field label="Instructeur (si vol accompagné)">
-        <select value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input">
-          <option value="">— vol seul —</option>
-          {instructors.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.firstName} {i.lastName}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {reservation.type === "INSTRUCTION" && (
-        <Field label="Formation (détermine le tarif d'instruction)">
-          <select
-            value={trainingProgramId}
-            onChange={(e) => setTrainingProgramId(e.target.value)}
-            className="input"
-          >
-            <option value="">— tarif par défaut de l&apos;instructeur —</option>
-            {programs.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-                {p.instructionRateCents ? ` — ${formatMoney(p.instructionRateCents)}/h` : ""}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
-
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs font-medium text-navy-600">
-            Terrains posés (optionnel — tours de piste/touchés en route)
-          </span>
-          <button
-            type="button"
-            onClick={addStop}
-            className="flex items-center gap-1 text-xs text-sunset-600 hover:underline"
-          >
-            <Plus size={12} /> Ajouter un terrain
-          </button>
-        </div>
-        {stops.length === 0 ? (
-          <p className="text-xs text-navy-500">
-            Aucun — vol direct : l&apos;atterrissage à destination est compté automatiquement.
-          </p>
-        ) : (
-          <div className="grid grid-cols-[1fr_88px_auto] gap-2 mb-1 px-0.5">
-            <span className="text-[11px] text-navy-500">Code OACI</span>
-            <span className="text-[11px] text-navy-500">Touchés</span>
-            <span />
-          </div>
-        )}
-        <div className="flex flex-col gap-2">
-          {stops.map((s, i) => (
-            <div key={i} className="grid grid-cols-[1fr_88px_auto] gap-2 items-center">
-              <input
-                required
-                placeholder="ex : LFNA"
-                value={s.airfield}
-                onChange={(e) => updateStop(i, { airfield: e.target.value.toUpperCase() })}
-                maxLength={12}
-                className="input uppercase tracking-wide"
-              />
-              <input
-                type="number"
-                min={1}
-                value={s.touchAndGo}
-                onChange={(e) => updateStop(i, { touchAndGo: e.target.value })}
-                className="input"
-              />
-              <button
-                type="button"
-                onClick={() => removeStop(i)}
-                className="text-navy-600 hover:text-red-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <Field label="Remarques (optionnel)">
-        <textarea
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-          className="input min-h-16"
-        />
-      </Field>
-
-      <div className="rounded-lg border border-navy-100">
-        <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={fuelRefillDone}
-            onChange={(e) => setFuelRefillDone(e.target.checked)}
-          />
-          <span className="text-sm font-medium text-navy-800">Plein de carburant effectué</span>
-        </label>
-        {fuelRefillDone && (
-          <div className="px-3 pb-3 flex flex-col gap-2 border-t border-navy-100 pt-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Carte utilisée">
-                <select value={fuelCard} onChange={(e) => setFuelCard(e.target.value)} className="input">
-                  {FUEL_CARD_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Type de carburant">
-                <select value={fuelType} onChange={(e) => setFuelType(e.target.value)} className="input">
-                  {FUEL_TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Litres">
-                <input
-                  required={fuelRefillDone}
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  value={fuelLiters}
-                  onChange={(e) => setFuelLiters(e.target.value)}
-                  className="input"
-                />
-              </Field>
-              <Field label="Terrain (code OACI)">
-                <input
-                  required={fuelRefillDone}
-                  placeholder="ex : LFNA"
-                  value={fuelAirfield}
-                  onChange={(e) => setFuelAirfield(e.target.value.toUpperCase())}
-                  maxLength={12}
-                  className="input uppercase tracking-wide"
-                />
-              </Field>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {duration > 0 && (
-        <div className="rounded-lg bg-navy-50 px-3 py-2.5 text-sm flex flex-col gap-1">
-          <div className="flex justify-between text-navy-700">
-            <span>
-              Avion — {formatHoursMinutes(duration)} × {formatMoney(aircraftRateCents)}/h
+        {isDiscovery && existing && (
+          <div className="rounded-xl bg-cream-100/70 px-3.5 py-2.5 text-sm text-navy-800">
+            <span className="font-semibold">Vol découverte</span> — {existing.clientName}
+            {existing.clientPhone ? ` · ${existing.clientPhone}` : ""}
+            <span className="block text-xs text-navy-500 mt-0.5">
+              Coordonnées et tarif :{" "}
+              <a href="/decouverte" className="font-medium text-sunset-600 hover:underline">
+                page Vol découverte
+              </a>
             </span>
-            <span>{formatMoney(aircraftCostCents)}</span>
           </div>
-          {isInstructionFlight && (
-            <div className="flex justify-between text-navy-700">
-              <span>
-                Instruction
-                {instructionRateCents
-                  ? ` (${programRateCents ? selectedProgram!.title : "tarif instructeur"}) — ${formatHoursMinutes(duration)} × ${formatMoney(instructionRateCents)}/h`
-                  : " (aucun tarif renseigné — ni formation, ni instructeur)"}
-              </span>
-              <span>{formatMoney(instructionCostCents)}</span>
-            </div>
-          )}
-          {reservation.studentId && isBaptism ? (
-            <div className="flex justify-between font-semibold text-green-700 border-t border-navy-100 pt-1 mt-0.5">
-              <span>Vol baptême — aucun débit (coût ci-dessus indicatif)</span>
-              <span>{formatMoney(totalCostCents)}</span>
-            </div>
-          ) : reservation.studentId ? (
-            <div className="flex justify-between font-semibold text-red-600 border-t border-navy-100 pt-1 mt-0.5">
-              <span>Total débité du compte pilote</span>
-              <span>− {formatMoney(totalCostCents)}</span>
+        )}
+
+        <SheetSection label="Avion">
+          <div className={clsx("grid gap-2", fleet.length > 2 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2")}>
+            {fleet.map((a) => {
+              const selected = a.id === aircraftId;
+              const conflict = range ? findAircraftConflict(reservations, a.id, range.start, range.end, existing?.id) : null;
+              const statusText = conflict
+                ? `Pris ${describeRange(conflict, date)}`
+                : AIRCRAFT_STATUS_LABEL[a.status] ?? "Libre";
+              const tone = conflict ? "text-red-600" : a.status === "AVAILABLE" ? "text-green-700" : "text-amber-700";
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setAircraftChoice(a.id)}
+                  aria-pressed={selected}
+                  className={clsx(
+                    "text-left rounded-xl border px-3 py-2.5 transition-all",
+                    selected
+                      ? "border-navy-800 ring-1 ring-navy-800 bg-navy-50/60"
+                      : "border-navy-100 hover:border-navy-300 bg-white"
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: a.color }} />
+                    <span className="font-semibold text-navy-900 text-sm">{a.registration}</span>
+                  </span>
+                  <span className="block text-xs text-navy-500 mt-0.5 truncate">{a.type}</span>
+                  <span className={clsx("block text-xs font-medium mt-1.5 truncate", tone)}>{statusText}</span>
+                </button>
+              );
+            })}
+          </div>
+        </SheetSection>
+
+        <div className="flex flex-col gap-2">
+          {multiDay ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Début">
+                <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className="input h-10" />
+              </Field>
+              <Field label="à">
+                <input
+                  type="time"
+                  required
+                  value={startClock}
+                  onChange={(e) => setStartClock(e.target.value)}
+                  className="input h-10"
+                />
+              </Field>
+              <Field label="Fin">
+                <input
+                  type="date"
+                  required
+                  min={date}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="input h-10"
+                />
+              </Field>
+              <Field label="à">
+                <input type="time" required value={endClock} onChange={(e) => setEndClock(e.target.value)} className="input h-10" />
+              </Field>
             </div>
           ) : (
-            <div className="flex justify-between font-semibold text-navy-500 border-t border-navy-100 pt-1 mt-0.5">
-              <span>Coût interne avion (indicatif, sans compte à débiter)</span>
-              <span>{formatMoney(aircraftCostCents)}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-[1.5fr_1fr_1fr] gap-2">
+              <div className="col-span-2 sm:col-span-1">
+                <Field label="Date">
+                  <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className="input h-10" />
+                </Field>
+              </div>
+              <Field label="De">
+                <input
+                  type="time"
+                  required
+                  value={startClock}
+                  onChange={(e) => changeStartClock(e.target.value)}
+                  className="input h-10"
+                />
+              </Field>
+              <Field label="À">
+                <input type="time" required value={endClock} onChange={(e) => setEndClock(e.target.value)} className="input h-10" />
+              </Field>
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {!multiDay &&
+              DURATIONS.map((d) => (
+                <button
+                  key={d.minutes}
+                  type="button"
+                  onClick={() => applyDuration(d.minutes)}
+                  className={clsx(
+                    "h-7 px-2.5 rounded-full border text-xs font-medium transition-colors",
+                    durationMinutes === d.minutes
+                      ? "bg-navy-800 border-navy-800 text-white"
+                      : "border-navy-100 text-navy-600 hover:border-navy-300"
+                  )}
+                >
+                  {d.label}
+                </button>
+              ))}
+            <button
+              type="button"
+              onClick={toggleMultiDay}
+              className="ml-auto text-xs font-medium text-sunset-600 hover:text-sunset-500"
+            >
+              {multiDay ? "Sur une seule journée" : "Sur plusieurs jours"}
+            </button>
+          </div>
+          {aeroDay && !multiDay && (
+            <p className="text-xs text-navy-500">
+              Vol possible ce jour-là de {formatClock(aeroDay.start)} à {formatClock(aeroDay.end)} (nuit aéronautique en
+              dehors).
+            </p>
+          )}
         </div>
-      )}
 
-      {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+        {isFlight && !isDiscovery && isStaff && (
+          <Field label="Pilote">
+            <select value={pilotId} onChange={(e) => changePilot(e.target.value)} className="input h-10">
+              <option value="">À définir</option>
+              {trainees.length > 0 && (
+                <optgroup label="Élèves">
+                  {trainees.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {personName(s)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {licensed.length > 0 && (
+                <optgroup label="Pilotes brevetés">
+                  {licensed.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {personName(s)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {/* Un FI peut lui-même être le pilote débité (deux FI qui
+                  volent ensemble, l'un en instruction/contrôle de l'autre, ou
+                  un FI qui loue l'avion) — son compte pilote est créé à la
+                  volée à la clôture, voir /api/reservations/[id]/complete. */}
+              <optgroup label="Instructeurs">
+                {instructors.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {personName(i)}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </Field>
+        )}
 
-      <div className="flex items-center justify-between mt-1">
-        <button type="button" onClick={onCancel} className="text-sm text-navy-600 hover:text-navy-900">
-          Retour
-        </button>
+        {isFlight && (
+          <div className="flex flex-col gap-2">
+            <Field label="Instructeur">
+              <select
+                value={instructorValue}
+                onChange={(e) => setInstructorChoice(e.target.value)}
+                className="input h-10"
+              >
+                {instructorValue === "" && (
+                  <option value="" disabled>
+                    Choisir…
+                  </option>
+                )}
+                <option value="none">
+                  {isDiscovery ? "Non désigné" : pilotIsTrainee ? "Sans instructeur — vol solo" : "Sans instructeur"}
+                </option>
+                {instructors
+                  .filter((i) => i.id !== pilotId)
+                  .map((i) => {
+                    const busy =
+                      range &&
+                      findInstructorConflict(reservations, i.id, "INSTRUCTION", range.start, range.end, existing?.id);
+                    return (
+                      <option key={i.id} value={i.id}>
+                        {personName(i)}
+                        {busy ? " — déjà en vol" : ""}
+                      </option>
+                    );
+                  })}
+              </select>
+            </Field>
+            {!isDiscovery && pilotIsTrainee && instructor && (
+              <label className="flex items-start gap-2.5 rounded-xl border border-navy-100 px-3.5 py-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={soloSupervised}
+                  onChange={(e) => setSoloSupervised(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-navy-800 shrink-0"
+                />
+                <span className="text-sm text-navy-700">
+                  Vol solo : {instructor.firstName} supervise depuis le sol
+                </span>
+              </label>
+            )}
+            {canBeBaptism && (
+              <label className="flex items-start gap-2.5 rounded-xl border border-navy-100 px-3.5 py-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isBaptism}
+                  onChange={(e) => setIsBaptism(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-navy-800 shrink-0"
+                />
+                <span className="text-sm text-navy-700">
+                  Vol baptême : aucun débit sur le compte de {pilot?.firstName ?? "ce pilote"}
+                </span>
+              </label>
+            )}
+          </div>
+        )}
+
+        <Field label="Note (facultatif)">
+          <input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={kind === "MAINTENANCE" ? "ex : visite 50h" : "ex : navigation vers Sisteron"}
+            className="input h-10"
+          />
+        </Field>
+
+        {range && !(isFlight && instructorValue === "") && (
+          <p className="text-sm text-navy-600">
+            <span className="font-semibold text-navy-900">{recap}</span>
+            {" · "}
+            {formatDurationMs(range.end.getTime() - range.start.getTime())}
+            {isStaff && isFlight && !isDiscovery && pilot ? ` · ${personName(pilot)}` : ""}
+          </p>
+        )}
+
+        {blocker && (
+          <p
+            className={clsx(
+              "text-sm rounded-xl px-3 py-2",
+              blocker.tone === "error" ? "text-red-600 bg-red-100/70" : "text-navy-600 bg-navy-50"
+            )}
+          >
+            {blocker.text}
+          </p>
+        )}
+        {!blocker && isFlight && aircraft && aircraft.status !== "AVAILABLE" && (
+          <p className="text-sm rounded-xl px-3 py-2 text-amber-800 bg-amber-50">
+            {aircraft.registration} est noté « {AIRCRAFT_STATUS_LABEL[aircraft.status]?.toLowerCase()} » dans la flotte.
+          </p>
+        )}
+        {error && <p className="text-sm text-red-600 bg-red-100/70 rounded-xl px-3 py-2">{error}</p>}
+      </div>
+
+      <SheetFooter>
+        {onBack && (
+          <button type="button" onClick={onBack} className="text-sm font-medium text-navy-600 hover:text-navy-900">
+            Retour
+          </button>
+        )}
         <button
           type="submit"
-          disabled={saving || duration <= 0}
-          className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-900 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
+          disabled={saving || !!blocker || !dirty}
+          className="ml-auto h-10 px-5 rounded-xl bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:hover:bg-sunset-500"
         >
-          <PlaneLanding size={16} />{" "}
-          {saving
-            ? "Clôture..."
-            : reservation.studentId && isBaptism
-            ? "Clôturer le vol baptême (sans débit)"
-            : reservation.studentId
-            ? "Clôturer et débiter le compte"
-            : "Clôturer le vol"}
+          {saving ? "Enregistrement…" : existing ? "Enregistrer" : "Réserver"}
         </button>
-      </div>
+      </SheetFooter>
     </form>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-navy-600">{label}</span>
-      {children}
-    </label>
   );
 }

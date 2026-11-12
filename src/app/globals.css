@@ -236,3 +236,335 @@ body {
 .gestion-calendar .rbc-current-time-indicator {
   background-color: var(--color-sunset-500);
 }
+
+/* ---------- Planning avions (PlanningView.tsx) ----------
+   Habillage moderne de react-big-calendar, limité à .af-planning : le
+   calendrier sombre de /gestion (.gestion-calendar) et les Disponibilités FI
+   gardent le leur. Blocs de réservation teintés de la couleur de l'avion
+   (variable --ev posée par eventPropGetter) avec un liseré à gauche et un
+   texte foncé — lisible quelle que soit la couleur choisie pour l'avion,
+   jaune compris, ce que le texte blanc sur fond plein ne permettait pas. */
+.af-planning .rbc-time-view,
+.af-planning .rbc-month-view,
+.af-planning .rbc-agenda-view {
+  border: none !important;
+}
+.af-planning .rbc-time-header {
+  border-bottom: 1px solid var(--color-navy-100);
+}
+.af-planning .rbc-time-header.rbc-overflowing {
+  border-right: none !important;
+}
+.af-planning .rbc-time-header-content {
+  border-left: 1px solid var(--color-navy-50) !important;
+}
+.af-planning .rbc-header {
+  border-bottom: none !important;
+  border-left-color: var(--color-navy-50) !important;
+  padding: 6px 2px;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--color-navy-700);
+}
+.af-planning .rbc-header .rbc-button-link {
+  cursor: pointer;
+}
+.af-planning .rbc-allday-cell {
+  display: none;
+}
+.af-planning .rbc-time-content {
+  border-top: none !important;
+}
+.af-planning .rbc-time-content > * + * > * {
+  border-left: 1px solid var(--color-navy-50) !important;
+}
+.af-planning .rbc-timeslot-group {
+  border-bottom: 1px solid var(--color-navy-50) !important;
+  min-height: 46px;
+}
+.af-planning .rbc-day-slot .rbc-time-slot {
+  border-top: none !important;
+}
+.af-planning .rbc-time-gutter .rbc-timeslot-group {
+  border-bottom-color: transparent !important;
+}
+.af-planning .rbc-time-gutter .rbc-label {
+  display: inline-block;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--color-navy-400);
+  padding: 0 8px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+.af-planning .rbc-time-gutter .rbc-timeslot-group:first-child .rbc-label {
+  transform: none;
+}
+/* Aujourd'hui se repère à l'en-tête (pastille orange en vues Semaine/Mois),
+   pas à une colonne teintée — inutile en vue Jour, où tout serait teinté. */
+.af-planning .rbc-today {
+  background-color: transparent;
+}
+.af-planning .rbc-day-slot .rbc-time-slot.af-night,
+.af-planning .af-night-swatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-navy-800) 7%, transparent) 0 5px,
+    transparent 5px 10px
+  );
+}
+.af-planning .rbc-current-time-indicator {
+  background-color: var(--color-sunset-500);
+  height: 2px;
+  z-index: 4;
+}
+.af-planning .rbc-current-time-indicator::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-sunset-500);
+}
+.af-planning .rbc-day-slot .rbc-events-container {
+  margin-right: 4px;
+  margin-left: 2px;
+}
+.af-planning .rbc-slot-selection {
+  background-color: color-mix(in srgb, var(--color-sunset-500) 16%, transparent);
+  color: var(--color-navy-800);
+  border-radius: 8px;
+}
+
+/* Blocs de réservation */
+.af-planning .rbc-event.af-ev {
+  background: color-mix(in srgb, var(--ev) 15%, white);
+  border-left: 3px solid var(--ev) !important;
+  color: var(--color-navy-900);
+  border-radius: 8px;
+  padding: 3px 6px;
+  box-shadow: 0 1px 2px rgb(10 30 57 / 0.06);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.af-planning .rbc-event.af-ev:hover {
+  background: color-mix(in srgb, var(--ev) 24%, white);
+}
+.af-planning .rbc-event.af-ev:focus,
+.af-planning .rbc-event.af-ev.rbc-selected {
+  outline: none;
+  background: color-mix(in srgb, var(--ev) 24%, white);
+  box-shadow: 0 0 0 2px var(--color-navy-800);
+}
+.af-planning .rbc-event.af-ev--mine {
+  box-shadow: 0 1px 2px rgb(10 30 57 / 0.06), inset 0 0 0 1px color-mix(in srgb, var(--ev) 55%, white);
+}
+.af-planning .rbc-event.af-ev--inflight {
+  background: color-mix(in srgb, var(--color-sunset-500) 14%, white);
+  border-left-color: var(--color-sunset-500) !important;
+}
+.af-planning .rbc-event.af-ev--done {
+  background: var(--color-navy-50);
+  border-left-color: var(--color-navy-300) !important;
+  color: var(--color-navy-500);
+}
+.af-planning .rbc-event.af-ev--maintenance {
+  background: repeating-linear-gradient(135deg, var(--color-navy-50) 0 6px, white 6px 12px);
+  border-left-color: var(--color-navy-400) !important;
+  color: var(--color-navy-600);
+}
+.af-planning .rbc-event.af-ev--away {
+  opacity: 0.65;
+}
+.af-planning .af-ev-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.af-planning .af-ev-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 12px;
+}
+.af-planning .af-ev-meta {
+  font-size: 11px;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.af-planning .af-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--color-sunset-500);
+  flex-shrink: 0;
+  animation: af-live 1.6s ease-out infinite;
+}
+@keyframes af-live {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-sunset-500) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* Vue Mois */
+.af-planning .rbc-month-view .rbc-header {
+  padding: 8px 2px;
+  font-size: 12px;
+  text-transform: capitalize;
+  color: var(--color-navy-500);
+}
+.af-planning .rbc-month-view .rbc-header + .rbc-header {
+  border-left-color: transparent !important;
+}
+.af-planning .rbc-month-row + .rbc-month-row {
+  border-top-color: var(--color-navy-50);
+}
+.af-planning .rbc-day-bg + .rbc-day-bg {
+  border-left-color: var(--color-navy-50);
+}
+.af-planning .rbc-off-range-bg {
+  background: color-mix(in srgb, var(--color-navy-50) 60%, white);
+}
+.af-planning .rbc-date-cell {
+  padding: 4px 6px 2px;
+  text-align: left;
+}
+.af-planning .af-month-date {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-navy-600);
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 9999px;
+}
+.af-planning .rbc-off-range .af-month-date {
+  color: var(--color-navy-300);
+}
+.af-planning .af-month-date.is-today {
+  background: var(--color-sunset-500);
+  color: white;
+  font-weight: 700;
+}
+.af-planning .rbc-month-view .rbc-event.af-ev {
+  padding: 1px 5px;
+  border-radius: 6px;
+  margin: 0 3px;
+  width: calc(100% - 6px);
+}
+.af-planning .rbc-month-view .af-ev-title {
+  font-weight: 500;
+  font-size: 11px;
+}
+.af-planning .rbc-show-more {
+  color: var(--color-sunset-600);
+  font-weight: 600;
+  font-size: 11px;
+  background: transparent;
+  padding: 0 6px;
+}
+.af-planning .rbc-overlay {
+  border: 1px solid var(--color-navy-100);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(10 30 57 / 0.15);
+  padding: 8px;
+}
+.af-planning .rbc-overlay-header {
+  border-bottom: 1px solid var(--color-navy-100);
+  margin: -8px -8px 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-navy-800);
+}
+
+/* Vue Liste (agenda) */
+.af-planning .rbc-agenda-view {
+  padding: 4px 8px;
+}
+.af-planning .rbc-agenda-view table.rbc-agenda-table {
+  border: none;
+  font-size: 13px;
+}
+.af-planning .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  border-bottom: 1px solid var(--color-navy-100);
+  color: var(--color-navy-500);
+  font-weight: 500;
+  font-size: 12px;
+  padding: 10px 8px;
+}
+.af-planning .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  padding: 9px 8px;
+  border-left: none;
+  vertical-align: middle;
+}
+.af-planning .rbc-agenda-view table.rbc-agenda-table tbody > tr + tr {
+  border-top: 1px solid var(--color-navy-50);
+}
+.af-planning .rbc-agenda-view table.rbc-agenda-table tbody > tr {
+  cursor: pointer;
+}
+.af-planning .rbc-agenda-view table.rbc-agenda-table tbody > tr:hover {
+  background: var(--color-navy-50);
+}
+.af-planning .rbc-agenda-date-cell {
+  font-weight: 600;
+  color: var(--color-navy-800);
+  white-space: nowrap;
+}
+.af-planning .rbc-agenda-date-cell::first-letter,
+.af-planning .rbc-overlay-header::first-letter {
+  text-transform: uppercase;
+}
+.af-planning .rbc-agenda-time-cell {
+  color: var(--color-navy-600);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.af-planning .rbc-agenda-empty {
+  padding: 32px 8px;
+  text-align: center;
+  color: var(--color-navy-500);
+}
+
+/* Fenêtre de réservation (Sheet.tsx) : monte du bas sur téléphone,
+   apparaît en fondu sur ordinateur. */
+.af-sheet {
+  animation: af-sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.af-backdrop {
+  animation: af-fade-in 0.2s ease-out;
+}
+@keyframes af-sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes af-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-sheet,
+  .af-backdrop,
+  .af-planning .af-live-dot {
+    animation: none;
+  }
+}

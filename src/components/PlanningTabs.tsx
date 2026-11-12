@@ -22,7 +22,7 @@ export function PlanningTabs() {
   ];
 
   return (
-    <div className="flex gap-1 px-4 md:px-8 pt-3 border-b border-navy-100 bg-cream-50 overflow-x-auto">
+    <div className="flex gap-1 px-4 md:px-8 pt-3 border-b border-navy-100 bg-cream-50 overflow-x-auto overflow-y-hidden shrink-0">
       {tabs.map((t) => {
         const active = pathname === t.href;
         return (
