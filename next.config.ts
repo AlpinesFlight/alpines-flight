@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Génération des fichiers Excel (export comptable, voir
+  // src/lib/pilot-accounts-export.ts) : bibliothèque Node (flux, zip) chargée
+  // telle quelle côté serveur plutôt que réempaquetée par Next.js.
+  serverExternalPackages: ["exceljs"],
   async headers() {
     return [
       {
