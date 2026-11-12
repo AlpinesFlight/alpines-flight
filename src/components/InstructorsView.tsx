@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { UserLite } from "@/types/models";
 import { formatMoney } from "@/lib/format";
-import { canManageFinance } from "@/lib/permissions";
+import { canManageFinance, canManageSchool } from "@/lib/permissions";
 import { Plus, Search, X, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
@@ -14,24 +14,33 @@ export function InstructorsView() {
   // Part de l'instruction reversée aux FI : réglage financier, Gérant seul
   // (l'API ne la renvoie d'ailleurs qu'à lui).
   const isFinance = canManageFinance(session?.user?.role);
+  // Tarifs et modification des fiches : la gestion (Gérant/Admin). Un
+  // instructeur voit la liste de ses collègues (contact, qualifications)
+  // sans leur tarif — l'API ne le lui envoie plus — et en lecture seule.
+  const canManage = canManageSchool(session?.user?.role);
   const [instructors, setInstructors] = useState<UserLite[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<UserLite | null>(null);
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await apiFetch<UserLite[]>("/api/instructors");
-      setInstructors(data);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Rechargement après une modification : la liste reste affichée pendant
+  // ce temps, une réponse périmée est ignorée.
+  const [reloadKey, setReloadKey] = useState(0);
+  const load = () => setReloadKey((k) => k + 1);
 
   useEffect(() => {
-    load();
-  }, []);
+    let cancelled = false;
+    apiFetch<UserLite[]>("/api/instructors")
+      .then((data) => {
+        if (!cancelled) setInstructors(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   const filtered = instructors.filter((i) =>
     `${i.firstName} ${i.lastName} ${i.email}`.toLowerCase().includes(query.toLowerCase())
@@ -55,12 +64,14 @@ export function InstructorsView() {
             formulaire directement avec l'onglet FI déjà sélectionné, sans
             quoi arriver ici pour ajouter un instructeur retombait par
             défaut sur Élève. */}
+        {canManage && (
         <Link
           href="/eleves?newRole=INSTRUCTOR"
           className="ml-auto flex items-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
         >
           <Plus size={16} /> Ajouter un nouveau membre
         </Link>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
@@ -70,7 +81,7 @@ export function InstructorsView() {
             <tr className="text-left text-navy-600 border-b border-navy-100">
               <th className="px-5 py-3 font-medium">Nom</th>
               <th className="px-5 py-3 font-medium">Qualifications</th>
-              <th className="px-5 py-3 font-medium">Tarif instruction</th>
+              {canManage && <th className="px-5 py-3 font-medium">Tarif instruction</th>}
               {isFinance && <th className="px-5 py-3 font-medium">Part reversée</th>}
               <th className="px-5 py-3 font-medium">Couleur planning</th>
               <th className="px-5 py-3 font-medium">Contact</th>
@@ -89,11 +100,13 @@ export function InstructorsView() {
                 <td className="px-5 py-3 text-navy-700">
                   {i.instructorProfile?.qualifications ?? "—"}
                 </td>
-                <td className="px-5 py-3 text-navy-700">
-                  {i.instructorProfile?.hourlyRateCents
-                    ? `${formatMoney(i.instructorProfile.hourlyRateCents)}/h`
-                    : "—"}
-                </td>
+                {canManage && (
+                  <td className="px-5 py-3 text-navy-700">
+                    {i.instructorProfile?.hourlyRateCents
+                      ? `${formatMoney(i.instructorProfile.hourlyRateCents)}/h`
+                      : "—"}
+                  </td>
+                )}
                 {isFinance && (
                   <td className="px-5 py-3 text-navy-700">
                     {i.instructorProfile?.instructionSharePct ?? 100} %
@@ -110,7 +123,7 @@ export function InstructorsView() {
             ))}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={isFinance ? 6 : 5} className="px-5 py-8 text-center text-navy-600">
+                <td colSpan={4 + (canManage ? 1 : 0) + (isFinance ? 1 : 0)} className="px-5 py-8 text-center text-navy-600">
                   Aucun instructeur trouvé.
                 </td>
               </tr>
@@ -120,7 +133,9 @@ export function InstructorsView() {
         </div>
       </div>
 
-      {detail && (
+      {detail && !canManage && <InstructorReadOnlyModal instructor={detail} onClose={() => setDetail(null)} />}
+
+      {detail && canManage && (
         <InstructorDetailModal
           instructor={detail}
           canEditShare={isFinance}
@@ -131,6 +146,50 @@ export function InstructorsView() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Fiche d'un collègue pour un instructeur : coordonnées et qualifications,
+// sans tarif ni formulaire (la modification reste à la gestion).
+function InstructorReadOnlyModal({ instructor, onClose }: { instructor: UserLite; onClose: () => void }) {
+  const rows: [string, string][] = [
+    ["Email", instructor.email],
+    ["Téléphone", instructor.phone || "—"],
+    ["Qualifications", instructor.instructorProfile?.qualifications || "—"],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+          <h2 className="flex items-center gap-2 font-semibold text-navy-900">
+            <span
+              className="inline-block w-3 h-3 rounded-full"
+              style={{ backgroundColor: instructor.instructorProfile?.color ?? "#0C2448" }}
+            />
+            {instructor.firstName} {instructor.lastName}
+          </h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900" aria-label="Fermer">
+            <X size={20} />
+          </button>
+        </div>
+        <dl className="p-5 flex flex-col gap-3">
+          {rows.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-xs font-medium text-navy-500">{label}</dt>
+              <dd className="text-sm text-navy-900">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="px-5 pb-5 border-t border-navy-100 pt-4">
+          <Link
+            href={`/licences?person=${instructor.id}`}
+            className="flex items-center gap-1.5 text-sm text-sunset-600 hover:underline w-fit"
+          >
+            <ShieldCheck size={15} /> Voir ses licences &amp; qualifications
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

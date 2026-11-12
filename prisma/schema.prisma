@@ -82,6 +82,7 @@ model User {
 
   schoolSettingsUpdated SchoolSettings[]
   announcementsCreated  Announcement[]
+  announcementReceipts  AnnouncementRecipient[]
   schoolDocumentsUploaded SchoolDocument[]
   documentNotifications DocumentNotification[]
   passwordResetTokens   PasswordResetToken[]
@@ -960,16 +961,45 @@ model SchoolSettings {
 // Publiées par l'admin, visibles par tous les comptes sur le tableau de
 // bord — remplace le bloc "Comptes élèves à surveiller".
 
+// Destinataires d'une actualité : tout le monde, ou les instructeurs
+// seulement — avec dans ce cas une liste de diffusion figée à la publication
+// et un accusé de lecture par instructeur (voir AnnouncementRecipient).
+enum AnnouncementAudience {
+  ALL
+  INSTRUCTORS
+}
+
 model Announcement {
   id          String   @id @default(cuid())
   title       String
   body        String
+  audience    AnnouncementAudience @default(ALL)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdById String
   createdBy   User     @relation(fields: [createdById], references: [id])
 
   attachments AnnouncementAttachment[]
+  recipients  AnnouncementRecipient[]
+}
+
+// Preuve de diffusion d'une actualité réservée aux instructeurs (contrôle
+// DGAC), sur le modèle de DocumentNotification : une ligne par instructeur
+// destinataire, créée à la publication (notifiedAt), et la date à laquelle
+// il a confirmé l'avoir lue (acknowledgedAt — fixée une fois, jamais
+// réécrite). Pas de suppression en cascade côté compte : l'historique de
+// diffusion se conserve.
+model AnnouncementRecipient {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  notifiedAt     DateTime     @default(now())
+  acknowledgedAt DateTime?
+
+  @@unique([announcementId, userId])
+  @@index([userId])
 }
 
 model AnnouncementAttachment {

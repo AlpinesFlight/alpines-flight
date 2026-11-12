@@ -6,8 +6,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { AnnouncementsCard } from "@/components/AnnouncementsCard";
 import { MaintenanceIssuesCard } from "@/components/MaintenanceIssuesCard";
 import { WeatherCard } from "@/components/WeatherCard";
-import { formatDateTime, formatHoursMinutes, formatMoney } from "@/lib/format";
-import { startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
+import { TodayPlanning } from "@/components/TodayPlanning";
+import { parisDayStart, parisToday } from "@/lib/paris-time";
+import { formatHoursMinutes, formatMoney } from "@/lib/format";
+import { startOfMonth, endOfMonth } from "date-fns";
 import { canManageSchool } from "@/lib/permissions";
 import { loadLicencesData } from "@/lib/qualifications";
 import { linesByPerson } from "@/lib/licence-lines";
@@ -18,7 +20,6 @@ import {
   TriangleAlert,
   Wallet,
   PlaneTakeoff,
-  Plane,
   Wrench,
   ShieldAlert,
 } from "lucide-react";
@@ -165,12 +166,14 @@ async function DashboardContent({
   userId: string | undefined;
   now: Date;
 }) {
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  // Journée à Paris (le serveur tourne en UTC : startOfDay() y donnerait la
+  // journée UTC, décalée d'1 à 2 h).
+  const todayStart = parisDayStart(parisToday());
+  const todayEnd = new Date(todayStart.getTime() + 24 * 3_600_000 - 1);
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
 
-  const [todayReservations, maintenanceAlerts, myOpenIssues, negativeStudents, monthFlights, myAccount] =
+  const [todayReservations, maintenanceAlerts, myOpenIssues, negativeStudents, monthFlights, myAccount, fleet] =
     await Promise.all([
       prisma.reservation.findMany({
         where: {
@@ -217,7 +220,20 @@ async function DashboardContent({
             select: { balanceCents: true, totalHours: true },
           })
         : Promise.resolve(null),
+      // Colonnes du planning du jour : la flotte en service.
+      prisma.aircraft.findMany({
+        where: { status: { not: "RETIRED" } },
+        select: { id: true, registration: true, color: true },
+        orderBy: { registration: "asc" },
+      }),
     ]);
+  // + un avion retiré qui aurait malgré tout une réservation aujourd'hui.
+  const planningAircraft = [
+    ...fleet,
+    ...todayReservations
+      .map((r) => ({ id: r.aircraftId, registration: r.aircraft.registration, color: r.aircraft.color }))
+      .filter((a, i, all) => !fleet.some((f) => f.id === a.id) && all.findIndex((x) => x.id === a.id) === i),
+  ];
 
   const monthHours = monthFlights.reduce((sum, f) => sum + f.duration, 0);
   const inFlight = todayReservations.filter((r) => r.status === "IN_FLIGHT");
@@ -295,59 +311,30 @@ async function DashboardContent({
       </div>
 
       <div className="px-4 md:px-8 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
-            <h2 className="font-semibold text-navy-900">Planning du jour</h2>
-            <Link href="/planning" className="text-sm text-sunset-600 hover:underline">
+        {/* Le vrai planning du jour (une colonne par avion), dans la même
+            carte : sur ordinateur, sa hauteur reste celle de la carte Météo
+            voisine (voir TodayPlanning). */}
+        <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-navy-100">
+            <h2 className="font-semibold text-navy-900">
+              Planning du jour
+              {todayReservations.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-navy-500">
+                  {[
+                    inFlight.length ? `${inFlight.length} en vol` : null,
+                    upcoming.length ? `${upcoming.length} prévu${upcoming.length > 1 ? "s" : ""}` : null,
+                    doneToday.length ? `${doneToday.length} terminé${doneToday.length > 1 ? "s" : ""}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
+            </h2>
+            <Link href="/planning" className="text-sm text-sunset-600 hover:underline shrink-0">
               Voir le planning
             </Link>
           </div>
-
-          {todayReservations.length === 0 && (
-            <p className="px-5 py-6 text-sm text-navy-600">
-              Aucune réservation aujourd&apos;hui.
-            </p>
-          )}
-
-          {inFlight.length > 0 && (
-            <div>
-              <p className="px-5 pt-3 pb-1 text-[11px] font-semibold text-sunset-600 uppercase tracking-wide">
-                En vol
-              </p>
-              <div className="divide-y divide-navy-100">
-                {inFlight.map((r) => (
-                  <FlightRow key={r.id} r={r} highlight />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {upcoming.length > 0 && (
-            <div>
-              <p className="px-5 pt-3 pb-1 text-[11px] font-semibold text-navy-500 uppercase tracking-wide">
-                Prévus
-              </p>
-              <div className="divide-y divide-navy-100">
-                {upcoming.map((r) => (
-                  <FlightRow key={r.id} r={r} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {doneToday.length > 0 && (
-            <div>
-              <p className="px-5 pt-3 pb-1 text-[11px] font-semibold text-green-700 uppercase tracking-wide">
-                Terminés
-              </p>
-              <div className="divide-y divide-navy-100">
-                {doneToday.map((r) => (
-                  <FlightRow key={r.id} r={r} muted />
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="pb-1" />
+          <TodayPlanning aircraft={planningAircraft} reservations={todayReservations} now={now} />
         </div>
 
         {/* La météo à côté du planning du jour : les deux premières choses
@@ -433,64 +420,6 @@ function DashboardSkeleton() {
       </div>
     </div>
   );
-}
-
-function FlightRow({
-  r,
-  highlight,
-  muted,
-}: {
-  r: {
-    id: string;
-    type: string;
-    startTime: Date;
-    aircraft: { registration: string };
-    student: { firstName: string; lastName: string } | null;
-    instructor: { firstName: string; lastName: string } | null;
-  };
-  highlight?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <div className={`px-5 py-3 flex items-center justify-between gap-3 ${muted ? "opacity-60" : ""}`}>
-      <div className="flex items-center gap-2.5 min-w-0">
-        <span
-          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-            highlight ? "bg-sunset-100 text-sunset-600" : "bg-navy-100 text-navy-600"
-          }`}
-        >
-          <Plane size={14} />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-navy-900 truncate">
-            {r.aircraft.registration} · {typeLabel(r.type)}
-          </p>
-          <p className="text-xs text-navy-600 truncate">
-            {r.student ? `${r.student.firstName} ${r.student.lastName}` : "—"}
-            {r.instructor ? ` avec ${r.instructor.firstName} ${r.instructor.lastName}` : ""}
-          </p>
-        </div>
-      </div>
-      <span className="text-xs text-navy-600 whitespace-nowrap shrink-0">
-        {formatDateTime(r.startTime)}
-      </span>
-    </div>
-  );
-}
-
-function typeLabel(type: string) {
-  switch (type) {
-    case "INSTRUCTION":
-      return "Instruction";
-    case "SOLO":
-      return "Solo supervisé";
-    case "LOCATION":
-      return "Location";
-    case "MAINTENANCE":
-      return "Maintenance";
-    default:
-      return type;
-  }
 }
 
 function StatCard({

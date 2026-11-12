@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/prisma";
+import { addDays, parisDayStart, parisIso, parisToday } from "@/lib/paris-time";
 
 // Export Excel des comptes pilotes pour la comptabilité (bilan) : par client,
 // ce qui a été encaissé (versements = heures de vol prépayées vendues) et
@@ -28,45 +29,9 @@ const METHOD_LABEL: Record<string, string> = {
   CHECK: "Chèque",
 };
 
-// ---------- Dates (jour à Paris, quel que soit le fuseau du serveur) ----------
+// ---------- Dates (jour à Paris, voir src/lib/paris-time.ts) ----------
 
-function parisOffsetMinutes(at: Date): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Europe/Paris",
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(at);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
-  return Math.round((asUtc - at.getTime()) / 60_000);
-}
-
-function addDays(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
-// Minuit à Paris pour un jour "YYYY-MM-DD", en instant absolu (le serveur
-// Vercel tourne en UTC : new Date("2026-01-01") tomberait à 1h du matin à
-// Paris l'hiver, 2h l'été).
-export function parisDayStart(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
-  const utcMidnight = new Date(Date.UTC(y, m - 1, d));
-  return new Date(utcMidnight.getTime() - parisOffsetMinutes(utcMidnight) * 60_000);
-}
-
-export function parisToday(): string {
-  return new Date().toLocaleDateString("fr-CA", { timeZone: "Europe/Paris" });
-}
-
-function parisIso(date: Date): string {
-  return date.toLocaleDateString("fr-CA", { timeZone: "Europe/Paris" });
-}
+export { parisDayStart, parisToday };
 
 function frDate(iso: string): string {
   const [y, m, d] = iso.split("-");

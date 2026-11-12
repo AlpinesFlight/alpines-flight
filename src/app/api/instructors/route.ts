@@ -21,6 +21,20 @@ export async function GET() {
     select: { ...safeUserSelect, instructorProfile: instructorProfileSelect(canManageFinance(session.user.role)) },
     orderBy: { lastName: "asc" },
   });
+
+  // Tarif d'instruction propre d'un FI : la gestion (qui le règle) et les
+  // élèves/pilotes (c'est ce qu'ils paient) le voient ; un instructeur ne
+  // voit que le sien, pas celui de ses collègues (demande du Gérant,
+  // 2026-11-12).
+  if (session.user.role === "INSTRUCTOR") {
+    return NextResponse.json(
+      instructors.map((i) =>
+        i.id === session.user.id || !i.instructorProfile
+          ? i
+          : { ...i, instructorProfile: { ...i.instructorProfile, hourlyRateCents: null } }
+      )
+    );
+  }
   return NextResponse.json(instructors);
 }
 

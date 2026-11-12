@@ -13,6 +13,12 @@ export async function GET(_req: Request, { params }: Params) {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  // Fiche détaillée (tarif, derniers vols avec leurs coûts et les élèves) :
+  // la gestion, ou l'instructeur lui-même — pas un collègue (qui ne doit pas
+  // voir son tarif) ni un élève.
+  if (!canManageSchool(session.user.role) && id !== session.user.id) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 403 });
+  }
   const instructor = await prisma.user.findUnique({
     where: { id },
     select: {

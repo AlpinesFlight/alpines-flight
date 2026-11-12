@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canManageSchool } from "@/lib/permissions";
+import { isInstructorOrAbove } from "@/lib/permissions";
 import { get } from "@vercel/blob";
 
 type Params = { params: Promise<{ id: string }> };
 
 // Sert le contenu d'un justificatif (photo/scan/PDF de licence, médical...).
 // Jamais exposé en statique public — ce sont des documents personnels —
-// donc servi uniquement ici, après vérification des droits : Gérant/Admin,
-// ou la personne concernée.
+// donc servi uniquement ici, après vérification des droits : staff
+// pédagogique (FI, Admin, Gérant — un FI doit pouvoir vérifier la licence et
+// le médical d'un élève avant de voler avec lui, demande du Gérant
+// 2026-11-12), ou la personne concernée. Lecture seule : envoyer, valider ou
+// supprimer un justificatif passe par d'autres routes, inchangées.
 export async function GET(_req: Request, { params }: Params) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -18,7 +21,7 @@ export async function GET(_req: Request, { params }: Params) {
   const doc = await prisma.pilotDocument.findUnique({ where: { id } });
   if (!doc || (!doc.fileData && !doc.blobUrl)) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  if (!canManageSchool(session.user.role) && doc.userId !== session.user.id) {
+  if (!isInstructorOrAbove(session.user.role) && doc.userId !== session.user.id) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

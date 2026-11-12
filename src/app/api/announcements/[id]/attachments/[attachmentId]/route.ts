@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { canManageSchool } from "@/lib/permissions";
 import { get } from "@vercel/blob";
 
 type Params = { params: Promise<{ id: string; attachmentId: string }> };
 
 // Diffuse un document joint à une actualité, en streaming — jamais en JSON
-// (voir safeAnnouncementAttachmentSelect). Accessible à tout utilisateur
-// connecté, comme l'actualité elle-même.
+// (voir safeAnnouncementAttachmentSelect). Mêmes droits que l'actualité :
+// tout compte connecté, sauf pour une actualité réservée aux instructeurs
+// (gestion et instructeurs seulement, voir GET /api/announcements).
 export async function GET(_req: Request, { params }: Params) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -15,9 +17,23 @@ export async function GET(_req: Request, { params }: Params) {
   const { id, attachmentId } = await params;
   const attachment = await prisma.announcementAttachment.findUnique({
     where: { id: attachmentId },
-    select: { announcementId: true, fileName: true, fileMimeType: true, fileData: true, blobUrl: true },
+    select: {
+      announcementId: true,
+      fileName: true,
+      fileMimeType: true,
+      fileData: true,
+      blobUrl: true,
+      announcement: { select: { audience: true } },
+    },
   });
   if (!attachment || attachment.announcementId !== id) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  if (
+    attachment.announcement.audience === "INSTRUCTORS" &&
+    !canManageSchool(session.user.role) &&
+    session.user.role !== "INSTRUCTOR"
+  ) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 

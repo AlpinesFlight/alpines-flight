@@ -259,14 +259,27 @@ export interface AnnouncementAttachment {
   uploadedAt: string;
 }
 
+export type AnnouncementAudience = "ALL" | "INSTRUCTORS";
+
 export interface Announcement {
   id: string;
   title: string;
   body: string;
+  audience: AnnouncementAudience;
   createdAt: string;
   updatedAt: string;
   createdBy: UserLite;
   attachments: AnnouncementAttachment[];
+  // Accusé de lecture du compte connecté (actualité « Instructeurs »).
+  myReceipt: { notifiedAt: string; acknowledgedAt: string | null } | null;
+  // Gestion seulement, actualité « Instructeurs » : diffusion et lectures.
+  recipientCount?: number;
+  readCount?: number;
+}
+
+export interface AnnouncementAcknowledgments {
+  announcement: { id: string; title: string; audience: AnnouncementAudience; createdAt: string; createdBy: UserLite };
+  recipients: { user: UserLite; notifiedAt: string; acknowledgedAt: string | null }[];
 }
 
 export type DocumentVisibility = "ALL" | "FI_ONLY";

@@ -298,6 +298,7 @@ export function LicencesView() {
       documents={data.documents.filter((d) => d.userId === person.id)}
       canManage={canManage}
       canDeclare={canManage || person.id === me}
+      canReadAll={staffViewer}
       me={me}
       onChanged={load}
     />
@@ -474,6 +475,7 @@ function PersonFiche({
   documents,
   canManage,
   canDeclare,
+  canReadAll,
   me,
   onChanged,
 }: {
@@ -482,13 +484,17 @@ function PersonFiche({
   documents: PilotDocument[];
   canManage: boolean;
   canDeclare: boolean;
+  // FI et au-dessus : lisent les justificatifs de tout le monde (vérifier
+  // licence et médical d'un élève avant un vol) — sans pouvoir les
+  // modifier, valider ou supprimer, qui restent à la gestion (canManage).
+  canReadAll: boolean;
   me: string | null;
   onChanged: () => void;
 }) {
   const [modal, setModal] = useState<Modal>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const docsById = new Map(documents.map((d) => [d.id, d]));
-  const canOpen = (doc: PilotDocument) => canManage || doc.userId === me;
+  const canOpen = (doc: PilotDocument) => canManage || canReadAll || doc.userId === me;
   const isSelf = person.id === me;
   const allValidities = lines.flatMap((l) => [l.current, ...l.pending, ...l.history]);
   const requiredNote = REQUIRED_NOTE[personGroup(person)];
