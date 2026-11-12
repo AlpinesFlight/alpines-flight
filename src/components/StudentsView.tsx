@@ -30,6 +30,11 @@ export function StudentsView() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(startAsInstructor);
   const [detail, setDetail] = useState<UserLite | null>(null);
+  // Soldes des comptes pilotes : Gérant seulement — un instructeur ou un
+  // admin ne voit que son propre compte (page Mon compte pilote) ; l'API ne
+  // leur envoie d'ailleurs plus les soldes (voir /api/students).
+  const { data: session } = useSession();
+  const showBalances = session?.user?.role === "GERANT";
 
   async function load() {
     setLoading(true);
@@ -101,7 +106,7 @@ export function StudentsView() {
               <th className="px-5 py-3 font-medium">Type</th>
               <th className="px-5 py-3 font-medium">Licence</th>
               <th className="px-5 py-3 font-medium">Heures</th>
-              <th className="px-5 py-3 font-medium">Solde</th>
+              {showBalances && <th className="px-5 py-3 font-medium">Solde</th>}
               <th className="px-5 py-3 font-medium">Contact</th>
             </tr>
           </thead>
@@ -131,21 +136,23 @@ export function StudentsView() {
                 <td className="px-5 py-3 text-navy-700">
                   {formatHours(s.studentProfile?.totalHours ?? 0)}
                 </td>
-                <td
-                  className={`px-5 py-3 font-medium ${
-                    (s.studentProfile?.balanceCents ?? 0) < 0
-                      ? "text-red-600"
-                      : "text-navy-900"
-                  }`}
-                >
-                  {formatMoney(s.studentProfile?.balanceCents ?? 0)}
-                </td>
+                {showBalances && (
+                  <td
+                    className={`px-5 py-3 font-medium ${
+                      (s.studentProfile?.balanceCents ?? 0) < 0
+                        ? "text-red-600"
+                        : "text-navy-900"
+                    }`}
+                  >
+                    {formatMoney(s.studentProfile?.balanceCents ?? 0)}
+                  </td>
+                )}
                 <td className="px-5 py-3 text-navy-600">{s.email}</td>
               </tr>
             ))}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-navy-600">
+                <td colSpan={showBalances ? 6 : 5} className="px-5 py-8 text-center text-navy-600">
                   Aucun élève ou pilote trouvé.
                 </td>
               </tr>
@@ -724,13 +731,17 @@ function StudentDetailModal({
               <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2 -mt-2">{toggleError}</p>
             )}
 
-            <div className="grid grid-cols-3 gap-3">
+            {/* Solde : Gérant seulement (l'API ne l'envoie qu'à lui, voir
+                /api/students/[id]) — sinon il s'affichait à 0,00 €. */}
+            <div className={clsx("grid gap-3", isGerant ? "grid-cols-3" : "grid-cols-2")}>
               <Stat label="Heures totales" value={formatHours(data.studentProfile?.totalHours ?? 0)} />
-              <Stat
-                label="Solde"
-                value={formatMoney(data.studentProfile?.balanceCents ?? 0)}
-                danger={(data.studentProfile?.balanceCents ?? 0) < 0}
-              />
+              {isGerant && (
+                <Stat
+                  label="Solde"
+                  value={formatMoney(data.studentProfile?.balanceCents ?? 0)}
+                  danger={(data.studentProfile?.balanceCents ?? 0) < 0}
+                />
+              )}
               <Stat label="Licence" value={data.studentProfile?.licenseType ?? "—"} />
             </div>
 
@@ -761,6 +772,7 @@ function StudentDetailModal({
               <ShieldCheck size={15} /> Voir ses licences &amp; qualifications
             </Link>
 
+            {isGerant && (
             <div>
               <h3 className="text-sm font-semibold text-navy-900 mb-2">Compte pilote</h3>
               <div className="flex flex-col gap-1.5">
@@ -790,6 +802,7 @@ function StudentDetailModal({
                 ))}
               </div>
             </div>
+            )}
 
             {isGerant && (
               <PilotRatesSection

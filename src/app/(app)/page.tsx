@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { AnnouncementsCard } from "@/components/AnnouncementsCard";
 import { MaintenanceIssuesCard } from "@/components/MaintenanceIssuesCard";
+import { WeatherCard } from "@/components/WeatherCard";
 import { formatDateTime, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
 import { canManageSchool } from "@/lib/permissions";
@@ -71,12 +72,6 @@ export default async function DashboardPage() {
           now={now}
         />
       </Suspense>
-
-      {isGerant && (
-        <div className="px-4 md:px-8 pb-6">
-          <MaintenanceIssuesCard />
-        </div>
-      )}
 
       <div className="px-4 md:px-8 pb-8">
         <AnnouncementsCard />
@@ -162,7 +157,10 @@ async function DashboardContent({
 }: {
   isGerant: boolean;
   // Compte élève/pilote : son solde et ses heures à la place des chiffres de
-  // l'école (élèves à solde négatif, heures du mois), qui ne le concernent pas.
+  // l'école (élèves à solde négatif, heures du mois), qui ne le concernent
+  // pas. Instructeur/admin : son solde à la place des élèves à solde négatif
+  // (les comptes des autres sont l'affaire du Gérant), les heures de l'école
+  // restent affichées.
   isPilotAccount: boolean;
   userId: string | undefined;
   now: Date;
@@ -201,19 +199,19 @@ async function DashboardContent({
       // findMany({ include: { user: true } }), qui aurait à la fois envoyé
       // les User complets (passwordHash compris) pour rien et fait plus de
       // travail que nécessaire.
-      isPilotAccount
-        ? Promise.resolve(0)
-        : prisma.studentProfile.count({
+      isGerant
+        ? prisma.studentProfile.count({
             where: { balanceCents: { lt: 0 } },
-          }),
+          })
+        : Promise.resolve(0),
       isPilotAccount
         ? Promise.resolve([])
         : prisma.flightLog.findMany({
             where: { date: { gte: monthStart, lte: monthEnd } },
           }),
-      // Mêmes chiffres que sa page Comptes pilotes (solde) et la page Élèves
-      // (heures totales, tenues à jour à chaque vol clôturé ou corrigé).
-      isPilotAccount && userId
+      // Mêmes chiffres que sa page Mon compte pilote (solde) et la page
+      // Élèves (heures totales, tenues à jour à chaque vol clôturé ou corrigé).
+      !isGerant && userId
         ? prisma.studentProfile.findUnique({
             where: { userId },
             select: { balanceCents: true, totalHours: true },
@@ -269,12 +267,22 @@ async function DashboardContent({
           </>
         ) : (
           <>
-            <StatCard
-              icon={Wallet}
-              label="Élèves à solde négatif"
-              value={String(negativeStudents)}
-              color="navy"
-            />
+            {isGerant ? (
+              <StatCard
+                icon={Wallet}
+                label="Élèves à solde négatif"
+                value={String(negativeStudents)}
+                color="navy"
+              />
+            ) : (
+              <StatCard
+                icon={Wallet}
+                label="Mon solde"
+                value={formatMoney(myAccount?.balanceCents ?? 0)}
+                color={(myAccount?.balanceCents ?? 0) < 0 ? "red" : "navy"}
+                href="/comptes-pilotes"
+              />
+            )}
             <StatCard
               icon={PlaneTakeoff}
               label="Heures volées ce mois-ci"
@@ -286,7 +294,7 @@ async function DashboardContent({
         )}
       </div>
 
-      <div className="px-4 md:px-8 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="px-4 md:px-8 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
             <h2 className="font-semibold text-navy-900">Planning du jour</h2>
@@ -342,7 +350,14 @@ async function DashboardContent({
           <div className="pb-1" />
         </div>
 
+        {/* La météo à côté du planning du jour : les deux premières choses
+            qu'on regarde avant de voler. */}
+        <WeatherCard />
+      </div>
+
+      <div className="px-4 md:px-8 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isGerant ? (
+          <>
           <div className="bg-white rounded-2xl border border-navy-100 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
               <h2 className="font-semibold text-navy-900">Alertes maintenance</h2>
@@ -383,8 +398,12 @@ async function DashboardContent({
               ))}
             </div>
           </div>
-        ) : (
           <MaintenanceIssuesCard />
+          </>
+        ) : (
+          <div className="lg:col-span-2">
+            <MaintenanceIssuesCard />
+          </div>
         )}
       </div>
     </>

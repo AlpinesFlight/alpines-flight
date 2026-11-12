@@ -84,7 +84,22 @@ export async function GET(req: Request) {
   });
   const currentProgram = new Map(enrollments.map((e) => [e.studentId, e.programId]));
 
-  return NextResponse.json(students.map((s) => ({ ...s, currentProgramId: currentProgram.get(s.id) ?? null })));
+  // Solde du compte pilote : Gérant seulement, comme la fiche d'un élève
+  // (/api/students/[id]) et les mouvements (/api/transactions) — un
+  // instructeur ou un admin voit le dossier pédagogique de chacun, mais
+  // seulement son propre compte pilote (demande du Gérant, 2026-11-12).
+  const finance = canManageFinance(session.user.role);
+  return NextResponse.json(
+    students.map((s) => {
+      let studentProfile = s.studentProfile;
+      if (studentProfile && !finance && "balanceCents" in studentProfile) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { balanceCents, ...rest } = studentProfile;
+        studentProfile = rest as typeof studentProfile;
+      }
+      return { ...s, studentProfile, currentProgramId: currentProgram.get(s.id) ?? null };
+    })
+  );
 }
 
 const createSchema = z.object({

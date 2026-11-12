@@ -299,9 +299,9 @@ export function PlanningView() {
   const [aircraftFilter, setAircraftFilter] = useState<string>("ALL");
   const [instructorFilter, setInstructorFilter] = useState<string>("ALL");
   const [mineOnly, setMineOnly] = useState(false);
-  // Jour par défaut partout : c'est la vue "planning des avions" d'un
-  // aéroclub, une colonne par avion.
-  const [selectedView, setView] = useState<View>(Views.DAY);
+  // Semaine par défaut (demande du Gérant, 2026-11-12) ; sur téléphone, où
+  // la semaine n'est pas proposée, c'est la vue Jour (voir `view` plus bas).
+  const [selectedView, setView] = useState<View>(Views.WEEK);
   const [date, setDate] = useState(() => new Date());
   // Semaine (7 colonnes) devient illisible sur téléphone (vérifié : à 375px
   // de large, chaque colonne retombe à ~15px). Jour (une colonne par avion),

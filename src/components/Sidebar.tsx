@@ -54,7 +54,10 @@ const NAV_ITEMS = [
   // élève/pilote, réservé au staff pédagogique.
   { href: "/flotte", label: "Flotte", icon: Plane, staffOnly: true },
   { href: "/vols", label: "Vols", icon: PlaneTakeoff },
-  { href: "/comptes-pilotes", label: "Comptes pilotes", icon: Wallet },
+  // Tous les comptes pour le Gérant ; pour tout autre compte (instructeur
+  // compris), la page ne montre que son propre compte pilote — d'où le
+  // libellé "Mon compte pilote" (voir ownLabel dans le rendu plus bas).
+  { href: "/comptes-pilotes", label: "Comptes pilotes", ownLabel: "Mon compte pilote", icon: Wallet },
   // Visible de tous — chacun n'y voit que les documents que sa visibilité
   // autorise (voir /api/documents).
   { href: "/documentation", label: "Documentation", icon: BookOpen },
@@ -222,7 +225,7 @@ export function Sidebar({
               )}
             >
               <Icon size={18} />
-              {item.label}
+              {userRole !== "GERANT" && item.ownLabel ? item.ownLabel : item.label}
             </Link>
           );
         })}
