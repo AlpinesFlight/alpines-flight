@@ -5,7 +5,20 @@ import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/api";
 import { AccountTransaction, SchoolSettings, UserLite } from "@/types/models";
 import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
-import { Plus, X, Check, Ban, Clock, FileDown, FileText, Pencil, Trash2, Landmark, PiggyBank } from "lucide-react";
+import {
+  Plus,
+  X,
+  Check,
+  Ban,
+  Clock,
+  FileDown,
+  FileText,
+  FileSpreadsheet,
+  Pencil,
+  Trash2,
+  Landmark,
+  PiggyBank,
+} from "lucide-react";
 import { clsx } from "clsx";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -61,6 +74,7 @@ export function BillingView() {
   const [showDeposit, setShowDeposit] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showFlightsExport, setShowFlightsExport] = useState(false);
+  const [showExcelExport, setShowExcelExport] = useState(false);
   const [showIban, setShowIban] = useState(false);
   const [editTx, setEditTx] = useState<AccountTransaction | null>(null);
   // Filtre d'affichage uniquement (Gérant) — pour retrouver rapidement tous
@@ -190,6 +204,14 @@ export function BillingView() {
             className="flex items-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 text-sm font-semibold px-3.5 py-2 transition-colors"
           >
             <FileDown size={16} /> Exporter en PDF
+          </button>
+        )}
+        {canFinanceAdmin && (
+          <button
+            onClick={() => setShowExcelExport(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 text-sm font-semibold px-3.5 py-2 transition-colors"
+          >
+            <FileSpreadsheet size={16} /> Export Excel (comptable)
           </button>
         )}
         {canFinanceAdmin && (
@@ -433,6 +455,8 @@ export function BillingView() {
       )}
 
       {showExport && <ExportPdfModal onClose={() => setShowExport(false)} />}
+
+      {showExcelExport && <ExportExcelModal onClose={() => setShowExcelExport(false)} />}
 
       {showFlightsExport && (
         <ExportFlightsPdfModal students={students} onClose={() => setShowFlightsExport(false)} />
@@ -1066,6 +1090,131 @@ function ExportPdfModal({ onClose }: { onClose: () => void }) {
             className="flex items-center justify-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm transition-colors"
           >
             <FileDown size={16} /> Générer le PDF
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Export Excel pour la comptable (bilan) — Gérant seulement : par client, ce
+// qui a été vendu (versements, heures de vol prépayées) et consommé (vols)
+// sur la période, avec soldes de début et de fin, plus le détail des
+// mouvements. Voir src/lib/pilot-accounts-export.ts.
+function ExportExcelModal({ onClose }: { onClose: () => void }) {
+  const [now] = useState(() => new Date());
+  const today = toDateInput(now);
+  const year = now.getFullYear();
+  const [from, setFrom] = useState(`${year}-01-01`);
+  const [to, setTo] = useState(today);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const presets = [
+    { label: `${year} à ce jour`, from: `${year}-01-01`, to: today },
+    { label: `Année ${year - 1}`, from: `${year - 1}-01-01`, to: `${year - 1}-12-31` },
+  ];
+
+  async function handleExport(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/transactions/export?${new URLSearchParams({ from, to }).toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Erreur ${res.status}`);
+      }
+      const blob = await res.blob();
+      const filename =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "comptes-pilotes.xlsx";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+          <h2 className="font-semibold text-navy-900">Export Excel pour la comptabilité</h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900" aria-label="Fermer">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleExport} className="p-5 flex flex-col gap-3">
+          <p className="text-sm text-navy-600 -mt-1">
+            Heures de vol prépayées, par client : solde de début, ce qui a été vendu (versements) et consommé
+            (vols, dont location avion et instruction, avec les heures), ajustements et solde de fin. Avec le détail
+            de tous les mouvements dans un second onglet.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => {
+                  setFrom(p.from);
+                  setTo(p.to);
+                }}
+                className={clsx(
+                  "h-7 px-2.5 rounded-full border text-xs font-medium transition-colors",
+                  from === p.from && to === p.to
+                    ? "bg-navy-800 border-navy-800 text-white"
+                    : "border-navy-100 text-navy-600 hover:border-navy-300"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Du</span>
+              <input
+                type="date"
+                required
+                value={from}
+                max={to || today}
+                onChange={(e) => setFrom(e.target.value)}
+                className="input"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Au</span>
+              <input
+                type="date"
+                required
+                value={to}
+                min={from}
+                max={today}
+                onChange={(e) => setTo(e.target.value)}
+                className="input"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-navy-500">
+            Seuls les mouvements confirmés comptent ; les versements encore en attente de vérification sont listés à
+            part. La date de fin ne peut pas dépasser aujourd&apos;hui.
+          </p>
+          {error && <p className="text-sm text-red-600 bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+          <button
+            type="submit"
+            disabled={busy || !from || !to}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm transition-colors disabled:opacity-60"
+          >
+            <FileSpreadsheet size={16} /> {busy ? "Préparation…" : "Télécharger le fichier Excel"}
           </button>
         </form>
       </div>
