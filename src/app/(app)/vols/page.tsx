@@ -21,7 +21,9 @@ export default async function VolsPage() {
         }
       />
       <Suspense fallback={null}>
-        <FlightsView />
+        {/* Rôle connu ici, côté serveur : la case "Chiffre d'affaires" n'a
+            jamais à apparaître, même un instant, sur un compte élève/pilote. */}
+        <FlightsView showRevenue={session?.user?.role !== "STUDENT"} />
       </Suspense>
     </div>
   );

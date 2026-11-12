@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { AnnouncementsCard } from "@/components/AnnouncementsCard";
 import { MaintenanceIssuesCard } from "@/components/MaintenanceIssuesCard";
-import { formatDateTime, formatHoursMinutes } from "@/lib/format";
+import { formatDateTime, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
 import { canManageSchool } from "@/lib/permissions";
 import { loadLicencesData } from "@/lib/qualifications";
@@ -64,7 +64,12 @@ export default async function DashboardPage() {
           navigateur (signalements, annonces) s'affichent tout de suite, au
           lieu d'un écran vide jusqu'à la réponse complète. */}
       <Suspense fallback={<DashboardSkeleton />}>
-        <DashboardContent isGerant={isGerant} userId={session?.user?.id} now={now} />
+        <DashboardContent
+          isGerant={isGerant}
+          isPilotAccount={session?.user?.role === "STUDENT"}
+          userId={session?.user?.id}
+          now={now}
+        />
       </Suspense>
 
       {isGerant && (
@@ -151,10 +156,14 @@ async function LicenceAlert({ role, userId }: { role?: string; userId?: string }
 
 async function DashboardContent({
   isGerant,
+  isPilotAccount,
   userId,
   now,
 }: {
   isGerant: boolean;
+  // Compte élève/pilote : son solde et ses heures à la place des chiffres de
+  // l'école (élèves à solde négatif, heures du mois), qui ne le concernent pas.
+  isPilotAccount: boolean;
   userId: string | undefined;
   now: Date;
 }) {
@@ -163,7 +172,7 @@ async function DashboardContent({
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
 
-  const [todayReservations, maintenanceAlerts, myOpenIssues, negativeStudents, monthFlights] =
+  const [todayReservations, maintenanceAlerts, myOpenIssues, negativeStudents, monthFlights, myAccount] =
     await Promise.all([
       prisma.reservation.findMany({
         where: {
@@ -192,12 +201,24 @@ async function DashboardContent({
       // findMany({ include: { user: true } }), qui aurait à la fois envoyé
       // les User complets (passwordHash compris) pour rien et fait plus de
       // travail que nécessaire.
-      prisma.studentProfile.count({
-        where: { balanceCents: { lt: 0 } },
-      }),
-      prisma.flightLog.findMany({
-        where: { date: { gte: monthStart, lte: monthEnd } },
-      }),
+      isPilotAccount
+        ? Promise.resolve(0)
+        : prisma.studentProfile.count({
+            where: { balanceCents: { lt: 0 } },
+          }),
+      isPilotAccount
+        ? Promise.resolve([])
+        : prisma.flightLog.findMany({
+            where: { date: { gte: monthStart, lte: monthEnd } },
+          }),
+      // Mêmes chiffres que sa page Comptes pilotes (solde) et la page Élèves
+      // (heures totales, tenues à jour à chaque vol clôturé ou corrigé).
+      isPilotAccount && userId
+        ? prisma.studentProfile.findUnique({
+            where: { userId },
+            select: { balanceCents: true, totalHours: true },
+          })
+        : Promise.resolve(null),
     ]);
 
   const monthHours = monthFlights.reduce((sum, f) => sum + f.duration, 0);
@@ -229,19 +250,40 @@ async function DashboardContent({
             color="navy"
           />
         )}
-        <StatCard
-          icon={Wallet}
-          label="Élèves à solde négatif"
-          value={String(negativeStudents)}
-          color="navy"
-        />
-        <StatCard
-          icon={PlaneTakeoff}
-          label="Heures volées ce mois-ci"
-          value={formatHoursMinutes(monthHours)}
-          color="navy"
-          href={`/vols?from=${toIsoDate(monthStart)}&to=${toIsoDate(monthEnd)}`}
-        />
+        {isPilotAccount ? (
+          <>
+            <StatCard
+              icon={Wallet}
+              label="Mon solde"
+              value={formatMoney(myAccount?.balanceCents ?? 0)}
+              color={(myAccount?.balanceCents ?? 0) < 0 ? "red" : "navy"}
+              href="/comptes-pilotes"
+            />
+            <StatCard
+              icon={PlaneTakeoff}
+              label="Mes heures de vol"
+              value={formatHoursMinutes(myAccount?.totalHours ?? 0)}
+              color="navy"
+              href="/vols"
+            />
+          </>
+        ) : (
+          <>
+            <StatCard
+              icon={Wallet}
+              label="Élèves à solde négatif"
+              value={String(negativeStudents)}
+              color="navy"
+            />
+            <StatCard
+              icon={PlaneTakeoff}
+              label="Heures volées ce mois-ci"
+              value={formatHoursMinutes(monthHours)}
+              color="navy"
+              href={`/vols?from=${toIsoDate(monthStart)}&to=${toIsoDate(monthEnd)}`}
+            />
+          </>
+        )}
       </div>
 
       <div className="px-4 md:px-8 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">

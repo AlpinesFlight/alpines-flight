@@ -47,7 +47,10 @@ const FUEL_TYPE_LABEL: Record<string, string> = Object.fromEntries(
   FUEL_TYPE_OPTIONS.map((o) => [o.value, o.label])
 );
 
-export function FlightsView() {
+// showRevenue : false pour un compte élève/pilote — le "Chiffre d'affaires"
+// est une donnée de l'école, pas la sienne (ses propres coûts restent dans
+// la colonne Coût).
+export function FlightsView({ showRevenue }: { showRevenue: boolean }) {
   const { data: session } = useSession();
   // Modifier/supprimer un vol touche directement le débit du compte pilote —
   // réservé au Gérant, comme le reste des finances (voir src/lib/permissions.ts).
@@ -220,11 +223,11 @@ export function FlightsView() {
         )}
       </form>
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+      <div className={`grid grid-cols-1 ${showRevenue ? "sm:grid-cols-4" : "sm:grid-cols-3"} gap-4 mb-6`}>
         <SummaryTile label="Vols" value={String(summary.count)} />
         <SummaryTile label="Heures de vol" value={formatHours(summary.totalHours)} />
         <SummaryTile label="Atterrissages" value={String(summary.totalLandings)} />
-        <SummaryTile label="Chiffre d'affaires" value={formatMoney(summary.totalRevenue)} />
+        {showRevenue && <SummaryTile label="Chiffre d'affaires" value={formatMoney(summary.totalRevenue)} />}
       </div>
 
       {/* Résumé de gestion — Gérant uniquement, sur cette même page plutôt

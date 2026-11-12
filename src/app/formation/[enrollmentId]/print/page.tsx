@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { isInstructorOrAbove } from "@/lib/permissions";
 import { safeUserSelect } from "@/lib/selects";
 import { formatDate, formatHoursMinutes } from "@/lib/format";
 import { PrintButton } from "@/components/PrintButton";
@@ -30,6 +31,9 @@ export default async function EnrollmentPrintPage({
 
   const session = await auth();
   if (!session) redirect("/login");
+  // La rubrique Formation est retirée des comptes élève/pilote (voir
+  // formation/page.tsx) : son livret imprimable aussi.
+  if (!isInstructorOrAbove(session.user.role)) redirect("/");
 
   const enrollment = await prisma.enrollment.findUnique({
     where: { id: enrollmentId },
@@ -47,9 +51,6 @@ export default async function EnrollmentPrintPage({
   });
 
   if (!enrollment) notFound();
-  if (session.user.role === "STUDENT" && enrollment.studentId !== session.user.id) {
-    redirect("/formation");
-  }
 
   // Niveau courant = ligne la plus récente par exercice.
   const latest = new Map<string, (typeof enrollment.progress)[number]>();

@@ -44,8 +44,11 @@ const NAV_ITEMS = [
   // reste de la gestion des vols.
   { href: "/decouverte", label: "Vol découverte", icon: Compass, staffOnly: true },
   { href: "/eleves", label: "Élèves & pilotes", icon: Users },
-  { href: "/instructeurs", label: "Instructeurs", icon: UserCog },
-  { href: "/formation", label: "Formation", icon: GraduationCap },
+  // Pas pour les comptes élève/pilote (demande du Gérant, 2026-11-12) — les
+  // pages elles-mêmes les renvoient aussi vers l'accueil, voir
+  // instructeurs/page.tsx et formation/page.tsx.
+  { href: "/instructeurs", label: "Instructeurs", icon: UserCog, staffOnly: true },
+  { href: "/formation", label: "Formation", icon: GraduationCap, staffOnly: true },
   { href: "/licences", label: "Licences", icon: ShieldCheck },
   // Gestion de la flotte (avions, maintenance, kardex) — pas un compte
   // élève/pilote, réservé au staff pédagogique.
