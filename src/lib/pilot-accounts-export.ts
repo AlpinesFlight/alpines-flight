@@ -168,11 +168,12 @@ const days = (hours: number) => hours / 24;
 
 interface Movement {
   iso: string;
-  nature: "Versement" | "Vol" | "Crédit instructeur" | "Correction";
+  nature: "Versement" | "Vol" | "Taxe d'atterrissage" | "Crédit instructeur" | "Correction";
   label: string;
   hours: number | null;
   depositCents: number;
   consumedCents: number;
+  feeCents: number; // taxe d'atterrissage refacturée, en positif
   creditCents: number;
   correctionCents: number;
 }
@@ -189,6 +190,7 @@ interface ClientRow {
   instructionCents: number;
   flightCount: number;
   flightHours: number;
+  feesCents: number; // taxes d'atterrissage refacturées, en positif
   adjustmentsCents: number;
   creditsCents: number;
   movements: Movement[];
@@ -202,7 +204,7 @@ function kindLabel(role: string, isPilot: boolean | undefined): string {
 }
 
 const closingOf = (c: ClientRow) =>
-  c.openingCents + c.depositsCents - c.flightsCents + c.adjustmentsCents + c.creditsCents;
+  c.openingCents + c.depositsCents - c.flightsCents - c.feesCents + c.adjustmentsCents + c.creditsCents;
 
 async function loadData(fromIso: string, toIso: string) {
   const start = parisDayStart(fromIso);
@@ -224,6 +226,7 @@ async function loadData(fromIso: string, toIso: string) {
         reference: true,
         notes: true,
         date: true,
+        airfield: true,
         flightLog: {
           select: {
             duration: true,
@@ -233,6 +236,8 @@ async function loadData(fromIso: string, toIso: string) {
             aircraft: { select: { registration: true } },
           },
         },
+        landingFlightLog: { select: { date: true, aircraft: { select: { registration: true } } } },
+        attachment: { select: { id: true } },
       },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
     }),
@@ -270,6 +275,7 @@ async function loadData(fromIso: string, toIso: string) {
       instructionCents: 0,
       flightCount: 0,
       flightHours: 0,
+      feesCents: 0,
       adjustmentsCents: 0,
       creditsCents: 0,
       movements: [],
@@ -280,7 +286,7 @@ async function loadData(fromIso: string, toIso: string) {
     const c = clients.get(t.studentId);
     if (!c) continue;
     const iso = parisIso(t.date);
-    const base = { iso, hours: null, depositCents: 0, consumedCents: 0, creditCents: 0, correctionCents: 0 };
+    const base = { iso, hours: null, depositCents: 0, consumedCents: 0, feeCents: 0, creditCents: 0, correctionCents: 0 };
     if (t.type === "DEPOSIT") {
       c.depositsCents += t.amountCents;
       const parts = [t.method ? METHOD_LABEL[t.method] ?? t.method : "Versement"];
@@ -305,6 +311,18 @@ async function loadData(fromIso: string, toIso: string) {
           }${debited === 0 ? " · non facturé" : ""}`
         : clean(t.notes);
       c.movements.push({ ...base, nature: "Vol", label, hours: f?.duration ?? null, consumedCents: debited });
+    } else if (t.type === "LANDING_FEE") {
+      // Taxe payée par l'école à un autre aéroport et refacturée au pilote :
+      // elle consomme son avance, mais ce ne sont pas des heures de vol.
+      const fee = -t.amountCents;
+      c.feesCents += fee;
+      const lf = t.landingFlightLog;
+      const parts = [clean(t.airfield)];
+      if (lf) parts.push(`${lf.aircraft.registration}, vol du ${frDate(parisIso(lf.date))}`);
+      if (clean(t.reference)) parts.push(`facture ${clean(t.reference)}`);
+      if (clean(t.notes)) parts.push(clean(t.notes));
+      if (t.attachment) parts.push("justificatif dans l'appli");
+      c.movements.push({ ...base, nature: "Taxe d'atterrissage", label: parts.filter(Boolean).join(" — "), feeCents: fee });
     } else if (t.type === "ADJUSTMENT") {
       c.adjustmentsCents += t.amountCents;
       c.movements.push({ ...base, nature: "Correction", label: clean(t.notes), correctionCents: t.amountCents });
@@ -333,6 +351,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
   const sum = (pick: (c: ClientRow) => number) => rows.reduce((s, c) => s + pick(c), 0);
   const hasCredits = rows.some((c) => c.creditsCents !== 0);
   const hasCorrections = rows.some((c) => c.adjustmentsCents !== 0);
+  const hasFees = rows.some((c) => c.feesCents !== 0);
   const period = `Période du ${frDate(fromIso)} au ${frDate(toIso)}`;
   const edited = `édité le ${frDate(parisToday())}`;
 
@@ -352,6 +371,9 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
     { label: `Solde d'ouverture\nau ${frDate(fromIso)}`, width: 17, align: "right", fmt: MONEY, value: (c) => euros(c.openingCents) },
     { label: "Encaissé\n(heures prépayées vendues)", width: 19, align: "right", fmt: MONEY, value: (c) => euros(c.depositsCents) },
     { label: "Consommé\n(vols effectués)", width: 17, align: "right", fmt: MONEY, value: (c) => euros(c.flightsCents) },
+    ...(hasFees
+      ? [{ label: "Taxes d'atterrissage\nrefacturées", width: 17, align: "right" as Align, fmt: MONEY, value: (c: ClientRow) => euros(c.feesCents) }]
+      : []),
     ...(hasCredits
       ? [{ label: "Crédits\ninstructeurs", width: 15, align: "right" as Align, fmt: MONEY, value: (c: ClientRow) => euros(c.creditsCents) }]
       : []),
@@ -366,6 +388,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
   const cOpen = colOf("Solde d'ouverture");
   const cDep = colOf("Encaissé");
   const cCons = colOf("Consommé");
+  const cFee = hasFees ? colOf("Taxes") : 0;
   const cCred = hasCredits ? colOf("Crédits") : 0;
   const cCorr = hasCorrections ? colOf("Corrections") : 0;
   const cClose = colOf("Solde de clôture");
@@ -378,7 +401,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
   // encaissé, consommé et ses 3 détails, clôture et ses 2 détails) + les
   // lignes optionnelles.
   const recapStart = 5;
-  const recapLines = 9 + (hasCredits ? 1 : 0) + (hasCorrections ? 1 : 0);
+  const recapLines = 9 + (hasFees ? 1 : 0) + (hasCredits ? 1 : 0) + (hasCorrections ? 1 : 0);
   const tableLabelRow = recapStart + recapLines + 2;
   const tableHeaderRow = tableLabelRow + 1;
   const firstData = tableHeaderRow + 1;
@@ -399,6 +422,9 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
     { label: "dont location avion", value: euros(sum((c) => c.aircraftCents)), fmt: MONEY_STRICT, style: "sub" },
     { label: "dont instruction", value: euros(sum((c) => c.instructionCents)), fmt: MONEY_STRICT, style: "sub" },
     { label: `soit ${sum((c) => c.flightCount)} vol(s) pour un total d'heures de vol de`, value: days(sum((c) => c.flightHours)), fmt: HOURS, style: "sub" },
+    ...(hasFees
+      ? [{ label: "− Taxes d'atterrissage refacturées aux pilotes (payées par l'école à d'autres aéroports)", value: { formula: ref(cFee), result: euros(sum((c) => c.feesCents)) }, fmt: MONEY_STRICT, style: "main" as const }]
+      : []),
     ...(hasCredits
       ? [{ label: "+ Crédits accordés aux instructeurs (part d'instruction payée en heures de vol)", value: { formula: ref(cCred), result: euros(sum((c) => c.creditsCents)) }, fmt: MONEY_STRICT, style: "main" as const }]
       : []),
@@ -465,6 +491,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
       const cell = syn.getCell(r, j + 1);
       if (j + 1 === cClose) {
         const parts = [`${col(cOpen)}${r}`, `+${col(cDep)}${r}`, `-${col(cCons)}${r}`];
+        if (cFee) parts.push(`-${col(cFee)}${r}`);
         if (cCred) parts.push(`+${col(cCred)}${r}`);
         if (cCorr) parts.push(`+${col(cCorr)}${r}`);
         cell.value = { formula: parts.join(""), result: euros(closingOf(c)) };
@@ -502,6 +529,9 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
   const notes = [
     "Encaissé : versements des pilotes, comptés à la date du virement une fois vérifiés sur le relevé bancaire.",
     "Consommé : vols effectués et débités sur le compte du pilote, à la date du vol (location de l'avion + instruction).",
+    ...(hasFees
+      ? ["Taxes d'atterrissage refacturées : taxes payées par l'école à d'autres aéroports, débitées sur le compte du pilote concerné (facture de l'aéroport consultable dans l'appli)."]
+      : []),
     ...(hasCredits
       ? ["Crédits instructeurs : part de l'instruction créditée sur le compte pilote des instructeurs, utilisable en heures de vol."]
       : []),
@@ -530,6 +560,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
     { label: "Heures\nde vol", width: 9, align: "center", fmt: HOURS },
     { label: "Encaissé", width: 14, align: "right", fmt: MONEY },
     { label: "Consommé", width: 14, align: "right", fmt: MONEY },
+    ...(hasFees ? [{ label: "Taxe\nd'atterrissage", width: 14, align: "right" as Align, fmt: MONEY }] : []),
     ...(hasCredits ? [{ label: "Crédit\ninstructeur", width: 13, align: "right" as Align, fmt: MONEY }] : []),
     ...(hasCorrections ? [{ label: "Correction", width: 13, align: "right" as Align, fmt: MONEY }] : []),
     { label: "Solde après\nopération", width: 15, align: "right", fmt: MONEY_STRICT },
@@ -539,11 +570,14 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
   sheetTitle(det, nDet, "Détail des opérations par client", `${period} · solde du compte après chaque opération`);
   // Ligne 4 = en-tête (figé à l'écran et répété à l'impression).
   headerRow(det, 4, detCols.map((x) => x.label), detCols.map((x) => x.align));
+  // Colonnes optionnelles : position lue sur l'en-tête (0 = absente).
+  const detCol = (labelStart: string) => detCols.findIndex((x) => x.label.startsWith(labelStart)) + 1;
   const dHours = 4;
   const dDep = 5;
   const dCons = 6;
-  const dCred = hasCredits ? 7 : 0;
-  const dCorr = hasCorrections ? (hasCredits ? 8 : 7) : 0;
+  const dFee = detCol("Taxe");
+  const dCred = detCol("Crédit");
+  const dCorr = detCol("Correction");
   const dBal = nDet;
   let r = 5;
   for (const c of rows) {
@@ -568,7 +602,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
     let balance = c.openingCents;
     const first = r;
     c.movements.forEach((m, i) => {
-      balance += m.depositCents - m.consumedCents + m.creditCents + m.correctionCents;
+      balance += m.depositCents - m.consumedCents - m.feeCents + m.creditCents + m.correctionCents;
       const zebra = i % 2 === 1;
       const values: Record<number, ExcelJS.CellValue> = {
         1: excelDay(m.iso),
@@ -577,6 +611,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
         [dHours]: m.hours != null ? days(m.hours) : null,
         [dDep]: m.depositCents ? euros(m.depositCents) : null,
         [dCons]: m.nature === "Vol" ? euros(m.consumedCents) : null,
+        ...(dFee ? { [dFee]: m.feeCents ? euros(m.feeCents) : null } : {}),
         ...(dCred ? { [dCred]: m.creditCents ? euros(m.creditCents) : null } : {}),
         ...(dCorr ? { [dCorr]: m.correctionCents ? euros(m.correctionCents) : null } : {}),
         [dBal]: euros(balance),
@@ -607,6 +642,7 @@ export async function buildPilotAccountsExport(fromIso: string, toIso: string) {
           k === dHours ? days(c.flightHours)
           : k === dDep ? euros(c.depositsCents)
           : k === dCons ? euros(c.flightsCents)
+          : k === dFee ? euros(c.feesCents)
           : k === dCred ? euros(c.creditsCents)
           : euros(c.adjustmentsCents);
         cell.value = { formula: `SUM(${col(k)}${first}:${col(k)}${last})`, result };

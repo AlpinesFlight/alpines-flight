@@ -7,6 +7,7 @@ import { safeUserSelect } from "@/lib/selects";
 import { canManageFinance } from "@/lib/permissions";
 import { operationDateSchema } from "@/lib/transactions";
 import { removeInstructorCredit } from "@/lib/instructor-credit";
+import { deleteBlobQuietly } from "@/lib/transaction-attachment-blob";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,13 +16,21 @@ const actionSchema = z.object({
 });
 
 const editSchema = z.object({
-  type: z.enum(["DEPOSIT", "FLIGHT_DEBIT", "ADJUSTMENT", "INSTRUCTION_CREDIT"]).optional(),
+  type: z.enum(["DEPOSIT", "FLIGHT_DEBIT", "ADJUSTMENT", "INSTRUCTION_CREDIT", "LANDING_FEE"]).optional(),
   // 0 accepté pour une ligne de vol (vol offert, crédit instructeur annulé...) —
   // refusé plus bas pour un versement ou un ajustement.
   amountCents: z.number().int().optional(),
   method: z.enum(["CARD", "TRANSFER", "CASH", "CHECK"]).nullable().optional(),
   reference: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  // Terrain facturé d'une taxe d'atterrissage.
+  airfield: z
+    .string()
+    .trim()
+    .max(60)
+    .transform((s) => s.toUpperCase() || null)
+    .nullable()
+    .optional(),
   // Date de l'opération (virement, écriture) — pas pour un débit relié à un
   // vol, dont la date est celle du vol (voir plus bas).
   date: operationDateSchema.optional(),
@@ -87,8 +96,15 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const { date, ...fields } = parsed.data;
   const finalType = fields.type ?? existing.type;
-  if (fields.amountCents === 0 && (finalType === "DEPOSIT" || finalType === "ADJUSTMENT")) {
+  if (
+    fields.amountCents === 0 &&
+    (finalType === "DEPOSIT" || finalType === "ADJUSTMENT" || finalType === "LANDING_FEE")
+  ) {
     return NextResponse.json({ error: "Le montant ne peut pas être nul." }, { status: 400 });
+  }
+  const finalAirfield = fields.airfield !== undefined ? fields.airfield : existing.airfield;
+  if (finalType === "LANDING_FEE" && !finalAirfield) {
+    return NextResponse.json({ error: "Terrain requis pour une taxe d'atterrissage." }, { status: 400 });
   }
   // Un mouvement relié à un vol (débit du pilote ou crédit de l'instructeur)
   // porte la date de ce vol : elle se corrige depuis la page Vols (PATCH
@@ -138,7 +154,10 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.accountTransaction.findUnique({ where: { id } });
+  const existing = await prisma.accountTransaction.findUnique({
+    where: { id },
+    include: { attachment: { select: { blobUrl: true } } },
+  });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   await prisma.$transaction(async (db) => {
@@ -165,8 +184,11 @@ export async function DELETE(_req: Request, { params }: Params) {
         data: { instructorSharePct: 0 },
       });
     }
+    // Le justificatif (ligne) part avec le mouvement (cascade) ; son fichier
+    // est supprimé du stockage juste après.
     await db.accountTransaction.delete({ where: { id } });
   });
+  await deleteBlobQuietly(existing.attachment?.blobUrl, `justificatif du mouvement ${id}`);
 
   return NextResponse.json({ ok: true });
 }

@@ -84,6 +84,26 @@ export const safeAnnouncementAttachmentSelect = {
   uploadedAt: true,
 } as const;
 
+// Justificatif d'un mouvement du compte pilote — sans blobUrl : le fichier
+// ne transite que par /api/transactions/[id]/attachment, qui revérifie que
+// c'est le Gérant ou le titulaire du compte.
+export const safeTransactionAttachmentSelect = {
+  id: true,
+  fileName: true,
+  fileMimeType: true,
+  fileSize: true,
+  uploadedAt: true,
+} as const;
+
+// Vol auquel se rapporte une taxe d'atterrissage, de quoi l'afficher.
+export const landingFlightSelect = {
+  id: true,
+  date: true,
+  departureAirfield: true,
+  arrivalAirfield: true,
+  aircraft: { select: { registration: true } },
+} as const;
+
 // Champs d'un SchoolDocument (page Documentation) à renvoyer au client —
 // exclut systématiquement fileData, même logique que ci-dessus. Le
 // fichier ne transite que par /api/documents/[id]/file, qui réapplique aussi

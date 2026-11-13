@@ -307,7 +307,7 @@ export interface DocumentAcknowledgment {
   acknowledgedAt: string | null;
 }
 
-export type TransactionType = "DEPOSIT" | "FLIGHT_DEBIT" | "ADJUSTMENT" | "INSTRUCTION_CREDIT";
+export type TransactionType = "DEPOSIT" | "FLIGHT_DEBIT" | "ADJUSTMENT" | "INSTRUCTION_CREDIT" | "LANDING_FEE";
 export type TransactionStatus = "PENDING" | "CONFIRMED" | "REJECTED";
 export type PaymentMethod = "CARD" | "TRANSFER" | "CASH" | "CHECK";
 
@@ -331,6 +331,19 @@ export interface AccountTransaction {
     instructionCostCents: number;
     aircraft: Aircraft;
   } | null;
+  // Taxe d'atterrissage (LANDING_FEE) : terrain facturé et vol concerné.
+  airfield: string | null;
+  landingFlightLogId: string | null;
+  landingFlightLog?: {
+    id: string;
+    date: string;
+    departureAirfield: string | null;
+    arrivalAirfield: string | null;
+    aircraft: { registration: string };
+  } | null;
+  // Justificatif (facture de l'aéroport...) — fichier servi par
+  // /api/transactions/[id]/attachment.
+  attachment?: TransactionAttachment | null;
   notes: string | null;
   // Date de l'opération (vol, virement...) — celle à afficher et à trier ;
   // createdAt n'est que le moment de la saisie.
@@ -339,6 +352,14 @@ export interface AccountTransaction {
   confirmedAt: string | null;
   confirmedById: string | null;
   confirmedBy?: UserLite | null;
+}
+
+export interface TransactionAttachment {
+  id: string;
+  fileName: string;
+  fileMimeType: string;
+  fileSize: number;
+  uploadedAt: string;
 }
 
 // ---------- Licences, qualifications, médicales ----------

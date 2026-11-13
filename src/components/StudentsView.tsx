@@ -424,6 +424,8 @@ interface StudentDetail extends UserLite {
     // Date de l'opération (vol, virement...), pas de la saisie.
     date: string;
     notes: string | null;
+    // Taxe d'atterrissage : terrain facturé.
+    airfield: string | null;
   }>;
   // Gérant uniquement — voir PilotAircraftRate et /api/students/[id].
   pilotAircraftRates?: Array<{
@@ -439,6 +441,7 @@ const TX_TYPE_LABEL: Record<string, string> = {
   FLIGHT_DEBIT: "Vol",
   ADJUSTMENT: "Ajustement",
   INSTRUCTION_CREDIT: "Instruction",
+  LANDING_FEE: "Taxe d'atterrissage",
 };
 
 function StudentDetailModal({
@@ -783,6 +786,7 @@ function StudentDetailModal({
                   <div key={t.id} className="text-sm flex justify-between text-navy-700">
                     <span>
                       <span className="text-navy-500">{formatDate(t.date)}</span> · {TX_TYPE_LABEL[t.type]}
+                      {t.type === "LANDING_FEE" && t.airfield && ` ${t.airfield}`}
                       {t.status === "PENDING" && " · en attente"}
                       {t.status === "REJECTED" && " · rejeté"}
                     </span>

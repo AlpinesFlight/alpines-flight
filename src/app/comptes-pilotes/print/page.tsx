@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
 import { PrintButton } from "@/components/PrintButton";
 import { canManageFinance } from "@/lib/permissions";
-import { safeUserSelect, safeAircraftSelect } from "@/lib/selects";
+import { safeUserSelect, safeAircraftSelect, landingFlightSelect } from "@/lib/selects";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 
@@ -22,7 +22,11 @@ const TYPE_LABEL: Record<string, string> = {
   FLIGHT_DEBIT: "Vol",
   ADJUSTMENT: "Ajustement",
   INSTRUCTION_CREDIT: "Instruction",
+  LANDING_FEE: "Taxe d'atterrissage",
 };
+
+// Nombre de cases du résumé (classes écrites en entier pour Tailwind).
+const SUMMARY_GRID: Record<number, string> = { 4: "grid-cols-4", 5: "grid-cols-5", 6: "grid-cols-6" };
 
 export default async function BillingPrintPage({
   searchParams,
@@ -53,6 +57,8 @@ export default async function BillingPrintPage({
     include: {
       student: { select: safeUserSelect },
       flightLog: { include: { aircraft: { select: safeAircraftSelect } } },
+      landingFlightLog: { select: landingFlightSelect },
+      attachment: { select: { id: true } },
     },
     orderBy: [{ student: { lastName: "asc" } }, { date: "asc" }, { createdAt: "asc" }],
   });
@@ -76,7 +82,12 @@ export default async function BillingPrintPage({
   const totalInstructionCredits = transactions
     .filter((t) => t.type === "INSTRUCTION_CREDIT")
     .reduce((s, t) => s + t.amountCents, 0);
-  const grandTotal = totalDeposits + totalDebits + totalAdjustments + totalInstructionCredits;
+  // Taxes d'atterrissage refacturées par le Gérant.
+  const totalLandingFees = transactions
+    .filter((t) => t.type === "LANDING_FEE")
+    .reduce((s, t) => s + t.amountCents, 0);
+  const grandTotal = totalDeposits + totalDebits + totalAdjustments + totalInstructionCredits + totalLandingFees;
+  const summaryCells = 4 + (totalInstructionCredits !== 0 ? 1 : 0) + (totalLandingFees !== 0 ? 1 : 0);
 
   return (
     <div className="min-h-screen bg-white text-navy-900 print:bg-white">
@@ -94,7 +105,7 @@ export default async function BillingPrintPage({
         </header>
 
         <section
-          className={`mb-6 grid ${totalInstructionCredits !== 0 ? "grid-cols-5" : "grid-cols-4"} gap-3 text-sm bg-navy-50 rounded-lg px-4 py-3`}
+          className={`mb-6 grid ${SUMMARY_GRID[summaryCells]} gap-3 text-sm bg-navy-50 rounded-lg px-4 py-3`}
         >
           <div>
             <p className="text-navy-500 text-xs uppercase tracking-wide">Versements</p>
@@ -104,6 +115,12 @@ export default async function BillingPrintPage({
             <p className="text-navy-500 text-xs uppercase tracking-wide">Vols débités</p>
             <p className="font-bold text-red-600">{formatMoney(totalDebits)}</p>
           </div>
+          {totalLandingFees !== 0 && (
+            <div>
+              <p className="text-navy-500 text-xs uppercase tracking-wide">Taxes d&apos;atterrissage</p>
+              <p className="font-bold text-red-600">{formatMoney(totalLandingFees)}</p>
+            </div>
+          )}
           <div>
             <p className="text-navy-500 text-xs uppercase tracking-wide">Ajustements</p>
             <p className="font-bold">
@@ -159,7 +176,18 @@ export default async function BillingPrintPage({
                       <td className="px-3 py-1.5 text-navy-600">
                         {t.type === "FLIGHT_DEBIT" && t.flightLog
                           ? `${t.flightLog.aircraft.registration} — ${formatHoursMinutes(t.flightLog.duration)}`
-                          : (t.notes ?? "")}
+                          : t.type === "LANDING_FEE"
+                            ? [
+                                t.airfield,
+                                t.landingFlightLog
+                                  ? `${t.landingFlightLog.aircraft.registration}, vol du ${formatDate(t.landingFlightLog.date)}`
+                                  : null,
+                                t.reference ? `facture ${t.reference}` : null,
+                                t.attachment ? "justificatif joint" : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : (t.notes ?? "")}
                       </td>
                       <td
                         className={`px-3 py-1.5 text-right font-medium whitespace-nowrap ${

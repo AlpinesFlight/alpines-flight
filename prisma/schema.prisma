@@ -554,6 +554,9 @@ model FlightLog {
   // 0 = crédit retiré à la main depuis le compte pilote (ne pas le recréer).
   instructorCredit     AccountTransaction? @relation("InstructorCredit")
   instructorSharePct   Int?
+  // Taxes d'atterrissage refacturées au pilote pour ce vol (une par terrain
+  // facturé) — voir AccountTransaction.landingFlightLog.
+  landingFees          AccountTransaction[] @relation("LandingFee")
   stops                FlightStop[] // terrains survolés/posés + nombre de touchés
   trainingSession      TrainingSession? // séance de formation reliée à ce vol, le cas échéant
   createdAt            DateTime @default(now())
@@ -604,12 +607,16 @@ model FlightStop {
 //    (FLIGHT_DEBIT, confirmé immédiatement).
 // 4. L'admin peut aussi passer une écriture manuelle (ADJUSTMENT), ex. avoir
 //    commercial ou correction, créditée/débitée immédiatement.
+// 5. Le Gérant refacture les taxes d'atterrissage payées par l'école sur un
+//    autre terrain (LANDING_FEE), débitées immédiatement, avec la facture de
+//    l'aéroport en justificatif que le pilote peut ouvrir.
 
 enum TransactionType {
   DEPOSIT       // versement déclaré par le pilote (viré sur le compte école)
   FLIGHT_DEBIT  // débit automatique suite à un vol clôturé
   ADJUSTMENT    // écriture manuelle admin (avoir, correction...)
   INSTRUCTION_CREDIT // crédit automatique de l'instructeur d'un vol (sa part de l'instruction)
+  LANDING_FEE   // taxe d'atterrissage refacturée par le Gérant
 }
 
 enum TransactionStatus {
@@ -640,6 +647,15 @@ model AccountTransaction {
   // un vol a au plus un débit (pilote, ci-dessus) et un crédit (instructeur).
   instructorFlightLogId String?     @unique
   instructorFlightLog   FlightLog?  @relation("InstructorCredit", fields: [instructorFlightLogId], references: [id])
+  // Taxe d'atterrissage (LANDING_FEE) : terrain facturé (code OACI ou nom)
+  // et, si le Gérant l'a choisi, le vol concerné. Un vol supprimé ne supprime
+  // pas la taxe (la facture de l'aéroport existe toujours) : le lien est
+  // simplement retiré. `reference` porte alors le n° de facture de l'aéroport.
+  airfield           String?
+  landingFlightLogId String?
+  landingFlightLog   FlightLog?    @relation("LandingFee", fields: [landingFlightLogId], references: [id], onDelete: SetNull)
+  // Justificatif joint (ex. facture de l'aéroport) : visible du pilote.
+  attachment    AccountTransactionAttachment?
   notes         String?
   // Date de l'OPÉRATION — celle qui sert à classer et à afficher le mouvement
   // (page Comptes pilotes, relevé PDF) : date de départ du vol pour un débit de
@@ -660,6 +676,24 @@ model AccountTransaction {
   @@index([status])
   @@index([confirmedAt])
   @@index([date])
+  @@index([landingFlightLogId])
+}
+
+// Justificatif d'un mouvement du compte pilote (une pièce par mouvement) —
+// aujourd'hui la facture de l'aéroport d'une taxe d'atterrissage. Fichier
+// dans Vercel Blob (accès "private"), jamais renvoyé en JSON : diffusé par
+// /api/transactions/[id]/attachment, au Gérant et au pilote titulaire du
+// compte seulement. Pièce comptable : conservée même si le compte du pilote
+// est anonymisé.
+model AccountTransactionAttachment {
+  id            String             @id @default(cuid())
+  transactionId String             @unique
+  transaction   AccountTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  fileName      String
+  fileMimeType  String
+  fileSize      Int
+  blobUrl       String
+  uploadedAt    DateTime           @default(now())
 }
 
 // ---------- Licences, qualifications, médicales ----------

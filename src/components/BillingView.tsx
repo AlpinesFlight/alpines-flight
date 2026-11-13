@@ -2,9 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { upload } from "@vercel/blob/client";
 import { apiFetch } from "@/lib/api";
-import { AccountTransaction, SchoolSettings, UserLite } from "@/types/models";
+import { AccountTransaction, FlightLog, SchoolSettings, UserLite } from "@/types/models";
 import { formatDate, formatHoursMinutes, formatMoney } from "@/lib/format";
+import {
+  TRANSACTION_ATTACHMENT_ACCEPT,
+  TRANSACTION_ATTACHMENT_PREFIX,
+  transactionAttachmentUrl,
+} from "@/lib/transaction-attachments";
 import {
   Plus,
   X,
@@ -18,6 +24,8 @@ import {
   Trash2,
   Landmark,
   PiggyBank,
+  PlaneLanding,
+  Paperclip,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -26,7 +34,47 @@ const TYPE_LABEL: Record<string, string> = {
   FLIGHT_DEBIT: "Vol",
   ADJUSTMENT: "Ajustement",
   INSTRUCTION_CREDIT: "Instruction",
+  LANDING_FEE: "Taxe d'atterrissage",
 };
+
+// Terrain de base de l'école : pas de taxe à refacturer pour un vol local.
+const HOME_AIRFIELD = "LFNA";
+
+// Taxe d'atterrissage : terrain, vol concerné, n° de facture de l'aéroport.
+function landingFeeDetail(t: AccountTransaction): string {
+  const parts = [t.airfield ?? ""];
+  if (t.landingFlightLog) {
+    parts.push(`${t.landingFlightLog.aircraft.registration}, vol du ${formatDate(t.landingFlightLog.date)}`);
+  }
+  if (t.reference) parts.push(`facture ${t.reference}`);
+  if (t.notes) parts.push(t.notes);
+  return parts.filter(Boolean).join(" · ");
+}
+
+// Envoie un justificatif directement du navigateur vers Vercel Blob (voir
+// /api/transactions/blob-upload) et renvoie son URL, à enregistrer ensuite.
+async function uploadAttachment(file: File, onProgress: (pct: number) => void): Promise<string> {
+  const blob = await upload(`${TRANSACTION_ATTACHMENT_PREFIX}${Date.now()}-${file.name}`, file, {
+    access: "private",
+    handleUploadUrl: "/api/transactions/blob-upload",
+    multipart: true,
+    onUploadProgress: ({ percentage }) => onProgress(percentage),
+  });
+  return blob.url;
+}
+
+function AttachmentLink({ transactionId, label = "Justificatif" }: { transactionId: string; label?: string }) {
+  return (
+    <a
+      href={transactionAttachmentUrl(transactionId)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-sunset-600 hover:underline font-medium whitespace-nowrap"
+    >
+      <Paperclip size={13} className="shrink-0" /> {label}
+    </a>
+  );
+}
 
 const METHOD_LABEL: Record<string, string> = {
   CARD: "Carte",
@@ -72,6 +120,7 @@ export function BillingView() {
   const [settings, setSettings] = useState<SchoolSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDeposit, setShowDeposit] = useState(false);
+  const [showLandingFee, setShowLandingFee] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showFlightsExport, setShowFlightsExport] = useState(false);
   const [showExcelExport, setShowExcelExport] = useState(false);
@@ -154,6 +203,7 @@ export function BillingView() {
       flights: figure("FLIGHT_DEBIT"),
       adjustments: figure("ADJUSTMENT"),
       instruction: figure("INSTRUCTION_CREDIT"),
+      landingFees: figure("LANDING_FEE"),
       pendingCount: pendingRows.length,
       pendingCents: pendingRows.reduce((sum, t) => sum + t.amountCents, 0),
     };
@@ -189,7 +239,8 @@ export function BillingView() {
         : t.type === "INSTRUCTION_CREDIT"
           ? `Retirer ce crédit d'instruction (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ? Son solde sera débité d'autant ; le vol reste au carnet et ce crédit ne sera pas recréé.`
           : `Supprimer ce mouvement (${t.student.firstName} ${t.student.lastName} · ${formatMoney(t.amountCents)}) ?` +
-            (t.status === "CONFIRMED" ? " Le solde du pilote sera recrédité/redébité en conséquence." : "");
+            (t.status === "CONFIRMED" ? " Le solde du pilote sera recrédité/redébité en conséquence." : "") +
+            (t.attachment ? " Son justificatif sera supprimé aussi." : "");
     if (!window.confirm(message)) return;
     await apiFetch(`/api/transactions/${t.id}`, { method: "DELETE" });
     load();
@@ -220,6 +271,14 @@ export function BillingView() {
             className="flex items-center gap-1.5 rounded-lg border border-navy-800 text-navy-800 hover:bg-navy-50 text-sm font-semibold px-3.5 py-2 transition-colors"
           >
             <FileText size={16} /> Extrait de vols (par pilote)
+          </button>
+        )}
+        {canFinanceAdmin && (
+          <button
+            onClick={() => setShowLandingFee(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-navy-800 hover:bg-navy-900 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
+          >
+            <PlaneLanding size={16} /> Refacturer une taxe d&apos;atterrissage
           </button>
         )}
         <button
@@ -380,6 +439,12 @@ export function BillingView() {
                     `${t.method ? METHOD_LABEL[t.method] : ""}${t.reference ? ` · ${t.reference}` : ""}`}
                   {t.type === "FLIGHT_DEBIT" && flightDebitDetail(t)}
                   {(t.type === "ADJUSTMENT" || t.type === "INSTRUCTION_CREDIT") && (t.notes ?? "")}
+                  {t.type === "LANDING_FEE" && landingFeeDetail(t)}
+                  {t.attachment && (
+                    <span className="block mt-0.5">
+                      <AttachmentLink transactionId={t.id} />
+                    </span>
+                  )}
                 </td>
                 <td
                   className={clsx(
@@ -454,6 +519,17 @@ export function BillingView() {
         />
       )}
 
+      {showLandingFee && (
+        <LandingFeeModal
+          students={students}
+          onClose={() => setShowLandingFee(false)}
+          onCreated={() => {
+            setShowLandingFee(false);
+            load();
+          }}
+        />
+      )}
+
       {showExport && <ExportPdfModal onClose={() => setShowExport(false)} />}
 
       {showExcelExport && <ExportExcelModal onClose={() => setShowExcelExport(false)} />}
@@ -494,6 +570,7 @@ interface PilotAccount {
   flights: { count: number; cents: number };
   adjustments: { count: number; cents: number };
   instruction: { count: number; cents: number };
+  landingFees: { count: number; cents: number };
   pendingCount: number;
   pendingCents: number;
 }
@@ -507,7 +584,8 @@ function signedMoney(cents: number) {
 // ou nul — et le calcul qui y mène : versements confirmés, vols débités,
 // éventuels ajustements. Affiché quand un pilote est choisi dans le filtre.
 function PilotAccountCard({ account }: { account: PilotAccount }) {
-  const { person, balanceCents, deposits, flights, adjustments, instruction, pendingCount, pendingCents } = account;
+  const { person, balanceCents, deposits, flights, adjustments, instruction, landingFees, pendingCount, pendingCents } =
+    account;
   const tone =
     balanceCents > 0
       ? { label: "Créditeur", accent: "border-l-green-600", text: "text-green-700", badge: "bg-green-100 text-green-700" }
@@ -533,6 +611,9 @@ function PilotAccountCard({ account }: { account: PilotAccount }) {
       <dl className="mt-4 pt-3 border-t border-navy-100 text-sm flex flex-col gap-1.5">
         <AccountLine label="Versements confirmés" count={deposits.count} cents={deposits.cents} />
         <AccountLine label="Vols" count={flights.count} cents={flights.cents} />
+        {landingFees.count > 0 && (
+          <AccountLine label="Taxes d'atterrissage" count={landingFees.count} cents={landingFees.cents} />
+        )}
         {adjustments.count > 0 && (
           <AccountLine label="Ajustements" count={adjustments.count} cents={adjustments.cents} />
         )}
@@ -915,12 +996,19 @@ function EditTransactionModal({
   const [method, setMethod] = useState(transaction.method ?? "TRANSFER");
   const [reference, setReference] = useState(transaction.reference ?? "");
   const [notes, setNotes] = useState(transaction.notes ?? "");
+  const [airfield, setAirfield] = useState(transaction.airfield ?? "");
   const [initialDate] = useState(() => toDateInput(new Date(transaction.date)));
   const [date, setDate] = useState(initialDate);
+  // Justificatif : nouveau fichier à envoyer, ou retrait de l'actuel — tous
+  // deux appliqués à l'enregistrement.
+  const [newFile, setNewFile] = useState<File | null>(null);
+  const [removeAttachment, setRemoveAttachment] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Débit du pilote ou crédit de l'instructeur : la date est celle du vol.
   const linkedToFlight = !!(transaction.flightLogId || transaction.instructorFlightLogId);
+  const hasAttachment = !!transaction.attachment && !removeAttachment;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -936,16 +1024,28 @@ function EditTransactionModal({
           method: type === "DEPOSIT" ? method : null,
           reference: reference || null,
           notes: notes || null,
+          ...(type === "LANDING_FEE" ? { airfield } : {}),
           // Seulement si elle a été modifiée : sinon la date exacte déjà
           // enregistrée (ex. l'heure d'un vol) resterait intacte.
           ...(date !== initialDate && !linkedToFlight ? { date } : {}),
         }),
       });
+      if (newFile) {
+        setProgress(0);
+        const blobUrl = await uploadAttachment(newFile, setProgress);
+        await apiFetch(`/api/transactions/${transaction.id}/attachment`, {
+          method: "POST",
+          body: JSON.stringify({ fileName: newFile.name, blobUrl }),
+        });
+      } else if (removeAttachment && transaction.attachment) {
+        await apiFetch(`/api/transactions/${transaction.id}/attachment`, { method: "DELETE" });
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -971,8 +1071,18 @@ function EditTransactionModal({
             <option value="DEPOSIT">Versement</option>
             <option value="FLIGHT_DEBIT">Vol</option>
             <option value="ADJUSTMENT">Ajustement</option>
+            <option value="LANDING_FEE">Taxe d&apos;atterrissage</option>
             {transaction.type === "INSTRUCTION_CREDIT" && <option value="INSTRUCTION_CREDIT">Instruction</option>}
           </select>
+          {type === "LANDING_FEE" && (
+            <input
+              required
+              placeholder="Terrain (code OACI, ex. LFMN)"
+              value={airfield}
+              onChange={(e) => setAirfield(e.target.value.toUpperCase())}
+              className="input"
+            />
+          )}
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <input
               required
@@ -1021,7 +1131,7 @@ function EditTransactionModal({
             </select>
           )}
           <input
-            placeholder="Référence (optionnel)"
+            placeholder={type === "LANDING_FEE" ? "N° de facture (optionnel)" : "Référence (optionnel)"}
             value={reference}
             onChange={(e) => setReference(e.target.value)}
             className="input"
@@ -1032,6 +1142,40 @@ function EditTransactionModal({
             onChange={(e) => setNotes(e.target.value)}
             className="input min-h-14"
           />
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Justificatif (visible du pilote)</span>
+            {newFile ? (
+              <FileChip name={newFile.name} onRemove={() => setNewFile(null)} />
+            ) : hasAttachment && transaction.attachment ? (
+              <div className="flex items-center gap-3 text-sm rounded-lg bg-navy-50 px-3 py-2">
+                <span className="min-w-0 flex-1 truncate">
+                  <AttachmentLink transactionId={transaction.id} label={transaction.attachment.fileName} />
+                </span>
+                <FilePicker label="Remplacer" onPick={setNewFile} />
+                <button
+                  type="button"
+                  onClick={() => setRemoveAttachment(true)}
+                  className="text-xs font-medium text-red-600 hover:underline"
+                >
+                  Retirer
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <FilePicker label="Joindre un fichier (PDF ou photo)" onPick={setNewFile} boxed />
+                {removeAttachment && (
+                  <button
+                    type="button"
+                    onClick={() => setRemoveAttachment(false)}
+                    className="text-xs text-navy-600 hover:underline"
+                  >
+                    Annuler le retrait
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {progress !== null && <p className="text-xs text-navy-500">Envoi du justificatif... {Math.round(progress)} %</p>}
           {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
           <button
             type="submit"
@@ -1156,8 +1300,8 @@ function ExportExcelModal({ onClose }: { onClose: () => void }) {
         <form onSubmit={handleExport} className="p-5 flex flex-col gap-3">
           <p className="text-sm text-navy-600 -mt-1">
             Heures de vol prépayées, par client : solde de début, ce qui a été vendu (versements) et consommé
-            (vols, dont location avion et instruction, avec les heures), ajustements et solde de fin. Avec le détail
-            de tous les mouvements dans un second onglet.
+            (vols, dont location avion et instruction, avec les heures), taxes d&apos;atterrissage refacturées,
+            ajustements et solde de fin. Avec le détail de tous les mouvements dans un second onglet.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {presets.map((p) => (
@@ -1435,6 +1579,311 @@ function DeclareDepositModal({
             className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
           >
             {saving ? "Envoi..." : "Déclarer le versement"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Choix d'un fichier (justificatif) — un bouton qui ouvre le sélecteur.
+function FilePicker({ label, onPick, boxed = false }: { label: string; onPick: (file: File) => void; boxed?: boolean }) {
+  return (
+    <label
+      className={clsx(
+        "cursor-pointer text-xs font-medium",
+        boxed
+          ? "flex items-center gap-1.5 rounded-lg border border-dashed border-navy-300 hover:border-sunset-500 hover:bg-navy-50 text-navy-700 px-3 py-2 transition-colors"
+          : "text-navy-700 hover:underline whitespace-nowrap"
+      )}
+    >
+      {boxed && <Paperclip size={14} className="shrink-0" />}
+      {label}
+      <input
+        type="file"
+        accept={TRANSACTION_ATTACHMENT_ACCEPT}
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onPick(file);
+          e.target.value = "";
+        }}
+      />
+    </label>
+  );
+}
+
+function FileChip({ name, onRemove }: { name: string; onRemove: () => void }) {
+  return (
+    <div className="flex items-center gap-2 text-sm rounded-lg bg-navy-50 px-3 py-2">
+      <Paperclip size={14} className="text-navy-500 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-navy-800">{name}</span>
+      <button type="button" onClick={onRemove} title="Retirer ce fichier" className="text-navy-500 hover:text-red-600">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+// Vols proposés pour une taxe : les 6 derniers mois (une facture d'aéroport
+// arrive parfois des semaines après).
+const LANDING_FEE_LOOKBACK_DAYS = 183;
+
+function airfieldCode(a: string | null | undefined): string {
+  return (a ?? "").trim().toUpperCase();
+}
+
+// Terrains d'un vol hors de la base, dans l'ordre où une taxe est la plus
+// probable : escales et destination d'abord, le départ en dernier.
+function awayAirfields(f: FlightLog): string[] {
+  const out: string[] = [];
+  for (const a of [...f.stops.map((s) => s.airfield), f.arrivalAirfield, f.departureAirfield]) {
+    const code = airfieldCode(a);
+    if (code && code !== HOME_AIRFIELD && !out.includes(code)) out.push(code);
+  }
+  return out;
+}
+
+function flightOptionLabel(f: FlightLog): string {
+  const seq = [f.departureAirfield, ...f.stops.map((s) => s.airfield), f.arrivalAirfield]
+    .map(airfieldCode)
+    .filter(Boolean);
+  const route = seq.filter((a, i) => i === 0 || a !== seq[i - 1]).join(" → ");
+  const who = f.student ? `${f.student.firstName} ${f.student.lastName}` : "sans pilote";
+  return `${formatDate(f.date)} · ${f.aircraft.registration} · ${route || "trajet non renseigné"} · ${who}`;
+}
+
+// Refacturation d'une taxe d'atterrissage payée par l'école (Gérant) : débit
+// immédiat du compte du pilote, avec la facture de l'aéroport en
+// justificatif facultatif. Choisir le vol remplit le pilote, le terrain et
+// la date ; tout reste modifiable (vol non retrouvé, autre pilote...).
+function LandingFeeModal({
+  students,
+  onClose,
+  onCreated,
+}: {
+  students: UserLite[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [flights, setFlights] = useState<FlightLog[] | null>(null);
+  const [flightId, setFlightId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [airfield, setAirfield] = useState("");
+  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  // Fichier déjà envoyé au stockage : réutilisé si l'enregistrement doit
+  // être relancé (pas de second envoi, pas de fichier orphelin).
+  const [uploaded, setUploaded] = useState<{ file: File; blobUrl: string } | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const from = toDateInput(new Date(Date.now() - LANDING_FEE_LOOKBACK_DAYS * 86_400_000));
+    apiFetch<FlightLog[]>(`/api/flights?from=${from}`)
+      .then(setFlights)
+      .catch(() => setFlights([]));
+  }, []);
+
+  const pilots = useMemo(
+    () => [...students].sort((a, b) => a.lastName.localeCompare(b.lastName, "fr")),
+    [students]
+  );
+  const awayFlights = useMemo(() => (flights ?? []).filter((f) => awayAirfields(f).length > 0), [flights]);
+  const localFlights = useMemo(() => (flights ?? []).filter((f) => awayAirfields(f).length === 0), [flights]);
+  const selectedFlight = flights?.find((f) => f.id === flightId) ?? null;
+  const suggestions = selectedFlight ? awayAirfields(selectedFlight) : [];
+  const pilot = students.find((s) => s.id === studentId);
+  const cents = Math.round(parseFloat(amount) * 100);
+  const validAmount = Number.isFinite(cents) && cents > 0;
+
+  function pickFlight(id: string) {
+    setFlightId(id);
+    const f = flights?.find((x) => x.id === id);
+    if (!f) return;
+    if (f.studentId && students.some((s) => s.id === f.studentId)) setStudentId(f.studentId);
+    const codes = awayAirfields(f);
+    if (codes.length) setAirfield(codes[0]);
+    setDate(toDateInput(new Date(f.date)));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      let attachment: { fileName: string; blobUrl: string } | null = null;
+      if (file) {
+        let blobUrl = uploaded?.file === file ? uploaded.blobUrl : null;
+        if (!blobUrl) {
+          setProgress(0);
+          blobUrl = await uploadAttachment(file, setProgress);
+          setUploaded({ file, blobUrl });
+        }
+        attachment = { fileName: file.name, blobUrl };
+      }
+      await apiFetch("/api/transactions", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "LANDING_FEE",
+          studentId,
+          amountCents: cents,
+          airfield,
+          date,
+          landingFlightLogId: flightId || null,
+          reference: reference.trim() || null,
+          attachment,
+        }),
+      });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSaving(false);
+      setProgress(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-navy-950/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-100">
+          <h2 className="flex items-center gap-2 font-semibold text-navy-900">
+            <PlaneLanding size={18} className="text-sunset-600" /> Refacturer une taxe d&apos;atterrissage
+          </h2>
+          <button onClick={onClose} className="text-navy-600 hover:text-navy-900">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
+          <p className="text-xs text-navy-600 -mt-1">
+            Le montant est débité tout de suite du compte du pilote. Il voit la ligne dans son compte pilote et peut
+            ouvrir le justificatif.
+          </p>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Vol concerné</span>
+            <select value={flightId} onChange={(e) => pickFlight(e.target.value)} className="input">
+              <option value="">
+                {flights === null ? "Chargement des vols..." : "— Choisir le vol (facultatif) —"}
+              </option>
+              {awayFlights.length > 0 && (
+                <optgroup label="Vols posés hors de Tallard">
+                  {awayFlights.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {flightOptionLabel(f)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {localFlights.length > 0 && (
+                <optgroup label="Autres vols">
+                  {localFlights.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {flightOptionLabel(f)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <span className="text-[11px] text-navy-500">
+              Remplit le pilote, le terrain et la date. Vols des 6 derniers mois.
+            </span>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Pilote débité</span>
+            <select required value={studentId} onChange={(e) => setStudentId(e.target.value)} className="input">
+              <option value="">— Choisir le pilote —</option>
+              {pilots.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.lastName.toUpperCase()} {s.firstName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Terrain</span>
+              <input
+                required
+                list="landing-fee-airfields"
+                placeholder="ex. LFMN"
+                value={airfield}
+                onChange={(e) => setAirfield(e.target.value.toUpperCase())}
+                className="input"
+              />
+              <datalist id="landing-fee-airfields">
+                {suggestions.map((code) => (
+                  <option key={code} value={code} />
+                ))}
+              </datalist>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Date de l&apos;atterrissage</span>
+              <input
+                required
+                type="date"
+                max={toDateInput(new Date())}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="input"
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">Montant (€)</span>
+              <input
+                required
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0,00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="input"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-navy-600">N° de facture</span>
+              <input
+                placeholder="Facultatif"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                className="input"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-navy-600">Justificatif (facture de l&apos;aéroport)</span>
+            {file ? (
+              <FileChip name={file.name} onRemove={() => setFile(null)} />
+            ) : (
+              <FilePicker label="Joindre la facture (PDF ou photo) — facultatif" onPick={setFile} boxed />
+            )}
+          </div>
+
+          {progress !== null && (
+            <p className="text-xs text-navy-500">Envoi du justificatif... {Math.round(progress)} %</p>
+          )}
+          {error && <p className="text-red-600 text-sm bg-red-100 rounded-lg px-3 py-2">{error}</p>}
+          <button
+            type="submit"
+            disabled={saving || !studentId || !validAmount || !airfield.trim()}
+            className="rounded-lg bg-sunset-500 hover:bg-sunset-600 text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+          >
+            {saving
+              ? "Enregistrement..."
+              : pilot && validAmount
+                ? `Débiter ${formatMoney(cents)} du compte de ${pilot.firstName} ${pilot.lastName}`
+                : "Refacturer la taxe"}
           </button>
         </form>
       </div>
